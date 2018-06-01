@@ -1,3 +1,7 @@
+module Parse
+  ( parse
+  , AST
+  ) where
 
 data AST
   = Symbol String
@@ -33,20 +37,20 @@ parseList :: [Token] -> ([AST], [Token])
 parseList (ParenEnd : ts) = ([], ts)
 parseList ts =
   let
-    (x, ts') = parse ts
+    (x, ts') = parse' ts
     (xs, ts'') = parseList ts'
   in
     (x : xs, ts'')
 
-parse :: [Token] -> (AST, [Token])
-parse (SymbolT sym : ts) = (Symbol sym, ts)
-parse (ParenBegin : ts) =
+parse' :: [Token] -> (AST, [Token])
+parse' (SymbolT sym : ts) = (Symbol sym, ts)
+parse' (ParenBegin : ts) =
   let
     (xs, ts') = parseList ts
   in
     (List xs, ts')
-parse [] = undefined
-parse (ParenEnd : _) = undefined
+parse' [] = undefined
+parse' (ParenEnd : _) = undefined
 
-main = do
-  putStrLn "hue"
+parse :: String -> AST
+parse = fst . parse' . tokenize
