@@ -22,6 +22,11 @@ beta (App (Lambda v t) t') = replace t v t'
 beta (App t t') = App (beta t) (beta t')
 beta t = t
 
+eval :: Term -> Term
+eval t@(Var _) = t
+eval t@(Lambda _ _) = t
+eval (App t t') = beta $ App (eval t) (eval t')
+
 toLambda :: AST -> Maybe Term
 toLambda (Symbol str) =
   if length str == 1 then
