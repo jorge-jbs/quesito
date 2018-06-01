@@ -1,13 +1,13 @@
 module Parse
   ( parse
-  , AST
+  , AST(..)
   ) where
 
 data AST
   = Symbol String
   | Num Int
   | List [AST]
-  deriving (Show)
+  deriving (Show, Eq)
 
 data Token
   = ParenBegin
