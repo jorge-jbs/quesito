@@ -29,7 +29,7 @@ typeCheck :: Term -> Maybe Ty
 typeCheck (Var _ ty) = ty
 typeCheck (Constant c) = Just (constType c)
 typeCheck (Lambda v ty t) = do
-  ty' <- typeCheck t
+  ty' <- typeCheck (annotate t)
   return (Arrow ty ty')
   where
     annotate :: Term -> Term
