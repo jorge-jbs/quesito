@@ -1,9 +1,5 @@
-
 module Main where
 
-import Parse
-import UntypedLambdaCalculus
+import Quesito.Eval
 
-main = do
-  let Just res = toLambda $ parse "(((lambda x (lambda y y)) 1) 2)"
-  putStrLn $ show $ eval $ res
+main = return ()

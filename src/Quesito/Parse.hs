@@ -1,4 +1,4 @@
-module Parse
+module Quesito.Parse
   ( parse
   , AST(..)
   ) where
