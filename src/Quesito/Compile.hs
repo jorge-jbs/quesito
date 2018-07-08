@@ -1,71 +1,87 @@
 module Quesito.Compile where
 
-import Data.List (intersperse)
-import Data.Maybe (fromJust)
-
 import Quesito.AnnTerm
+import Quesito.Constant
 import Quesito.Type
 
-uncurryType :: Ty -> ([Ty], Ty)
-uncurryType (Arrow ty ty') =
-  let p = uncurryType ty'
-  in (ty : fst p, snd p)
-uncurryType ty = ([], ty)
+cType :: Ty -> String
+cType (BaseTy Nat) = "unsigned int"
+cType (Arrow _ _) = "struct fn"
 
-functionParameter :: Ty -> String
-functionParameter (BaseTy Nat) = "int"
-functionParameter (Arrow _ _) = "void*"
+data Compilation = Compilation
+  { code :: String
+  , name :: String
+  , extraDecl :: [String]
+  }
+  deriving Show
 
-functionParameters :: [Ty] -> String
-functionParameters l =
-  concat
-  . intersperse ", "
-  . map (\(ty, i) -> functionParameter ty ++ " arg" ++ show i)
-  . zip l
-  . flip take [0..]
-  $ length l
+compilePushArg :: String -> String -> String
+compilePushArg fName arg =
+  fName ++ ".args[" ++ fName ++ ".n++] = " ++ arg ++ ";\n"
 
-functionDecl :: Ty -> String -> Maybe String
-functionDecl ty@(Arrow _ _) name =
-  let (parameters, ret) = uncurryType ty
-  in Just (
-    functionParameter ret
-    ++ " "
-    ++ name
-    ++ "(" ++ functionParameters parameters ++ ")"
-  )
-functionDeclr _ = Nothing
+compileCallFunc :: String -> String -> Ty -> String
+compileCallFunc retName fName ty =
+  cType ty ++ " (* " ++ fName ++ "_)(struct fn) = " ++ fName ++ ".f;\n"
+  ++ cType ty ++ " " ++ retName ++ " = (*" ++ fName ++ "_)(" ++ fName ++ ");\n"
 
-{-@ uncurryLambda :: x : AnnTerm -> ([Char], AnnTerm, ([Ty], Ty)) @-}
-uncurryLambda :: AnnTerm -> ([Char], AnnTerm, ([Ty], Ty))
-uncurryLambda (AnnLambda v t ty) = (v : vs, t', uncurryType ty)
+compile :: AnnTerm -> Compilation
+compile (AnnLambda v t (Arrow ty ty')) = Compilation
+  { code =
+      "struct fn hue;\n"
+      ++ "fn.f = &hue;\n"
+      ++ "fn.n = 0;\n"
+  , name = "hue"
+  , extraDecl =
+      tExtraDecl ++
+      [ cType ty' ++ " hue(struct fn f)\n"
+        ++ "{\n"
+        ++ cType ty ++ " " ++ v : [] ++ " = f.args[0];\n"
+        ++ tCode
+        ++ "return " ++ tName ++ ";\n"
+        ++ "}\n"
+      ]
+  }
   where
-    (vs, t', _) = uncurryLambda t
-uncurryLambda t = ([], t, ([], annotatedType t))
-
-functionBody :: AnnTerm -> Maybe String
-functionBody t@(AnnLambda _ _ ty) = do
-  let (_, expr, _) = uncurryLambda t
-  (body, bodyName) <- compileTerm expr
-  return
-    ( fromJust (functionDecl ty "hue") ++ "\n"
-      ++ "{" ++ "\n"
-      ++ body
-      ++ "return " ++ bodyName ++ ";" ++ "\n"
-      ++ "}" ++ "\n"
-    )
-
-compileTerm :: AnnTerm -> Maybe (String, String)
-compileTerm (AnnLambda v ty t) = Nothing
-compileTerm (AnnApp t t' _) = do
-  (code, name) <-  compileTerm t
-  (code', name') <- compileTerm t'
-  let newname = "hue"
-  return
-    ( code
+    Compilation tCode tName tExtraDecl = compile t
+compile (AnnLambda _ _ _) = undefined
+compile (AnnApp t t' ty) = Compilation
+  { code =
+      code_
       ++ code'
-      ++ newname ++ " = " ++ name ++ "(" ++ name' ++ ");" ++ "\n"
-    , newname
-    )
-compileTerm (AnnVar v _) = Just ("", v : [])
-compileTerm (AnnConstant c _) = Just ("", show c)
+      ++ compilePushArg name_ name'
+      ++ case ty of
+           BaseTy _ -> compileCallFunc "hue" name_ ty
+           Arrow _ _ -> ""
+  , name = "hue"
+  , extraDecl = extraDecl_ ++ extraDecl'
+  }
+  where
+    Compilation code_ name_ extraDecl_ = compile t
+    Compilation code' name' extraDecl' = compile t'
+compile (AnnConstant Plus2 _) = Compilation
+  { code =
+      "struct fn add;\n"
+      ++ "fn.f = &add;\n"
+      ++ "fn.n = 0;\n"
+  , name = "plus2"
+  , extraDecl = []
+  }
+compile (AnnVar v _) = Compilation "" (v : []) []
+compile (AnnConstant (Num n) _) = Compilation "" (show n) []
+compile (AnnConstant (Plus1 _) _) = undefined
+
+stdLib :: [String]
+stdLib =
+  [    "int add(struct fn f) {" ++ "\n"
+    ++ "    return f.args[0] + f.args[1];" ++ "\n"
+    ++ "}" ++ "\n"
+  ]
+
+toProgram :: Compilation -> String
+toProgram (Compilation code' name' extraDecl') =
+  concat (stdLib ++ extraDecl')
+  ++ "int main()\n"
+  ++ "{\n"
+  ++ code'
+  ++ "printf(\"%d\", " ++ name' ++ ");\n"
+  ++ "}\n"
