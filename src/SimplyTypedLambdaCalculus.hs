@@ -52,11 +52,11 @@ annotate (Lambda v ty t) = do
   where
     annotate' :: Term -> Term
     annotate' (Var v' _) = Var v' (Just ty)
-    annotate' t@(Lambda v' _ t') =
+    annotate' t@(Lambda v' ty t') =
       if v == v' then
         t
       else
-        annotate' t'
+        Lambda v' ty (annotate' t')
     annotate' (App t t') = App (annotate' t) (annotate' t')
     annotate' t = t
 annotate (App t t') = do
