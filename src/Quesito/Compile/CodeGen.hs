@@ -1,4 +1,4 @@
-module Quesito.Compile where
+module Quesito.Compile.CodeGen where
 
 import Quesito.AnnTerm
 import Quesito.Constant
