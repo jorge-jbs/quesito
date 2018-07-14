@@ -17,5 +17,5 @@ main = do
     $ compile
     $ fromJust
     $ annotate
-    $ fromJust
+    $ either (error . show) id
     $ parse (args !! 0)
