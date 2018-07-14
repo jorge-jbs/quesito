@@ -20,32 +20,51 @@ compilePushArg :: String -> String -> String
 compilePushArg fName arg =
   fName ++ ".args[" ++ fName ++ ".n++] = " ++ arg ++ ";\n"
 
+compilePushEnv :: String -> String -> String
+compilePushEnv fName var =
+  fName ++ ".env[" ++ fName ++ ".envn++] = " ++ var ++ ";\n"
+
 compileCallFunc :: String -> String -> Ty -> String
 compileCallFunc retName fName ty =
   cType ty ++ " (* " ++ fName ++ "_)(struct fn) = " ++ fName ++ ".f;\n"
   ++ cType ty ++ " " ++ retName ++ " = (*" ++ fName ++ "_)(" ++ fName ++ ");\n"
 
 compile :: AnnTerm -> NameProv Compilation
-compile (AnnLambda v t (Arrow ty ty')) = do
+compile t'@(AnnLambda v t (Arrow ty ty')) = do
   name <- newName
+  name' <- newName
   Compilation tCode tName tExtraDecl <- compile t
   return $ Compilation
     { code =
         "struct fn " ++ name ++ ";\n"
-        ++ "fn.f = &" ++ name ++ ";\n"
-        ++ "fn.n = 0;\n"
+        ++ name ++ ".f = &" ++ name' ++ ";\n"
+        ++ name ++ ".n = 0;\n"
+        ++ name ++ ".envn = 0;\n"
+        ++ (concat $
+              map
+                (\(v_, ty_) ->
+                   compilePushEnv name (v_ : [])
+                )
+                (freeVars t')
+           )
     , name = name
     , extraDecl =
         tExtraDecl ++
-        [ cType ty' ++ " " ++ name ++ "(struct fn f)\n"
+        [ cType ty' ++ " " ++ name' ++ "(struct fn f)\n"
           ++ "{\n"
           ++ cType ty ++ " " ++ v : [] ++ " = f.args[0];\n"
+          ++ (concat $
+                map
+                  (\(n, (v_, ty_)) ->
+                     cType ty ++ " " ++ v_ : [] ++ " = f.env[" ++ show n ++ "];\n"
+                  )
+                  (zip [0..] $ freeVars t')
+             )
           ++ tCode
           ++ "return " ++ tName ++ ";\n"
           ++ "}\n"
         ]
     }
-  where
 compile (AnnLambda _ _ _) = undefined
 compile (AnnApp t t' ty) = do
   name <- newName
@@ -65,10 +84,10 @@ compile (AnnApp t t' ty) = do
     }
 compile (AnnConstant Plus2 _) = return $ Compilation
   { code =
-      "struct fn plus2;\n"
-      ++ "fn.f = &add;\n"
-      ++ "fn.n = 0;\n"
-  , name = "plus2"
+      "struct fn plus2_;\n"
+      ++ "plus2_.f = &plus2;\n"
+      ++ "plus2_.n = 0;\n"
+  , name = "plus2_"
   , extraDecl = []
   }
 compile (AnnVar v _) = return $ Compilation "" (v : []) []
@@ -77,8 +96,23 @@ compile (AnnConstant (Plus1 _) _) = undefined
 
 stdLib :: [String]
 stdLib =
-  [    "int add(struct fn f) {" ++ "\n"
-    ++ "    return f.args[0] + f.args[1];" ++ "\n"
+  [    "struct fn {" ++ "\n"
+    ++ "    void *f;" ++ "\n"
+    ++ "    int args[8];" ++ "\n"
+    ++ "    int n;" ++ "\n"
+    ++ "    int env[24];" ++ "\n"
+    ++ "    int envn;" ++ "\n"
+    ++ "};" ++ "\n"
+  ,    "int plus1(struct fn f) {" ++ "\n"
+    ++ "    return f.args[0] + f.env[0];" ++ "\n"
+    ++ "}" ++ "\n"
+  ,    "struct fn plus2(struct fn f) {" ++ "\n"
+    ++ "    struct fn fn;" ++ "\n"
+    ++ "    fn.f = &plus1;" ++ "\n"
+    ++ "    fn.n = 0;" ++ "\n"
+    ++ "    fn.env[0] = f.args[0];" ++ "\n"
+    ++ "    fn.envn = 1;" ++ "\n"
+    ++ "    return fn;" ++ "\n"
     ++ "}" ++ "\n"
   ]
 

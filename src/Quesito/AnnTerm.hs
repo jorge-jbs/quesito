@@ -1,7 +1,9 @@
 module Quesito.AnnTerm where
 
+import Data.List (delete, nub)
+
 import Quesito.Constant
-import Quesito.Term
+import Quesito.Term hiding (freeVars)
 import Quesito.Type
 
 data AnnTerm
@@ -10,6 +12,13 @@ data AnnTerm
   | AnnLambda Char AnnTerm Ty
   | AnnApp AnnTerm AnnTerm Ty
   deriving (Eq, Show)
+
+freeVars :: AnnTerm -> [(Char, Ty)]
+freeVars (AnnVar v ty) = [(v, ty)]
+freeVars (AnnConstant _ _) = []
+freeVars (AnnLambda v t (Arrow ty _)) = delete (v, ty) (freeVars t)
+freeVars (AnnLambda _ _ _) = undefined
+freeVars (AnnApp t t' _) = nub (freeVars t ++ freeVars t')
 
 annotatedType :: AnnTerm -> Ty
 annotatedType (AnnVar _ ty) = ty
