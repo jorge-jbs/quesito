@@ -31,23 +31,23 @@ compileCallFunc retName fName ty =
 
 compile :: AnnTerm -> NameProv Compilation
 compile t'@(AnnLambda v t (Arrow ty ty')) = do
-  name <- newName
+  retName <- newName
   name' <- newName
   Compilation tCode tName tExtraDecl <- compile t
   return $ Compilation
     { code =
-        "struct fn " ++ name ++ ";\n"
-        ++ name ++ ".f = &" ++ name' ++ ";\n"
-        ++ name ++ ".n = 0;\n"
-        ++ name ++ ".envn = 0;\n"
+        "struct fn " ++ retName ++ ";\n"
+        ++ retName ++ ".f = &" ++ name' ++ ";\n"
+        ++ retName ++ ".n = 0;\n"
+        ++ retName ++ ".envn = 0;\n"
         ++ (concat $
               map
-                (\(v_, ty_) ->
-                   compilePushEnv name (v_ : [])
+                (\(v_, _) ->
+                   compilePushEnv retName (v_ : [])
                 )
                 (freeVars t')
            )
-    , name = name
+    , name = retName
     , extraDecl =
         tExtraDecl ++
         [ cType ty' ++ " " ++ name' ++ "(struct fn f)\n"
@@ -55,8 +55,8 @@ compile t'@(AnnLambda v t (Arrow ty ty')) = do
           ++ cType ty ++ " " ++ v : [] ++ " = f.args[0];\n"
           ++ (concat $
                 map
-                  (\(n, (v_, ty_)) ->
-                     cType ty ++ " " ++ v_ : [] ++ " = f.env[" ++ show n ++ "];\n"
+                  (\(n, (v_, _)) ->
+                     cType ty ++ " " ++ v_ : [] ++ " = f.env[" ++ show (n :: Int) ++ "];\n"
                   )
                   (zip [0..] $ freeVars t')
              )
@@ -67,7 +67,7 @@ compile t'@(AnnLambda v t (Arrow ty ty')) = do
     }
 compile (AnnLambda _ _ _) = undefined
 compile (AnnApp t t' ty) = do
-  name <- newName
+  retName <- newName
   Compilation code_ name_ extraDecl_ <- compile t
   Compilation code' name' extraDecl' <- compile t'
   return $ Compilation
@@ -75,11 +75,8 @@ compile (AnnApp t t' ty) = do
         code_
         ++ code'
         ++ compilePushArg name_ name'
-        ++ -- case ty of
-           --  BaseTy _ ->
-              compileCallFunc name name_ ty
-            -- Arrow _ _ -> ""
-    , name = name
+        ++ compileCallFunc retName name_ ty
+    , name = retName
     , extraDecl = extraDecl_ ++ extraDecl'
     }
 compile (AnnConstant Plus2 _) = return $ Compilation
