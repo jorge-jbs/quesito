@@ -1,5 +1,21 @@
 module Main where
 
-import Quesito.Eval
+import System.Environment (getArgs)
+import Data.Maybe (fromJust)
 
-main = return ()
+import Quesito.AnnTerm
+import Quesito.Compile.CodeGen
+import Quesito.NameProv (runNameProv)
+import Quesito.Parse
+
+main :: IO ()
+main = do
+  args <- getArgs
+  putStrLn
+    $ toProgram
+    $ runNameProv
+    $ compile
+    $ fromJust
+    $ annotate
+    $ fromJust
+    $ parse (args !! 0)
