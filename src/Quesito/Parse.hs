@@ -1,12 +1,14 @@
 module Quesito.Parse
   ( parse
-  , AST(..)
+  , ParseError
+  , ParserResult
+  , Pos
   ) where
 
 import Control.Monad.State (State, evalState, modify, get)
 
-import Quesito.Term
 import Quesito.Constant as C
+import Quesito.QuesExpr
 import Quesito.Type
 
 data ParseError
@@ -22,10 +24,10 @@ type ParserResult a = Either (ParseError, Pos) a
 data Pos = Pos Int Int
   deriving (Show, Eq)
 
-data AST
+data SExpr
   = Symbol String Pos
   | Num Int Pos
-  | List [AST] Pos
+  | List [SExpr] Pos
   deriving (Show, Eq)
 
 data Token
@@ -34,7 +36,7 @@ data Token
   | SymbolT String Pos
   deriving (Show)
 
-astPos :: AST -> Pos
+astPos :: SExpr -> Pos
 astPos (Symbol _ pos) = pos
 astPos (Quesito.Parse.Num _ pos) = pos
 astPos (List _ pos) = pos
@@ -83,17 +85,17 @@ tokenize str = do
   ts <- tokenize (dropWhile (not . isDelimiter) str)
   return (SymbolT symbolS n : ts)
 
-parseList :: [Token] -> ParserResult ([AST], [Token])
+parseList :: [Token] -> ParserResult ([SExpr], [Token])
 parseList (ParenEnd _ : ts) = return ([], ts)
 parseList ts = do
   (x, ts') <- parse' ts
   (xs, ts'') <- parseList ts'
   return (x : xs, ts'')
 
-parse' :: [Token] -> ParserResult (AST, [Token])
+parse' :: [Token] -> ParserResult (SExpr, [Token])
 parse' (SymbolT sym pos : ts) = return (ast, ts)
   where
-    ast :: AST
+    ast :: SExpr
     ast =
       if all (\c -> elem c "0123456789") sym then
         Quesito.Parse.Num (read sym) pos
@@ -105,37 +107,37 @@ parse' (ParenBegin pos : ts) = do
 parse' [] = Left (ReachedEndOfFile, Pos 0 0)
 parse' (ParenEnd pos : _) = Left (MismatchedParenthesis, pos)
 
-parseToAST :: String -> ParserResult AST
-parseToAST s = fst <$> (parse' . flip evalState (Pos 0 0) $ tokenize s)
+parseToSExpr :: String -> ParserResult SExpr
+parseToSExpr s = fst <$> (parse' . flip evalState (Pos 0 0) $ tokenize s)
 
-parse :: String -> ParserResult Term
-parse s = astToTerm =<< parseToAST s
+parse :: String -> ParserResult QuesExpr
+parse s = sexpQuesExpr =<< parseToSExpr s
 
-readType :: AST -> ParserResult Ty
-readType (Symbol "Nat" _) = return (BaseTy Nat)
-readType (List (Symbol "->" pos : tys) _)
+parseType :: SExpr -> ParserResult Ty
+parseType (Symbol "Nat" _) = return (BaseTy Nat)
+parseType (List (Symbol "->" pos : tys) _)
   | length tys < 2 = Left (MalformedType, pos)
-  | otherwise = return . typesToArrow =<< sequence (map readType tys)
+  | otherwise = return . typesToArrow =<< sequence (map parseType tys)
   where
     typesToArrow :: [Ty] -> Ty
     typesToArrow (t:t':[]) = Arrow t t'
     typesToArrow (t:ts) = Arrow t (typesToArrow ts)
     typesToArrow [] = undefined
-readType ast = Left (MalformedType, astPos ast)
+parseType ast = Left (MalformedType, astPos ast)
 
-astToTerm :: AST -> ParserResult Term
-astToTerm (Symbol "+" _) = return (Constant Plus2)
-astToTerm (Symbol s _) | length s == 1 = return (Var (head s) Nothing)
-astToTerm (Symbol _ pos) = Left (LengthyVar, pos)
-astToTerm (Quesito.Parse.Num x _) = return (Constant (C.Num x))
-astToTerm (List [Symbol "lambda" _, List [Symbol s _, tyS] _, tS] _) | length s == 1 = do
-  ty <- readType tyS
-  t <- astToTerm tS
+sexpQuesExpr :: SExpr -> ParserResult QuesExpr
+sexpQuesExpr (Symbol "+" _) = return (Constant Plus2)
+sexpQuesExpr (Symbol s _) | length s == 1 = return (Var (head s))
+sexpQuesExpr (Symbol _ pos) = Left (LengthyVar, pos)
+sexpQuesExpr (Quesito.Parse.Num x _) = return (Constant (C.Num x))
+sexpQuesExpr (List [Symbol "lambda" _, List [Symbol s _, tyS] _, tS] _) | length s == 1 = do
+  ty <- parseType tyS
+  t <- sexpQuesExpr tS
   return (Lambda v ty t)
   where
     v = head s
-astToTerm (List [t, t'] _) = do
-  t'' <- astToTerm t
-  t''' <- astToTerm t'
+sexpQuesExpr (List [t, t'] _) = do
+  t'' <- sexpQuesExpr t
+  t''' <- sexpQuesExpr t'
   return (App t'' t''')
-astToTerm (List _ pos) = Left (MultipleArguments, pos)
+sexpQuesExpr (List _ pos) = Left (MultipleArguments, pos)

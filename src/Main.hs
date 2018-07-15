@@ -2,7 +2,7 @@ module Main where
 
 import Data.Maybe (fromJust)
 
-import Quesito.AnnTerm
+import Quesito.IL
 import Quesito.Compile.CodeGen
 import Quesito.NameProv (runNameProv)
 import Quesito.Parse
@@ -15,6 +15,6 @@ main = do
     $ runNameProv
     $ compile
     $ fromJust
-    $ annotate
+    $ desugar
     $ either (error . show) id
     $ parse input

@@ -1,9 +1,9 @@
 module Quesito.Compile.CodeGen where
 
-import Quesito.AnnTerm
 import Quesito.Constant
-import Quesito.Type
+import Quesito.IL
 import Quesito.NameProv
+import Quesito.Type
 
 cType :: Ty -> String
 cType (BaseTy Nat) = "unsigned int"
@@ -25,7 +25,7 @@ compileCallFunc retName fName argName ty ty' =
   cType ty' ++ " (* " ++ fName ++ "_)(struct fn, " ++ cType ty ++ ") = " ++ fName ++ ".f;\n"
   ++ cType ty' ++ " " ++ retName ++ " = (*" ++ fName ++ "_)(" ++ fName ++ ", " ++ argName ++ ");\n"
 
-compile :: AnnTerm -> NameProv Compilation
+compile :: ILExpr -> NameProv Compilation
 compile t'@(AnnLambda v t (Arrow ty ty')) = do
   retName <- newName
   name' <- newName
