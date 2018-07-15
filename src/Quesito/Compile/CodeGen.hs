@@ -108,6 +108,7 @@ stdLib =
 toProgram :: Compilation -> String
 toProgram (Compilation code' name' extraDecl') =
   concat (map (++ "\n") (stdLib ++ extraDecl'))
+  ++ "#include <stdio.h>\n\n"
   ++ "int main()\n"
   ++ "{\n"
   ++ code'
