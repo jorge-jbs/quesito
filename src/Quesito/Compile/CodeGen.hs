@@ -1,5 +1,7 @@
 module Quesito.Compile.CodeGen where
 
+import System.IO.Unsafe (unsafePerformIO)
+
 import Quesito.AnnTerm
 import Quesito.Constant
 import Quesito.Type
@@ -16,9 +18,43 @@ data Compilation = Compilation
   }
   deriving Show
 
-compilePushEnv :: String -> String -> String
-compilePushEnv fName var =
-  fName ++ ".env[" ++ fName ++ ".n++] = " ++ var ++ ";\n"
+compileCopy :: Char -> Ty -> String
+compileCopy v ty
+   = cType ty ++ " *" ++ v : "_" ++ " = malloc(sizeof(" ++ v : [] ++ "));" ++ "\n"
+  ++ "*" ++ v : "_" ++ " = " ++ v : [] ++ ";" ++ "\n"
+
+compilePushEnv :: String -> [(Char, Ty)] -> String
+compilePushEnv _ [] = ""
+compilePushEnv fName ((v, ty):vs)
+   = "{" ++ "\n"
+  ++ fName ++ ".env = newenv();" ++ "\n"
+  ++ compileCopy v ty
+  ++ fName ++ ".env->first = newnode(" ++ v : "_" ++ ");" ++ "\n"
+  ++ "struct node *node = " ++ fName ++ ".env->first;" ++ "\n"
+  ++ pushRest vs
+  ++ "}" ++ "\n"
+  where
+    pushRest :: [(Char, Ty)] -> String
+    pushRest [] = ""
+    pushRest ((v', ty') : vs')
+       = compileCopy v' ty'
+      ++ "node = unsafepushnode(node, " ++ v' : "_" ++ ");" ++ "\n"
+      ++ pushRest vs'
+
+compilePullEnv :: [(Char, Ty)] -> String
+compilePullEnv [] = ""
+compilePullEnv vs
+   = (concat $ map (\(v, ty) -> cType ty ++ " " ++ v : [] ++ ";\n") vs)
+  ++ "{" ++ "\n"
+  ++ "struct node *iter = f.env->first;" ++ "\n"
+  ++ pullEnv vs
+  ++ "}" ++ "\n"
+  where
+    pullEnv :: [(Char, Ty)] -> String
+    pullEnv [] = ""
+    pullEnv ((v, ty) : vs')
+       = v : [] ++ " = *((" ++ cType ty ++ " *) iterget(&iter));" ++ "\n"
+      ++ pullEnv vs'
 
 compileCallFunc :: String -> String -> String -> Ty -> Ty -> String
 compileCallFunc retName fName argName ty ty' =
@@ -34,26 +70,13 @@ compile t'@(AnnLambda v t (Arrow ty ty')) = do
     { code =
         "struct fn " ++ retName ++ ";\n"
         ++ retName ++ ".f = &" ++ name' ++ ";\n"
-        ++ retName ++ ".n = 0;\n"
-        ++ (concat $
-              map
-                (\(v_, _) ->
-                   compilePushEnv retName (v_ : [])
-                )
-                (freeVars t')
-           )
+        ++ compilePushEnv retName (freeVars t')
     , name = retName
     , extraDecl =
         tExtraDecl ++
         [ cType ty' ++ " " ++ name' ++ "(struct fn f, " ++ cType ty ++ " " ++ v : [] ++ ")\n"
           ++ "{\n"
-          ++ (concat $
-                map
-                  (\(n, (v_, _)) ->
-                     cType ty ++ " " ++ v_ : [] ++ " = f.env[" ++ show (n :: Int) ++ "];\n"
-                  )
-                  (zip [0..] $ freeVars t')
-             )
+          ++ compilePullEnv (freeVars t')
           ++ tCode
           ++ "return " ++ tName ++ ";\n"
           ++ "}\n"
@@ -78,7 +101,6 @@ compile (AnnConstant Plus2 _) = return $ Compilation
   { code =
       "struct fn plus2_;\n"
       ++ "plus2_.f = &plus2;\n"
-      ++ "plus2_.n = 0;\n"
   , name = "plus2_"
   , extraDecl = []
   }
@@ -86,28 +108,12 @@ compile (AnnVar v _) = return $ Compilation "" (v : []) []
 compile (AnnConstant (Num n) _) = return $ Compilation "" (show n) []
 compile (AnnConstant (Plus1 _) _) = undefined
 
-stdLib :: [String]
-stdLib =
-  [    "struct fn {" ++ "\n"
-    ++ "    void *f;" ++ "\n"
-    ++ "    int env[24];" ++ "\n"
-    ++ "    int n;" ++ "\n"
-    ++ "};" ++ "\n"
-  ,    "int plus1(struct fn f, unsigned int x) {" ++ "\n"
-    ++ "    return x + f.env[0];" ++ "\n"
-    ++ "}" ++ "\n"
-  ,    "struct fn plus2(struct fn f, unsigned int x) {" ++ "\n"
-    ++ "    struct fn fn;" ++ "\n"
-    ++ "    fn.f = &plus1;" ++ "\n"
-    ++ "    fn.env[0] = x;" ++ "\n"
-    ++ "    fn.n = 1;" ++ "\n"
-    ++ "    return fn;" ++ "\n"
-    ++ "}" ++ "\n"
-  ]
+stdLib :: String
+stdLib = unsafePerformIO (readFile "std.c")
 
 toProgram :: Compilation -> String
 toProgram (Compilation code' name' extraDecl') =
-  concat (map (++ "\n") (stdLib ++ extraDecl'))
+  concat (map (++ "\n") (stdLib : extraDecl'))
   ++ "#include <stdio.h>\n\n"
   ++ "int main()\n"
   ++ "{\n"
