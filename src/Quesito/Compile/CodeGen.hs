@@ -56,10 +56,10 @@ compilePullEnv vs
        = v : [] ++ " = *((" ++ cType ty ++ " *) iterget(&iter));" ++ "\n"
       ++ pullEnv vs'
 
-compileCallFunc :: String -> String -> String -> Ty -> Ty -> String
-compileCallFunc retName fName argName ty ty' =
-  cType ty' ++ " (* " ++ fName ++ "_)(struct fn, " ++ cType ty ++ ") = " ++ fName ++ ".f;\n"
-  ++ cType ty' ++ " " ++ retName ++ " = (*" ++ fName ++ "_)(" ++ fName ++ ", " ++ argName ++ ");\n"
+compileCallFunc :: String -> String -> String -> Ty -> Ty -> NameProv String
+compileCallFunc retName fName argName ty ty' = newName >>= \callName -> return $
+  cType ty' ++ " (* " ++ callName ++ ")(struct fn, " ++ cType ty ++ ") = " ++ fName ++ ".f;\n"
+  ++ cType ty' ++ " " ++ retName ++ " = (*" ++ callName ++ ")(" ++ fName ++ ", " ++ argName ++ ");\n"
 
 compile :: AnnTerm -> NameProv Compilation
 compile t'@(AnnLambda v t (Arrow ty ty')) = do
@@ -87,21 +87,22 @@ compile (AnnApp t t' _) = do
   retName <- newName
   Compilation code_ name_ extraDecl_ <- compile t
   Compilation code' name' extraDecl' <- compile t'
+  funcCall <- compileCallFunc retName name_ name' ty ty'
   return $ Compilation
     { code =
         code_
         ++ code'
-        ++ compileCallFunc retName name_ name' ty ty'
+        ++ funcCall
     , name = retName
     , extraDecl = extraDecl_ ++ extraDecl'
     }
   where
     Arrow ty ty' = annotatedType t
-compile (AnnConstant Plus2 _) = return $ Compilation
+compile (AnnConstant Plus2 _) = newName >>= \name' -> return $ Compilation
   { code =
-      "struct fn plus2_;\n"
-      ++ "plus2_.f = &plus2;\n"
-  , name = "plus2_"
+      "struct fn " ++ name' ++ ";\n"
+      ++ name' ++ ".f = &plus2;\n"
+  , name = name'
   , extraDecl = []
   }
 compile (AnnVar v _) = return $ Compilation "" (v : []) []
