@@ -1,6 +1,5 @@
 module Main where
 
-import System.Environment (getArgs)
 import Data.Maybe (fromJust)
 
 import Quesito.AnnTerm
@@ -10,12 +9,12 @@ import Quesito.Parse
 
 main :: IO ()
 main = do
-  args <- getArgs
-  putStrLn
+  input <- getContents
+  putStr
     $ toProgram
     $ runNameProv
     $ compile
     $ fromJust
     $ annotate
     $ either (error . show) id
-    $ parse (args !! 0)
+    $ parse input
