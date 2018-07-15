@@ -111,15 +111,16 @@ parseToAST s = fst <$> (parse' . flip evalState (Pos 0 0) $ tokenize s)
 parse :: String -> ParserResult Term
 parse s = astToTerm =<< parseToAST s
 
-typesToArrow :: [Ty] -> Ty
-typesToArrow (t:t':[]) = Arrow t t'
-typesToArrow (t:ts) = Arrow t (typesToArrow ts)
-
 readType :: AST -> ParserResult Ty
 readType (Symbol "Nat" _) = return (BaseTy Nat)
 readType (List (Symbol "->" pos : tys) _)
-  | length tys <= 2 = Left (MalformedType, pos)
+  | length tys < 2 = Left (MalformedType, pos)
   | otherwise = return . typesToArrow =<< sequence (map readType tys)
+  where
+    typesToArrow :: [Ty] -> Ty
+    typesToArrow (t:t':[]) = Arrow t t'
+    typesToArrow (t:ts) = Arrow t (typesToArrow ts)
+    typesToArrow [] = undefined
 readType ast = Left (MalformedType, astPos ast)
 
 astToTerm :: AST -> ParserResult Term
