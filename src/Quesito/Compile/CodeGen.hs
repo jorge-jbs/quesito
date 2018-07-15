@@ -118,5 +118,5 @@ toProgram (Compilation code' name' extraDecl') =
   ++ "int main()\n"
   ++ "{\n"
   ++ code'
-  ++ "printf(\"%d\", " ++ name' ++ ");\n"
+  ++ "printf(\"%d\\n\", " ++ name' ++ ");\n"
   ++ "}\n"
