@@ -35,7 +35,8 @@ annotate (Lambda v ty t) = do
   return (AnnLambda v t' (Arrow ty ty'))
   where
     annotate' :: Term -> Term
-    annotate' (Var v' _) = Var v' (Just ty)
+    annotate' (Var v' _) | v' == v = Var v' (Just ty)
+    annotate' v@(Var _ _) = v
     annotate' t@(Lambda v' ty t') =
       if v == v' then
         t
