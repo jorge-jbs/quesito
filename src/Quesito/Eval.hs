@@ -1,10 +1,11 @@
-module Quesito.Eval where
+module Quesito.Eval (eval) where
 
-import Quesito.AnnTerm
+import Quesito.IL
 import Quesito.Constant
 import Quesito.Type
+import Quesito.QuesExpr
 
-replace :: AnnTerm -> Char -> AnnTerm -> AnnTerm
+replace :: ILExpr -> Char -> ILExpr -> ILExpr
 replace t@(AnnVar x _) v t' = if x == v then t' else t
 replace t@(AnnLambda x s ty) v t' =
   if x == v then
@@ -14,12 +15,12 @@ replace t@(AnnLambda x s ty) v t' =
 replace (AnnApp t t' ty) v t'' = AnnApp (replace t v t'') (replace t' v t'') ty
 replace t _ _ = t
 
-beta :: AnnTerm -> AnnTerm
+beta :: ILExpr -> ILExpr
 beta (AnnApp (AnnLambda v t _) t' _) = replace t v t'
 beta (AnnApp t t' ty) = AnnApp (beta t) (beta t') ty
 beta t = t
 
-eval :: AnnTerm -> AnnTerm
+eval :: ILExpr -> ILExpr
 eval (AnnApp t t' ty) = case t of
     AnnConstant Plus2 _ ->
       let AnnConstant (Quesito.Constant.Num x) _ = t'

@@ -3,18 +3,16 @@ module Main where
 import Data.Maybe (fromJust)
 
 import Quesito.IL
-import Quesito.Compile.CodeGen
-import Quesito.NameProv (runNameProv)
+import Quesito.Eval
 import Quesito.Parse
 
 main :: IO ()
 main = do
   input <- getContents
-  putStr
-    $ toProgram
-    $ runNameProv
-    $ compile
-    $ fromJust
+  putStrLn
+    $ show
+    $ eval
+    $ maybe (error "Could not desugar") id
     $ desugar
     $ either (error . show) id
     $ parse input
