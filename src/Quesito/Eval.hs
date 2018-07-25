@@ -22,7 +22,7 @@ replace r@(Let (u, s) t) v p =
 replace t _ _ = t
 
 eval :: QuesExpr -> QuesExpr
-eval (App (Lambda v _ t) t') = eval (replace t v t')
+eval (App (Lambda v _ t) t') = eval (replace t v (eval t'))
 eval (App t t') = case t of
   Constant Plus2 ->
     let Constant (C.Num x) = t'
@@ -31,5 +31,5 @@ eval (App t t') = case t of
     let Constant (C.Num y) = t'
     in Constant (C.Num (x+y))
   _ -> eval (App (eval t) (eval t'))
-eval (Let (v, t) t') = eval (replace t' v t)
+eval (Let (v, t) t') = eval (replace t' v (eval t))
 eval t = t
