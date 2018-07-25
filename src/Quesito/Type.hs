@@ -1,10 +1,10 @@
 module Quesito.Type where
 
-data BaseTy
+data BaseType
   = Nat
   deriving (Eq, Show)
 
-data Ty
-  = BaseTy BaseTy
-  | Arrow Ty Ty
+data Type
+  = BaseType BaseType
+  | Arrow Type Type
   deriving (Eq, Show)

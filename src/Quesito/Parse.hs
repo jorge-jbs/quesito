@@ -112,13 +112,13 @@ parseToSExpr s = fst <$> (parse' . flip evalState (Pos 0 0) $ tokenize s)
 parse :: String -> ParserResult QuesExpr
 parse s = sexpQuesExpr =<< parseToSExpr s
 
-parseType :: SExpr -> ParserResult Ty
-parseType (Symbol "Nat" _) = return (BaseTy Nat)
+parseType :: SExpr -> ParserResult Type
+parseType (Symbol "Nat" _) = return (BaseType Nat)
 parseType (List (Symbol "->" pos : tys) _)
   | length tys < 2 = Left (MalformedType, pos)
   | otherwise = return . typesToArrow =<< sequence (map parseType tys)
   where
-    typesToArrow :: [Ty] -> Ty
+    typesToArrow :: [Type] -> Type
     typesToArrow (t:t':[]) = Arrow t t'
     typesToArrow (t:ts) = Arrow t (typesToArrow ts)
     typesToArrow [] = undefined

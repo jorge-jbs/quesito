@@ -8,7 +8,7 @@ data Constant
   | Plus1 Int
   deriving (Eq, Show)
 
-constType :: Constant -> Ty
-constType (Quesito.Constant.Num _) = BaseTy Nat
-constType Plus2 = Arrow (BaseTy Nat) (Arrow (BaseTy Nat) (BaseTy Nat))
-constType (Plus1 _) = Arrow (BaseTy Nat) (BaseTy Nat)
+constType :: Constant -> Type
+constType (Quesito.Constant.Num _) = BaseType Nat
+constType Plus2 = Arrow (BaseType Nat) (Arrow (BaseType Nat) (BaseType Nat))
+constType (Plus1 _) = Arrow (BaseType Nat) (BaseType Nat)

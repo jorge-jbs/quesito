@@ -8,7 +8,7 @@ import Quesito.Type
 data Expr a
   = Var a
   | Constant Constant
-  | Lambda a Ty (Expr a)
+  | Lambda a Type (Expr a)
   | App (Expr a) (Expr a)
   | Let (Var, (Expr a)) (Expr a)
   deriving (Eq, Show)
