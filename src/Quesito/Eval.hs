@@ -1,32 +1,30 @@
 module Quesito.Eval (eval) where
 
-import Quesito.IL
 import Quesito.Constant
-import Quesito.Type
 import Quesito.QuesExpr
 
-replace :: ILExpr -> Char -> ILExpr -> ILExpr
-replace t@(AnnVar x _) v t' = if x == v then t' else t
-replace t@(AnnLambda x s ty) v t' =
+replace :: QuesExpr -> Char -> QuesExpr -> QuesExpr
+replace t@(Var x) v t' = if x == v then t' else t
+replace t@(Lambda x ty s) v t' =
   if x == v then
     t
   else
-    AnnLambda x (replace s v t') ty
-replace (AnnApp t t' ty) v t'' = AnnApp (replace t v t'') (replace t' v t'') ty
+    Lambda x ty (replace s v t')
+replace (App t t') v t'' = App (replace t v t'') (replace t' v t'')
 replace t _ _ = t
 
-beta :: ILExpr -> ILExpr
-beta (AnnApp (AnnLambda v t _) t' _) = replace t v t'
-beta (AnnApp t t' ty) = AnnApp (beta t) (beta t') ty
+beta :: QuesExpr -> QuesExpr
+beta (App (Lambda v _ t) t') = replace t v t'
+beta (App t t') = App (beta t) (beta t')
 beta t = t
 
-eval :: ILExpr -> ILExpr
-eval (AnnApp t t' ty) = case t of
-    AnnConstant Plus2 _ ->
-      let AnnConstant (Quesito.Constant.Num x) _ = t'
-      in AnnConstant (Plus1 x) (Arrow (BaseTy Nat) (BaseTy Nat))
-    AnnConstant (Plus1 x) _ ->
-      let AnnConstant (Quesito.Constant.Num y) _ = t'
-      in AnnConstant (Quesito.Constant.Num (x+y)) (BaseTy Nat)
-    _ -> eval (beta (AnnApp (eval t) (eval t') ty))
+eval :: QuesExpr -> QuesExpr
+eval (App t t') = case t of
+  Constant Plus2 ->
+    let Constant (Quesito.Constant.Num x) = t'
+    in Constant (Plus1 x)
+  Constant (Plus1 x) ->
+    let Constant (Quesito.Constant.Num y) = t'
+    in Constant (Quesito.Constant.Num (x+y))
+  _ -> eval (beta (App (eval t) (eval t')))
 eval t = t
