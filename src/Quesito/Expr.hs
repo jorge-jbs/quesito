@@ -12,9 +12,11 @@ data Expr a
   | App (Expr a) (Expr a)
   deriving (Eq, Show)
 
-type QuesExpr = Expr Char
+type QuesExpr = Expr Var
 
-freeVars :: QuesExpr -> [Char]
+type Var = String
+
+freeVars :: QuesExpr -> [Var]
 freeVars (Var v) = [v]
 freeVars (Constant _) = []
 freeVars (Lambda v _ t) = delete v (freeVars t)

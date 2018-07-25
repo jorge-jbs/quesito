@@ -3,7 +3,7 @@ module Quesito.Eval (eval) where
 import Quesito.Constant
 import Quesito.Expr
 
-replace :: QuesExpr -> Char -> QuesExpr -> QuesExpr
+replace :: QuesExpr -> Var -> QuesExpr -> QuesExpr
 replace t@(Var x) v t' = if x == v then t' else t
 replace t@(Lambda x ty s) v t' =
   if x == v then

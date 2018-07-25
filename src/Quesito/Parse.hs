@@ -16,7 +16,6 @@ data ParseError
   | ReachedEndOfFile
   | MalformedType
   | MultipleArguments
-  | LengthyVar
   deriving Show
 
 type ParserResult a = Either (ParseError, Pos) a
@@ -127,15 +126,12 @@ parseType ast = Left (MalformedType, astPos ast)
 
 sexpQuesExpr :: SExpr -> ParserResult QuesExpr
 sexpQuesExpr (Symbol "+" _) = return (Constant Plus2)
-sexpQuesExpr (Symbol s _) | length s == 1 = return (Var (head s))
-sexpQuesExpr (Symbol _ pos) = Left (LengthyVar, pos)
+sexpQuesExpr (Symbol s _) = return (Var s)
 sexpQuesExpr (Quesito.Parse.Num x _) = return (Constant (C.Num x))
-sexpQuesExpr (List [Symbol "lambda" _, List [Symbol s _, tyS] _, tS] _) | length s == 1 = do
+sexpQuesExpr (List [Symbol "lambda" _, List [Symbol s _, tyS] _, tS] _) = do
   ty <- parseType tyS
   t <- sexpQuesExpr tS
-  return (Lambda v ty t)
-  where
-    v = head s
+  return (Lambda s ty t)
 sexpQuesExpr (List [t, t'] _) = do
   t'' <- sexpQuesExpr t
   t''' <- sexpQuesExpr t'
