@@ -8,7 +8,7 @@ module Quesito.Parse
 import Control.Monad.State (State, evalState, modify, get)
 
 import Quesito.Constant as C
-import Quesito.QuesExpr
+import Quesito.Expr
 import Quesito.Type
 
 data ParseError

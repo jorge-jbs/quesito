@@ -1,7 +1,7 @@
 module Quesito.Eval (eval) where
 
 import Quesito.Constant
-import Quesito.QuesExpr
+import Quesito.Expr
 
 replace :: QuesExpr -> Char -> QuesExpr -> QuesExpr
 replace t@(Var x) v t' = if x == v then t' else t
