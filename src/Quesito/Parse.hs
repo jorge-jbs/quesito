@@ -132,6 +132,10 @@ sexpQuesExpr (List [Symbol "lambda" _, List [Symbol s _, tyS] _, tS] _) = do
   ty <- parseType tyS
   t <- sexpQuesExpr tS
   return (Lambda s ty t)
+sexpQuesExpr (List [Symbol "let" _, List [Symbol v _, t] _, t'] _) = do
+  t'' <- sexpQuesExpr t
+  t''' <- sexpQuesExpr t'
+  return (Let (v, t'') t''')
 sexpQuesExpr (List [t, t'] _) = do
   t'' <- sexpQuesExpr t
   t''' <- sexpQuesExpr t'
