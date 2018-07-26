@@ -11,6 +11,9 @@ data Expr a
   | Lambda Var Type (Expr a)
   | App (Expr a) (Expr a)
   | Let (Var, Type, (Expr a)) (Expr a)
+  | Pair (Expr a) (Expr a)
+  | Fst (Expr a)
+  | Snd (Expr a)
   deriving (Eq, Show)
 
 type QuesExpr = Expr Var
@@ -23,6 +26,9 @@ freeVars (Constant _) = []
 freeVars (Lambda v _ t) = delete v (freeVars t)
 freeVars (App t t') = nub (freeVars t ++ freeVars t')
 freeVars (Let (v, _, t) t') = nub (freeVars t ++ delete v (freeVars t'))
+freeVars (Pair t t') = nub (freeVars t ++ freeVars t')
+freeVars (Fst t ) = freeVars t
+freeVars (Snd t ) = freeVars t
 
 annotate :: QuesExpr -> Maybe (Expr (Var, Type))
 annotate = annotate' []
@@ -39,3 +45,9 @@ annotate = annotate' []
       t'' <- annotate' scope t
       t''' <- annotate' ((v, ty) : scope) t'
       return (Let (v, ty, t'') t''')
+    annotate' scope (Pair t t') = do
+      t'' <- annotate' scope t
+      t''' <- annotate' scope t'
+      return (Pair t'' t''')
+    annotate' scope (Fst t) = Fst <$> annotate' scope t
+    annotate' scope (Snd t) = Snd <$> annotate' scope t

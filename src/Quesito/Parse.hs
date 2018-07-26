@@ -137,6 +137,16 @@ sexpQuesExpr (List [Symbol "let" _, List [Symbol v _, tyS, t] _, t'] _) = do
   t'' <- sexpQuesExpr t
   t''' <- sexpQuesExpr t'
   return (Let (v, ty, t'') t''')
+sexpQuesExpr (List [Symbol "pair" _, t, t'] _) = do
+  t'' <- sexpQuesExpr t
+  t''' <- sexpQuesExpr t'
+  return (Pair t'' t''')
+sexpQuesExpr (List [Symbol "fst" _, t] _) = do
+  t' <- sexpQuesExpr t
+  return (Fst t')
+sexpQuesExpr (List [Symbol "snd" _, t] _) = do
+  t' <- sexpQuesExpr t
+  return (Snd t')
 sexpQuesExpr (List [t, t'] _) = do
   t'' <- sexpQuesExpr t
   t''' <- sexpQuesExpr t'

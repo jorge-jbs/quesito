@@ -19,7 +19,10 @@ replace r@(Let (u, ty, s) t) v p =
     r
   else
     Let (u, ty, (replace s v p)) (replace t v p)
-replace t _ _ = t
+replace (Pair r s) v t = Pair (replace r v t) (replace s v t)
+replace (Fst r) v s = Fst (replace r v s)
+replace (Snd r) v s = Snd (replace r v s)
+replace c@(Constant _) _ _ = c
 
 eval :: QuesExpr -> QuesExpr
 eval (App (Lambda v _ t) t') = eval (replace t v (eval t'))
@@ -32,4 +35,11 @@ eval (App t t') = case t of
     in Constant (C.Num (x+y))
   _ -> eval (App (eval t) (eval t'))
 eval (Let (v, _, t) t') = eval (replace t' v (eval t))
+eval (Pair r s) = Pair (eval r) (eval s)
+eval (Fst t) = case eval t of
+  (Pair r _) -> eval r
+  t' -> t'
+eval (Snd t) = case eval t of
+  (Pair _ s) -> eval s
+  t' -> t'
 eval t = t

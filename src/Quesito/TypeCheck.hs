@@ -19,3 +19,17 @@ typeCheck (Let (_, ty, t) t') = do
     typeCheck t'
   else
     Nothing
+typeCheck (Pair t t') = do
+  ty <- typeCheck t
+  ty' <- typeCheck t'
+  return (Prod ty ty')
+typeCheck (Fst t) = do
+  ty <- typeCheck t
+  case ty of
+    Prod a _ -> Just a
+    _ -> Nothing
+typeCheck (Snd t) = do
+  ty <- typeCheck t
+  case ty of
+    Prod _ b -> Just b
+    _ -> Nothing
