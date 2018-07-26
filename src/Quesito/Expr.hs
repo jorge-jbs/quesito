@@ -10,7 +10,7 @@ data Expr a
   | Constant Constant
   | Lambda a Type (Expr a)
   | App (Expr a) (Expr a)
-  | Let (Var, (Expr a)) (Expr a)
+  | Let (Var, Type, (Expr a)) (Expr a)
   deriving (Eq, Show)
 
 type QuesExpr = Expr Var
@@ -22,4 +22,4 @@ freeVars (Var v) = [v]
 freeVars (Constant _) = []
 freeVars (Lambda v _ t) = delete v (freeVars t)
 freeVars (App t t') = nub (freeVars t ++ freeVars t')
-freeVars (Let (v, t) t') = nub (freeVars t ++ delete v (freeVars t'))
+freeVars (Let (v, _, t) t') = nub (freeVars t ++ delete v (freeVars t'))

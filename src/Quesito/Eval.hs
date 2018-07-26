@@ -14,11 +14,11 @@ replace (Lambda u ty r) v s =
         replace r v s
     )
 replace (App t t') v t'' = App (replace t v t'') (replace t' v t'')
-replace r@(Let (u, s) t) v p =
+replace r@(Let (u, ty, s) t) v p =
   if u == v then
     r
   else
-    Let (u, (replace s v p)) (replace t v p)
+    Let (u, ty, (replace s v p)) (replace t v p)
 replace t _ _ = t
 
 eval :: QuesExpr -> QuesExpr
@@ -31,5 +31,5 @@ eval (App t t') = case t of
     let Constant (C.Num y) = t'
     in Constant (C.Num (x+y))
   _ -> eval (App (eval t) (eval t'))
-eval (Let (v, t) t') = eval (replace t' v (eval t))
+eval (Let (v, _, t) t') = eval (replace t' v (eval t))
 eval t = t
