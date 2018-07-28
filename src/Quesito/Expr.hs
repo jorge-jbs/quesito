@@ -1,53 +1,84 @@
 module Quesito.Expr where
 
-import Data.List (delete, nub, find)
+import Data.List (find)
+import Data.Maybe (maybe)
 
-import Quesito.Constant
-import Quesito.Type
+import Control.Monad (unless)
 
-data Expr a
-  = Var a
-  | Constant Constant
-  | Lambda Var Type (Expr a)
-  | App (Expr a) (Expr a)
-  | Let (Var, Type, (Expr a)) (Expr a)
-  | Pair (Expr a) (Expr a)
-  | Fst (Expr a)
-  | Snd (Expr a)
-  deriving (Eq, Show)
+data Name = Bound String | Binding String | Free String | Ignore
+  deriving (Show, Eq)
 
-type QuesExpr = Expr Var
+data Term
+  = Var Name
+  | Type Int
+  | Pi Name Term Term
+  | Lam Name Term Term
+  | App Term Term
+  deriving (Show, Eq)
 
-type Var = String
+type Result a = Either String a
 
-freeVars :: QuesExpr -> [Var]
-freeVars (Var v) = [v]
-freeVars (Constant _) = []
-freeVars (Lambda v _ t) = delete v (freeVars t)
-freeVars (App t t') = nub (freeVars t ++ freeVars t')
-freeVars (Let (v, _, t) t') = nub (freeVars t ++ delete v (freeVars t'))
-freeVars (Pair t t') = nub (freeVars t ++ freeVars t')
-freeVars (Fst t ) = freeVars t
-freeVars (Snd t ) = freeVars t
+type Context = [(Name, Term)]
+type Env = [(Name, Term)]
 
-annotate :: QuesExpr -> Maybe (Expr (Var, Type))
-annotate = annotate' []
-  where
-    annotate' :: [(Var, Type)] -> QuesExpr -> Maybe (Expr (Var, Type))
-    annotate' scope (Var v) = Var <$> find (\(v', _) -> v == v') scope
-    annotate' _     (Constant c) = Just (Constant c)
-    annotate' scope (Lambda v ty t) = Lambda v ty <$> annotate' ((v, ty) : scope) t
-    annotate' scope (App t t') = do
-      t'' <- annotate' scope t
-      t''' <- annotate' scope t'
-      return (App t'' t''')
-    annotate' scope (Let (v, ty, t) t') = do
-      t'' <- annotate' scope t
-      t''' <- annotate' ((v, ty) : scope) t'
-      return (Let (v, ty, t'') t''')
-    annotate' scope (Pair t t') = do
-      t'' <- annotate' scope t
-      t''' <- annotate' scope t'
-      return (Pair t'' t''')
-    annotate' scope (Fst t) = Fst <$> annotate' scope t
-    annotate' scope (Snd t) = Snd <$> annotate' scope t
+eval :: Env -> Term -> Term
+eval env (Var x) = maybe (Var x) id (snd <$> (find ((==) x . fst) env))
+eval _   (Type lvl) = Type lvl
+eval env (Pi x e e') = Pi x (eval env e) (eval env e')
+eval env (Lam x e e') = Lam x (eval env e) (eval env e')
+eval env (App e e') = case (eval env e, eval env e') of
+  (Lam x _ t, t') -> eval ((x, t') : env) t
+  (Pi x _ t, t') -> eval ((x, t') : env) t
+  _ -> error "Application to non-function."
+
+typeInf :: Context -> Term -> Result Term
+typeInf ctx (Var (Bound x)) = case snd <$> find ((\y' -> case y' of Binding y | x == y -> True; _ -> False) . fst) ctx of
+  Just t -> Right t
+  Nothing -> fail "4"
+typeInf _ (Var x) = Right (Var x)
+typeInf _ (Type i) = Right (Type (i + 1))
+typeInf ctx (Pi x e e') = do
+  t <- typeInf ctx e
+  case t of
+    Type i -> do
+      t' <- typeInf ((x, t) : ctx) e'
+      case t' of
+        Type j ->
+          return (Type (max i j))
+        _ -> fail "1"
+    _ -> fail "2"
+typeInf ctx (Lam x ty e) = do
+  t <- typeInf ((x, ty) : ctx) e
+  return (Pi Ignore ty t)
+typeInf ctx (App e e') = do
+  t <- typeInf ctx e
+  t' <- typeInf ctx e'
+  case t of
+    Pi _ r _ | t' == r -> return (eval [] (App t e'))
+    _ -> fail "3"
+
+-- typeCheck :: Context -> Env -> CheckTerm -> CheckTerm -> Result ()
+-- typeCheck ctx env (Lam x e) (Inf (Pi t t')) = do
+--   typeCheck ((x, t) : ctx) env e t'
+-- typeCheck ctx env (Inf e) t = do
+--   t' <- typeInf ctx env e
+--   unless (t == t') (fail "")
+-- typeCheck _ _ _ _ = fail ""
+
+-- typeCheck :: Term -> Context -> Term -> Result ()
+-- typeCheck (Var x) d ty = do
+--   let ty' = snd <$> find ((==) x . fst) d
+--   if ty' == Just ty then
+--     return ()
+--   else
+--     fail ""
+-- typeCheck (Type i) _ (Type j) | i == j    = return ()
+--                               | otherwise = fail ""
+-- typeCheck (Pi r r') d (Pi t t') = do
+--   let s = eval r d
+--   let s' = eval r' d
+--   if s == t && s' == t' then
+--     return ()
+--   else
+--     fail ""
+-- --typeCheck (Pi r r') d (Pi t t') = do
