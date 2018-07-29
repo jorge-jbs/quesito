@@ -12,9 +12,9 @@ data Name = Bound String | Binding String | Free String | Ignore
 data InfTerm
   = Var Name
   | Type Int
-  | Pi Name CheckTerm CheckTerm
+  | Pi Name InfTerm InfTerm
   | App InfTerm CheckTerm
-  | Ann CheckTerm CheckTerm
+  | Ann CheckTerm InfTerm
   deriving (Show, Eq)
 
 -- | Checkable terms
@@ -23,62 +23,89 @@ data CheckTerm
   | Lam Name CheckTerm
   deriving (Show, Eq)
 
+data Value
+  = VLam Name (Value -> Value)
+  | VType Int
+  | VPi Name Value (Value -> Value)
+  | VNeutral Neutral
+
+data Neutral
+  = NFree Name
+  | NApp Neutral Value
+
+quote :: Value -> CheckTerm
+quote (VLam x f) = Lam x (quote (f (VNeutral (NFree x))))
+quote (VType i) = Inf (Type i)
+quote (VPi x v v') = Inf (Pi x t t')
+  where
+    Inf t = quote v
+    Inf t' = quote (v' (VNeutral (NFree x)))
+quote (VNeutral (NFree x)) = Inf (Var x)
+quote (VNeutral (NApp n v)) = Inf (App n' v')
+  where
+    Inf n' = quote (VNeutral n)
+    v' = quote v
+
 type Result a = Either String a
 
-type Context = [(Name, CheckTerm)]
-type Env = [(Name, CheckTerm)]
+type Context = [(Name, Value)]
+type Env = [(Name, Value)]
 
-evalInf :: Env -> InfTerm -> CheckTerm
+evalInf :: Env -> InfTerm -> Value
 evalInf env (Var (Bound x)) =
   maybe
     (error ("Bound variable not found: " ++ x))
     id
     (snd <$> find ((\y' -> case y' of Binding y | x == y -> True; _ -> False) . fst) env)
-evalInf _   (Var x) = Inf (Var x)
-evalInf _   (Type lvl) = Inf (Type lvl)
-evalInf _   (Pi x e e') = Inf (Pi x e e')
+evalInf _   (Var x) = VNeutral (NFree x)
+evalInf _   (Type lvl) = VType lvl
+evalInf env (Pi x e e') = VPi x (evalInf env e) (\t -> evalInf ((x, t) : env) e')
 evalInf env (App e e') = case (evalInf env e, evalCheck env e') of
-  (Lam x t, t') -> evalCheck ((x, t') : env) t
-  (Inf (Pi x _ t), t') -> evalCheck ((x, t') : env) t
+  (VLam _ t, t') -> t t'
+  (VNeutral n, v) -> VNeutral (NApp n v)
   _ -> error "Application to non-function."
 evalInf env (Ann e _) = evalCheck env e
 
-evalCheck :: Env -> CheckTerm -> CheckTerm
+evalCheck :: Env -> CheckTerm -> Value
 evalCheck env (Inf e) = evalInf env e
-evalCheck _   (Lam x e) = Lam x e
+evalCheck env (Lam x e) = VLam x (\v -> evalCheck ((x, v) : env) e)
 
-typeInf :: Context -> InfTerm -> Result CheckTerm
+typeInf :: Context -> InfTerm -> Result Value
 typeInf ctx (Var (Bound x)) = case snd <$> find ((\y' -> case y' of Binding y | x == y -> True; _ -> False) . fst) ctx of
   Just t -> Right t
   Nothing -> fail "4"
-typeInf _ (Var x) = Right (Inf (Var x))
-typeInf _ (Type i) = Right (Inf (Type (i + 1)))
-typeInf ctx (Pi x (Inf e) (Inf e')) = do
+typeInf _ (Var x) = Right (VNeutral (NFree x))
+typeInf _ (Type i) = Right (VType (i + 1))
+typeInf ctx (Pi x e e') = do
   t <- typeInf ctx e
   case t of
-    Inf (Type i) -> do
+    VType i -> do
       t' <- typeInf ((x, t) : ctx) e'
       case t' of
-        Inf (Type j) ->
-          return (Inf (Type (max i j)))
+        VType j ->
+          return (VType (max i j))
         _ -> fail "1"
     _ -> fail "2"
-typeInf _ (Pi _ _ _) = fail ""
 typeInf ctx (App e e') = do
-  t <- typeInf ctx e
-  case t of
-    Inf t'@(Pi x r _) -> do
-      typeCheck ((x, t) : ctx) e' r
-      return (evalInf [] (App t' e'))
+  s <- typeInf ctx e
+  case s of
+    VPi _ t t' -> do
+      typeCheck ctx e' t
+      return (t' (evalCheck [] e'))
     _ -> fail "3"
 typeInf ctx (Ann e ty) = do
-  typeCheck ctx e ty
-  return ty
+  tyTy <- typeInf ctx ty
+  case tyTy of
+    VType _ -> do
+      let ty' = evalInf [] ty
+      typeCheck ctx e ty'
+      return ty'
+    _ -> fail ""
 
-typeCheck :: Context -> CheckTerm -> CheckTerm -> Result ()
-typeCheck ctx (Lam x e) (Inf pi_@(Pi _ t _)) =
-  typeCheck ((x, t) : ctx) e (evalInf [] (App pi_ (Inf (Var x))))
+typeCheck :: Context -> CheckTerm -> Value -> Result ()
+typeCheck ctx (Lam x e) (VPi _ t t') =
+  typeCheck ((x, t) : ctx) e (t' (VNeutral (NFree x)))
 typeCheck _ (Lam _ _) _ = fail "6"
 typeCheck ctx (Inf t) ty = do
   ty' <- typeInf ctx t
-  unless (ty == ty') (fail "5")
+  unless (quote ty == quote ty') (fail "5")
