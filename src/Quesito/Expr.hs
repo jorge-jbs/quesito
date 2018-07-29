@@ -5,12 +5,14 @@ import Data.Maybe (maybe)
 
 import Control.Monad (unless)
 
-data Name = Bound String | Binding String | Free String | Ignore
+type Name = String
+
+data Var = Bound Name | Free Name
   deriving (Show, Eq)
 
 -- | Inferable terms
 data InfTerm
-  = Var Name
+  = Var Var
   | Type Int
   | Pi Name InfTerm InfTerm
   | App InfTerm CheckTerm
@@ -31,16 +33,18 @@ data Value
 
 data Neutral
   = NFree Name
+  | NBound Name  -- Only used for quotation
   | NApp Neutral Value
 
 quote :: Value -> CheckTerm
-quote (VLam x f) = Lam x (quote (f (VNeutral (NFree x))))
+quote (VLam x f) = Lam x (quote (f (VNeutral (NBound x))))
 quote (VType i) = Inf (Type i)
 quote (VPi x v v') = Inf (Pi x t t')
   where
     Inf t = quote v
     Inf t' = quote (v' (VNeutral (NFree x)))
-quote (VNeutral (NFree x)) = Inf (Var x)
+quote (VNeutral (NFree x)) = Inf (Var (Free x))
+quote (VNeutral (NBound x)) = Inf (Var (Bound x))
 quote (VNeutral (NApp n v)) = Inf (App n' v')
   where
     Inf n' = quote (VNeutral n)
@@ -56,8 +60,8 @@ evalInf env (Var (Bound x)) =
   maybe
     (error ("Bound variable not found: " ++ x))
     id
-    (snd <$> find ((\y' -> case y' of Binding y | x == y -> True; _ -> False) . fst) env)
-evalInf _   (Var x) = VNeutral (NFree x)
+    (snd <$> find ((\y' -> case y' of y | x == y -> True; _ -> False) . fst) env)
+evalInf _   (Var (Free x)) = VNeutral (NFree x)
 evalInf _   (Type lvl) = VType lvl
 evalInf env (Pi x e e') = VPi x (evalInf env e) (\t -> evalInf ((x, t) : env) e')
 evalInf env (App e e') = case (evalInf env e, evalCheck env e') of
@@ -71,10 +75,10 @@ evalCheck env (Inf e) = evalInf env e
 evalCheck env (Lam x e) = VLam x (\v -> evalCheck ((x, v) : env) e)
 
 typeInf :: Context -> InfTerm -> Result Value
-typeInf ctx (Var (Bound x)) = case snd <$> find ((\y' -> case y' of Binding y | x == y -> True; _ -> False) . fst) ctx of
+typeInf ctx (Var (Bound x)) = case snd <$> find ((\y' -> case y' of y | x == y -> True; _ -> False) . fst) ctx of
   Just t -> Right t
   Nothing -> fail "4"
-typeInf _ (Var x) = Right (VNeutral (NFree x))
+typeInf _ (Var (Free x)) = Right (VNeutral (NFree x))
 typeInf _ (Type i) = Right (VType (i + 1))
 typeInf ctx (Pi x e e') = do
   t <- typeInf ctx e
