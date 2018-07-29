@@ -14,7 +14,7 @@ main = do
       $ parse input
   case checkProgram definitions [] of
     Right () ->
-      putStrLn "Type check ok"
+      putStrLn $ show $ quote $ evalProgram definitions []
     Left err ->
       putStrLn ("Type checking failed: " ++ err)
 
@@ -24,3 +24,12 @@ checkProgram ((name, ty, expr) : defs) scope = do
   let ty' = evalCheck [] ty
   typeCheck scope expr ty'
   checkProgram defs ((name, ty') : scope)
+
+evalProgram :: [(Name, CheckTerm, CheckTerm)] -> [(Name, Value)] -> Value
+evalProgram ((name, _, e) : defs) scope =
+  let
+    v = evalCheck scope e
+  in
+    case defs of
+      [] -> v
+      _ -> evalProgram defs ((name, v) : scope)

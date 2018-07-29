@@ -72,7 +72,11 @@ evalInf env (Var (Bound x)) =
     (error ("Bound variable not found: " ++ x))
     id
     (snd <$> find ((\y' -> case y' of y | x == y -> True; _ -> False) . fst) env)
-evalInf _   (Var (Free x)) = VNeutral (NFree x)
+evalInf env (Var (Free x)) =
+  maybe
+    (error ("Free variable not found: " ++ x))
+    id
+    (snd <$> find ((\y' -> case y' of y | x == y -> True; _ -> False) . fst) env)
 evalInf _   (Type lvl) = VType lvl
 evalInf env (Pi x e e') = VPi x (evalInf env e) (\t -> evalInf ((x, t) : env) e')
 evalInf env (App e e') = case (evalInf env e, evalCheck env e') of

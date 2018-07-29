@@ -1,6 +1,6 @@
 (define id
   (pi
-    (a (Type 1))
+    (a (Type 0))
     (pi
       (_ a)
       a))
@@ -10,9 +10,6 @@
   )
 
 (define main
-  (pi (_ (Type 0)) (Type 0))
-  (
-    id
-    (Type 0)
-  )
+  Int
+  ((+ ((+ 1) 2)) ((id Int) 2))
   )
