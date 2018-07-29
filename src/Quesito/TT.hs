@@ -1,4 +1,4 @@
-module Quesito.Expr where
+module Quesito.TT where
 
 import Data.List (find)
 import Data.Maybe (maybe)

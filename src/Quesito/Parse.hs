@@ -7,9 +7,7 @@ module Quesito.Parse
 
 import Control.Monad.State (State, evalState, modify, get)
 
-import Quesito.Constant as C
-import Quesito.Expr
-import Quesito.Type
+import Quesito.TT
 
 data ParseError
   = MismatchedParenthesis
@@ -109,46 +107,29 @@ parse' (ParenEnd pos : _) = Left (MismatchedParenthesis, pos)
 parseToSExpr :: String -> ParserResult SExpr
 parseToSExpr s = fst <$> (parse' . flip evalState (Pos 0 0) $ tokenize s)
 
-parse :: String -> ParserResult QuesExpr
-parse s = sexpQuesExpr =<< parseToSExpr s
+parse :: String -> ParserResult CheckTerm
+parse s = sexpToTerm =<< parseToSExpr s
 
-parseType :: SExpr -> ParserResult Type
-parseType (Symbol "Nat" _) = return (BaseType Nat)
-parseType (List (Symbol "->" pos : tys) _)
-  | length tys < 2 = Left (MalformedType, pos)
-  | otherwise = return . typesToArrow =<< sequence (map parseType tys)
+sexpToTerm :: SExpr -> ParserResult CheckTerm
+sexpToTerm = sexpToTerm' []
   where
-    typesToArrow :: [Type] -> Type
-    typesToArrow (t:t':[]) = Arrow t t'
-    typesToArrow (t:ts) = Arrow t (typesToArrow ts)
-    typesToArrow [] = undefined
-parseType ast = Left (MalformedType, astPos ast)
-
-sexpQuesExpr :: SExpr -> ParserResult QuesExpr
-sexpQuesExpr (Symbol "+" _) = return (Constant Plus2)
-sexpQuesExpr (Symbol s _) = return (Var s)
-sexpQuesExpr (Quesito.Parse.Num x _) = return (Constant (C.Num x))
-sexpQuesExpr (List [Symbol "lambda" _, List [Symbol s _, tyS] _, tS] _) = do
-  ty <- parseType tyS
-  t <- sexpQuesExpr tS
-  return (Lambda s ty t)
-sexpQuesExpr (List [Symbol "let" _, List [Symbol v _, tyS, t] _, t'] _) = do
-  ty <- parseType tyS
-  t'' <- sexpQuesExpr t
-  t''' <- sexpQuesExpr t'
-  return (Let (v, ty, t'') t''')
-sexpQuesExpr (List [Symbol "pair" _, t, t'] _) = do
-  t'' <- sexpQuesExpr t
-  t''' <- sexpQuesExpr t'
-  return (Pair t'' t''')
-sexpQuesExpr (List [Symbol "fst" _, t] _) = do
-  t' <- sexpQuesExpr t
-  return (Fst t')
-sexpQuesExpr (List [Symbol "snd" _, t] _) = do
-  t' <- sexpQuesExpr t
-  return (Snd t')
-sexpQuesExpr (List [t, t'] _) = do
-  t'' <- sexpQuesExpr t
-  t''' <- sexpQuesExpr t'
-  return (App t'' t''')
-sexpQuesExpr (List _ pos) = Left (MultipleArguments, pos)
+    sexpToTerm' :: [Name] -> SExpr -> ParserResult CheckTerm
+    sexpToTerm' scope (Symbol s _) = return (Inf (Var (if elem s scope then Bound s else Free s)))
+    sexpToTerm' _ (Quesito.Parse.Num _ _) = error "Numbers not supported, yet."
+    sexpToTerm' scope (List [Symbol "lambda" _, List [Symbol s _] _, tS] _) = do
+      t <- sexpToTerm' (s : scope) tS
+      return (Lam s t)
+    sexpToTerm' scope (List [Symbol "pi" _, List [Symbol s _, tS] _, tS'] _) = do
+      Inf t <- sexpToTerm' scope tS
+      Inf t' <- sexpToTerm' (s : scope) tS'
+      return (Inf (Pi s t t'))
+    sexpToTerm' scope (List [Symbol "Type" _, Quesito.Parse.Num i _] _) = return (Inf (Type i))
+    sexpToTerm' scope (List [Symbol "ann" _, tS, tS'] _) = do
+      t <- sexpToTerm' scope tS
+      Inf t' <- sexpToTerm' scope tS'
+      return (Inf (Ann t t'))
+    sexpToTerm' scope (List [t, t'] _) = do
+      Inf t'' <- sexpToTerm' scope t
+      t''' <- sexpToTerm' scope t'
+      return (Inf (App t'' t'''))
+    sexpToTerm' _ (List _ pos) = Left (MultipleArguments, pos)
