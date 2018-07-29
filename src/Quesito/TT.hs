@@ -77,8 +77,10 @@ evalCheck env (Lam x e) = VLam x (\v -> evalCheck ((x, v) : env) e)
 typeInf :: Context -> InfTerm -> Result Value
 typeInf ctx (Var (Bound x)) = case snd <$> find ((\y' -> case y' of y | x == y -> True; _ -> False) . fst) ctx of
   Just t -> Right t
-typeInf _ (Var (Free x)) = Right (VNeutral (NFree x))
   Nothing -> Left "4"
+typeInf ctx (Var (Free x)) = case snd <$> find ((\y' -> case y' of y | x == y -> True; _ -> False) . fst) ctx of
+  Just t -> Right t
+  Nothing -> Left x
 typeInf _ (Type i) = Right (VType (i + 1))
 typeInf ctx (Pi x e e') = do
   t <- typeInf ctx e

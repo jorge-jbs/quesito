@@ -107,7 +107,7 @@ parse' [] = Left (ReachedEndOfFile, Pos 0 0)
 parse' (ParenEnd pos : _) = Left (MismatchedParenthesis, pos)
 
 parse :: String -> ParserResult [(Name, CheckTerm, CheckTerm)]
-parse = parse_ [] [] . flip evalState (Pos 0 0) . tokenize
+parse = fmap reverse . parse_ [] [] . flip evalState (Pos 0 0) . tokenize
   where
     parse_ :: [Name] -> [(Name, CheckTerm, CheckTerm)] -> [Token] -> ParserResult [(Name, CheckTerm, CheckTerm)]
     parse_ _ defs [] = return defs
