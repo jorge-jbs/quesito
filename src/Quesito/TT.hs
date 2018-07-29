@@ -17,6 +17,13 @@ data InfTerm
   | Pi Name InfTerm InfTerm
   | App InfTerm CheckTerm
   | Ann CheckTerm InfTerm
+  | Constant Const
+  deriving (Show, Eq)
+
+data Const
+  = IntType
+  | Int Int
+  | Plus
   deriving (Show, Eq)
 
 -- | Checkable terms
@@ -30,6 +37,8 @@ data Value
   | VType Int
   | VPi Name Value (Value -> Value)
   | VNeutral Neutral
+  | VIntType
+  | VInt Int
 
 data Neutral
   = NFree Name
@@ -49,6 +58,8 @@ quote (VNeutral (NApp n v)) = Inf (App n' v')
   where
     Inf n' = quote (VNeutral n)
     v' = quote v
+quote VIntType = Inf (Constant IntType)
+quote (VInt n) = Inf (Constant (Int n))
 
 type Result a = Either String a
 
@@ -69,6 +80,9 @@ evalInf env (App e e') = case (evalInf env e, evalCheck env e') of
   (VNeutral n, v) -> VNeutral (NApp n v)
   _ -> error "Application to non-function."
 evalInf env (Ann e _) = evalCheck env e
+evalInf _   (Constant IntType) = VIntType
+evalInf _   (Constant (Int n)) = VInt n
+evalInf _   (Constant Plus) = VLam "x" (\(VInt x) -> VLam "y" (\(VInt y) -> VInt (x + y)))
 
 evalCheck :: Env -> CheckTerm -> Value
 evalCheck env (Inf e) = evalInf env e
@@ -107,6 +121,9 @@ typeInf ctx (Ann e ty) = do
       typeCheck ctx e ty'
       return ty'
     _ -> Left ""
+typeInf _ (Constant IntType) = return (VType 0)
+typeInf _ (Constant (Int _)) = return VIntType
+typeInf _ (Constant Plus) = return (VPi "" VIntType (const (VPi "" VIntType (const VIntType))))
 
 typeCheck :: Context -> CheckTerm -> Value -> Result ()
 typeCheck ctx (Lam x e) (VPi _ t t') =

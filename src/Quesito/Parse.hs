@@ -128,6 +128,8 @@ sexpToTerm :: [Name] -> SExpr -> ParserResult CheckTerm
 sexpToTerm freeScope = sexpToTerm' []
   where
     sexpToTerm' :: [Name] -> SExpr -> ParserResult CheckTerm
+    sexpToTerm' scope (Symbol "+" _) = return (Inf (Constant Plus))
+    sexpToTerm' scope (Symbol "Int" _) = return (Inf (Constant IntType))
     sexpToTerm' scope (Symbol s pos) =
       if elem s scope then
         return (Inf (Var (Bound s)))
@@ -135,7 +137,7 @@ sexpToTerm freeScope = sexpToTerm' []
         return (Inf (Var (Free s)))
       else
         Left (FreeVar, pos)
-    sexpToTerm' _ (Quesito.Parse.Num _ _) = error "Numbers not supported, yet."
+    sexpToTerm' _ (Quesito.Parse.Num n _) = return (Inf (Constant (Int n)))
     sexpToTerm' scope (List [Symbol "lambda" _, List [Symbol s _] _, tS] _) = do
       t <- sexpToTerm' (s : scope) tS
       return (Lam s t)
