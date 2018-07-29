@@ -13,7 +13,9 @@ data ParseError
   = MismatchedParenthesis
   | ReachedEndOfFile
   | MalformedType
+  | MalformedDefinition
   | MultipleArguments
+  | FreeVar
   deriving Show
 
 type ParserResult a = Either (ParseError, Pos) a
@@ -104,17 +106,35 @@ parse' (ParenBegin pos : ts) = do
 parse' [] = Left (ReachedEndOfFile, Pos 0 0)
 parse' (ParenEnd pos : _) = Left (MismatchedParenthesis, pos)
 
-parseToSExpr :: String -> ParserResult SExpr
-parseToSExpr s = fst <$> (parse' . flip evalState (Pos 0 0) $ tokenize s)
+parse :: String -> ParserResult [(Name, CheckTerm, CheckTerm)]
+parse = parse_ [] [] . flip evalState (Pos 0 0) . tokenize
+  where
+    parse_ :: [Name] -> [(Name, CheckTerm, CheckTerm)] -> [Token] -> ParserResult [(Name, CheckTerm, CheckTerm)]
+    parse_ _ defs [] = return defs
+    parse_ freeScope defs ts = do
+      (defS, ts') <- parse' ts
+      def@(name, _, _) <- parseDefinition freeScope defS
+      parse_ (name : freeScope) (def : defs) ts'
 
-parse :: String -> ParserResult CheckTerm
-parse s = sexpToTerm =<< parseToSExpr s
+parseDefinition :: [Name] -> SExpr -> ParserResult (Name, CheckTerm, CheckTerm)
+parseDefinition freeScope (List [Symbol "define" _, Symbol name _, tyS, tS] _) = do
+  ty <- sexpToTerm freeScope tyS
+  t <- sexpToTerm freeScope tS
+  return (name, ty, t)
+parseDefinition freeScope sexp =
+  Left (MalformedDefinition, astPos sexp)
 
-sexpToTerm :: SExpr -> ParserResult CheckTerm
-sexpToTerm = sexpToTerm' []
+sexpToTerm :: [Name] -> SExpr -> ParserResult CheckTerm
+sexpToTerm freeScope = sexpToTerm' []
   where
     sexpToTerm' :: [Name] -> SExpr -> ParserResult CheckTerm
-    sexpToTerm' scope (Symbol s _) = return (Inf (Var (if elem s scope then Bound s else Free s)))
+    sexpToTerm' scope (Symbol s pos) =
+      if elem s scope then
+        return (Inf (Var (Bound s)))
+      else if elem s freeScope then
+        return (Inf (Var (Free s)))
+      else
+        Left (FreeVar, pos)
     sexpToTerm' _ (Quesito.Parse.Num _ _) = error "Numbers not supported, yet."
     sexpToTerm' scope (List [Symbol "lambda" _, List [Symbol s _] _, tS] _) = do
       t <- sexpToTerm' (s : scope) tS

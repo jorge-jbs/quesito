@@ -1,6 +1,6 @@
 module Main where
 
-import Control.Monad (unless)
+import Control.Monad (unless, forM_)
 
 import Quesito.TT
 import Quesito.Parse
@@ -9,15 +9,18 @@ main :: IO ()
 main = do
   input <- getContents
   let
-    (Inf (Ann expr ty))
+    definitions
       = either (error . show) id
       $ parse input
-  unless (fmap quote (typeInf [] ty) == Right (quote (VType 1))) (error "___")
-  case typeCheck [] expr (evalInf [] ty) of
+  case checkProgram definitions [] of
     Right () ->
-      putStrLn
-        $ show
-        $ quote
-        $ evalCheck [] expr
+      putStrLn "Type check ok"
     Left err ->
       putStrLn ("Type checking failed: " ++ err)
+
+checkProgram :: [(Name, CheckTerm, CheckTerm)] -> [(Name, Value)] -> Result ()
+checkProgram [] _ = Right ()
+checkProgram ((name, ty, expr) : defs) scope = do
+  let ty' = evalCheck [] ty
+  typeCheck scope expr ty'
+  checkProgram defs ((name, ty') : scope)
