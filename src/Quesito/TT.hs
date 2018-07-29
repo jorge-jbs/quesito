@@ -7,12 +7,9 @@ import Control.Monad (unless)
 
 type Name = String
 
-data Var = Bound Name | Free Name
-  deriving (Show, Eq)
-
 -- | Inferable terms
 data InfTerm
-  = Var Var
+  = Var Name
   | Type Int
   | Pi Name InfTerm InfTerm
   | App InfTerm CheckTerm
@@ -41,19 +38,17 @@ data Value
   | VInt Int
 
 data Neutral
-  = NFree Name
-  | NBound Name  -- Only used for quotation
+  = NVar Name  -- used for quotation
   | NApp Neutral Value
 
 quote :: Value -> CheckTerm
-quote (VLam x f) = Lam x (quote (f (VNeutral (NBound x))))
+quote (VLam x f) = Lam x (quote (f (VNeutral (NVar x))))
 quote (VType i) = Inf (Type i)
 quote (VPi x v v') = Inf (Pi x t t')
   where
     Inf t = quote v
-    Inf t' = quote (v' (VNeutral (NFree x)))
-quote (VNeutral (NFree x)) = Inf (Var (Free x))
-quote (VNeutral (NBound x)) = Inf (Var (Bound x))
+    Inf t' = quote (v' (VNeutral (NVar x)))
+quote (VNeutral (NVar x)) = Inf (Var x)
 quote (VNeutral (NApp n v)) = Inf (App n' v')
   where
     Inf n' = quote (VNeutral n)
@@ -67,21 +62,15 @@ type Context = [(Name, Value)]
 type Env = [(Name, Value)]
 
 evalInf :: Env -> InfTerm -> Value
-evalInf env (Var (Bound x)) =
+evalInf env (Var x) =
   maybe
-    (error ("Bound variable not found: " ++ x))
-    id
-    (snd <$> find ((\y' -> case y' of y | x == y -> True; _ -> False) . fst) env)
-evalInf env (Var (Free x)) =
-  maybe
-    (error ("Free variable not found: " ++ x))
+    (error ("Found free variable: " ++ x))
     id
     (snd <$> find ((\y' -> case y' of y | x == y -> True; _ -> False) . fst) env)
 evalInf _   (Type lvl) = VType lvl
 evalInf env (Pi x e e') = VPi x (evalInf env e) (\t -> evalInf ((x, t) : env) e')
 evalInf env (App e e') = case (evalInf env e, evalCheck env e') of
   (VLam _ t, t') -> t t'
-  (VNeutral n, v) -> VNeutral (NApp n v)
   _ -> error "Application to non-function."
 evalInf env (Ann e _) = evalCheck env e
 evalInf _   (Constant IntType) = VIntType
@@ -93,12 +82,9 @@ evalCheck env (Inf e) = evalInf env e
 evalCheck env (Lam x e) = VLam x (\v -> evalCheck ((x, v) : env) e)
 
 typeInf :: Context -> InfTerm -> Result Value
-typeInf ctx (Var (Bound x)) = case snd <$> find ((\y' -> case y' of y | x == y -> True; _ -> False) . fst) ctx of
+typeInf ctx (Var x) = case snd <$> find ((\y' -> case y' of y | x == y -> True; _ -> False) . fst) ctx of
   Just t -> Right t
   Nothing -> Left "4"
-typeInf ctx (Var (Free x)) = case snd <$> find ((\y' -> case y' of y | x == y -> True; _ -> False) . fst) ctx of
-  Just t -> Right t
-  Nothing -> Left x
 typeInf _ (Type i) = Right (VType (i + 1))
 typeInf ctx (Pi x e e') = do
   t <- typeInf ctx e
@@ -131,7 +117,7 @@ typeInf _ (Constant Plus) = return (VPi "" VIntType (const (VPi "" VIntType (con
 
 typeCheck :: Context -> CheckTerm -> Value -> Result ()
 typeCheck ctx (Lam x e) (VPi _ t t') =
-  typeCheck ((x, t) : ctx) e (t' (VNeutral (NFree x)))
+  typeCheck ((x, t) : ctx) e (t' (VNeutral (NVar x)))
 typeCheck _ (Lam _ _) _ = Left "6"
 typeCheck ctx (Inf t) ty = do
   ty' <- typeInf ctx t

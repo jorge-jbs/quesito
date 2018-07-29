@@ -131,10 +131,8 @@ sexpToTerm freeScope = sexpToTerm' []
     sexpToTerm' scope (Symbol "+" _) = return (Inf (Constant Plus))
     sexpToTerm' scope (Symbol "Int" _) = return (Inf (Constant IntType))
     sexpToTerm' scope (Symbol s pos) =
-      if elem s scope then
-        return (Inf (Var (Bound s)))
-      else if elem s freeScope then
-        return (Inf (Var (Free s)))
+      if elem s scope || elem s freeScope then
+        return (Inf (Var s))
       else
         Left (FreeVar, pos)
     sexpToTerm' _ (Quesito.Parse.Num n _) = return (Inf (Constant (Int n)))
