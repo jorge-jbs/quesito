@@ -77,8 +77,8 @@ evalCheck env (Lam x e) = VLam x (\v -> evalCheck ((x, v) : env) e)
 typeInf :: Context -> InfTerm -> Result Value
 typeInf ctx (Var (Bound x)) = case snd <$> find ((\y' -> case y' of y | x == y -> True; _ -> False) . fst) ctx of
   Just t -> Right t
-  Nothing -> fail "4"
 typeInf _ (Var (Free x)) = Right (VNeutral (NFree x))
+  Nothing -> Left "4"
 typeInf _ (Type i) = Right (VType (i + 1))
 typeInf ctx (Pi x e e') = do
   t <- typeInf ctx e
@@ -88,15 +88,15 @@ typeInf ctx (Pi x e e') = do
       case t' of
         VType j ->
           return (VType (max i j))
-        _ -> fail "1"
-    _ -> fail "2"
+        _ -> Left "1"
+    _ -> Left "2"
 typeInf ctx (App e e') = do
   s <- typeInf ctx e
   case s of
     VPi _ t t' -> do
       typeCheck ctx e' t
       return (t' (evalCheck [] e'))
-    _ -> fail "3"
+    _ -> Left "3"
 typeInf ctx (Ann e ty) = do
   tyTy <- typeInf ctx ty
   case tyTy of
@@ -104,12 +104,12 @@ typeInf ctx (Ann e ty) = do
       let ty' = evalInf [] ty
       typeCheck ctx e ty'
       return ty'
-    _ -> fail ""
+    _ -> Left ""
 
 typeCheck :: Context -> CheckTerm -> Value -> Result ()
 typeCheck ctx (Lam x e) (VPi _ t t') =
   typeCheck ((x, t) : ctx) e (t' (VNeutral (NFree x)))
-typeCheck _ (Lam _ _) _ = fail "6"
+typeCheck _ (Lam _ _) _ = Left "6"
 typeCheck ctx (Inf t) ty = do
   ty' <- typeInf ctx t
-  unless (quote ty == quote ty') (fail "5")
+  unless (quote ty == quote ty') (Left "5")
