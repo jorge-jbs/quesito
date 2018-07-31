@@ -14,6 +14,8 @@ type Name = String
 -- | Inferable terms
 data InfTerm
   = Var Name
+  | DataType Name
+  | Con Name
   | Type Int
   | Pi Name InfTerm InfTerm
   | App InfTerm CheckTerm
@@ -43,6 +45,8 @@ data Value
   | VNeutral Neutral
   | VIntType
   | VInt Int
+  | VDataType Name
+  | VCon Name [Value]
 
 
 data Neutral
@@ -79,6 +83,20 @@ quote VIntType =
 quote (VInt n) =
   Inf (Constant (Int n))
 
+quote (VDataType n) =
+  Inf (DataType n)
+
+quote (VCon n vs') =
+  Inf (quoteCon vs')
+  where
+    quoteCon :: [Value] -> InfTerm
+
+    quoteCon [] =
+      Con n
+
+    quoteCon (v : vs) =
+      App (quoteCon vs) (quote v)
+
 
 type Result a = Either String a
 
@@ -97,6 +115,12 @@ evalInf env (Var x) =
     id
     (snd <$> find ((==) x . fst) env)
 
+evalInf _ (DataType name) =
+  VDataType name
+
+evalInf _ (Con c) =
+  VCon c []
+
 evalInf _ (Type lvl) =
   VType lvl
 
@@ -107,6 +131,9 @@ evalInf env (App e e') =
   case (evalInf env e, evalCheck env e') of
     (VLam _ t, t') ->
       t t'
+
+    (VCon n ts, t) ->
+      VCon n (t : ts)
 
     _ ->
       error "Application to non-function."
@@ -142,6 +169,12 @@ typeInf ctx (Var x) =
 
     Nothing ->
       Left "4"
+
+typeInf ctx (DataType name) =
+  typeInf ctx (Var name)
+
+typeInf ctx (Con c) =
+  typeInf ctx (Var c)
 
 typeInf _ (Type i) =
   Right (VType (i + 1))
