@@ -128,15 +128,18 @@ evalInf env (Pi x e e') =
   VPi x (evalInf env e) (\t -> evalInf ((x, t) : env) e')
 
 evalInf env (App e e') =
-  case (evalInf env e, evalCheck env e') of
-    (VLam _ t, t') ->
-      t t'
+  let
+    t' = evalCheck env e'
+  in
+    case evalInf env e of
+      VLam _ t ->
+        t t'
 
-    (VCon n ts, t) ->
-      VCon n (t : ts)
+      VCon n ts ->
+        VCon n (t' : ts)
 
-    _ ->
-      error "Application to non-function."
+      _ ->
+        error "Application to non-function."
 
 evalInf env (Ann e _) =
   evalCheck env e
