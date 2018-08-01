@@ -6,11 +6,11 @@ where
 
 import Quesito.TT (CheckTerm(..), InfTerm(..), Const(..))
 
-import Text.Parsec ((<|>), try, parse)
+import Text.Parsec ((<|>), try, parse, parserFail)
 import Text.Parsec.Error (ParseError)
 import Text.Parsec.Prim (many)
 import Text.Parsec.Combinator (many1)
-import Text.Parsec.Char (char, digit, letter, spaces, space, string)
+import Text.Parsec.Char (char, digit, letter, spaces, space, string, oneOf)
 import Text.Parsec.String (Parser)
 
 
@@ -24,8 +24,8 @@ number = do
 symbol :: Parser String
 
 symbol = do
-  c <- letter
-  cs <- many (letter <|> digit)
+  c <- letter <|> oneOf "+_"
+  cs <- many (letter <|> digit <|> oneOf "+_")
   return (c : cs)
 
 
@@ -124,7 +124,50 @@ checkTerm surrounded
     = try (surrIf surrounded lambda)
   <|> (Inf <$> infTerm surrounded)
 
-parse :: String -> Either ParseError CheckTerm
+
+annotation :: Parser (String, CheckTerm)
+
+annotation = do
+  name <- symbol
+  spaces
+  _ <- char ':'
+  spaces
+  ty <- checkTerm False
+  _ <- char ';'
+  return (name, ty)
+
+
+implementation :: Parser (String, CheckTerm)
+
+implementation = do
+  spaces
+  name <- symbol
+  spaces
+  _ <- char '='
+  spaces
+  body <- checkTerm False
+  spaces
+  _ <- char ';'
+  spaces
+  return (name, body)
+
+
+definition :: Parser (String, CheckTerm, CheckTerm)
+
+definition = do
+  spaces
+  (name, ty) <- annotation
+  spaces
+  (name', body) <- implementation
+  spaces
+  if name == name' then
+    return (name, ty, body)
+  else
+    parserFail ("Expecting implementation for \"" ++ name ++ "\" but found for \"" ++ show name ++ "\".")
+
+
+parse :: String -> Either ParseError [(String, CheckTerm, CheckTerm)]
 
 parse =
-  Text.Parsec.parse (checkTerm False) ""
+  Text.Parsec.parse (many definition) ""
+

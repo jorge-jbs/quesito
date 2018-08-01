@@ -1,15 +1,5 @@
-(define id
-  (pi
-    (a (Type 0))
-    (pi
-      (_ a)
-      a))
-  (lambda (a)
-    (lambda (x)
-      x))
-  )
+id : (a : Type 0) -> (x : a) -> a;
+id = \a -> \x -> x;
 
-(define main
-  Int
-  ((+ ((+ 1) 2)) ((id Int) 2))
-  )
+main : Int;
+main = (+ ((+ 1) 2)) ((id Int) 2);
