@@ -115,7 +115,17 @@ infTerm surrounded
   <|> try (surrIf surrounded piExpr)
   <|> try (surrIf surrounded ann)
   <|> (Constant . Int <$> try number)
-  <|> (Var <$> try symbol)
+  <|> (fmap
+         (\s ->
+             case s of
+               "+" ->
+                 Constant Plus
+               "Int" ->
+                 Constant IntType
+               _ ->
+                 Var s
+         )
+         (try symbol))
 
 
 checkTerm :: Bool -> Parser CheckTerm
