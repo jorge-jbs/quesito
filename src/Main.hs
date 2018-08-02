@@ -12,24 +12,20 @@ main = do
     definitions
       = either (error . show) id
       $ parse input
-  case checkProgram definitions [] of
-    Right () ->
-      putStrLn $ show $ quote $ evalProgram definitions []
+  case head <$> checkEvalProgram definitions [] of
+    Right (_, DExpr e _) ->
+      putStrLn $ show $ quote e
     Left err ->
       putStrLn ("Type checking failed: " ++ err)
 
-checkProgram :: [(Name, CheckTerm, CheckTerm)] -> [(Name, Value)] -> Result ()
-checkProgram [] _ = Right ()
-checkProgram ((name, ty, expr) : defs) scope = do
-  let ty' = evalCheck [] ty
-  typeCheck scope expr ty'
-  checkProgram defs ((name, ty') : scope)
-
-evalProgram :: [(Name, CheckTerm, CheckTerm)] -> [(Name, Value)] -> Value
-evalProgram ((name, _, e) : defs) scope =
-  let
-    v = evalCheck scope e
-  in
-    case defs of
-      [] -> v
-      _ -> evalProgram defs ((name, v) : scope)
+checkEvalProgram
+  :: [(Name, Def CheckTerm InfTerm)]
+  -> [(Name, Def Value Value)]
+  -> Result [(Name, Def Value Value)]
+checkEvalProgram [] definitions = Right definitions
+checkEvalProgram ((name, DExpr expr ty) : defs) definitions = do
+  _ <- typeInf definitions [] ty
+  let ty' = evalInf definitions [] ty
+  typeCheck definitions [] expr ty'
+  let expr' = evalCheck definitions [] expr
+  checkEvalProgram defs ((name, DExpr expr' ty') : definitions)

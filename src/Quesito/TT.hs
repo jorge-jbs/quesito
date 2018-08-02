@@ -2,7 +2,6 @@ module Quesito.TT where
 
 
 import Data.List (find)
-import Data.Maybe (maybe)
 
 
 import Control.Monad (unless)
@@ -14,8 +13,6 @@ type Name = String
 -- | Inferable terms
 data InfTerm
   = Var Name
-  | DataType Name
-  | Con Name
   | Type Int
   | Pi Name InfTerm InfTerm
   | App InfTerm CheckTerm
@@ -46,7 +43,7 @@ data Value
   | VIntType
   | VInt Int
   | VDataType Name
-  | VCon Name [Value]
+  | VDataCons Name [Value]
 
 
 data Neutral
@@ -84,109 +81,134 @@ quote (VInt n) =
   Inf (Constant (Int n))
 
 quote (VDataType n) =
-  Inf (DataType n)
+  Inf (Var n)
 
-quote (VCon n vs') =
-  Inf (quoteCon vs')
+quote (VDataCons n vs') =
+  Inf (quoteCons vs')
   where
-    quoteCon :: [Value] -> InfTerm
+    quoteCons :: [Value] -> InfTerm
 
-    quoteCon [] =
-      Con n
+    quoteCons [] =
+      Var n
 
-    quoteCon (v : vs) =
-      App (quoteCon vs) (quote v)
-
-
-type Result a = Either String a
+    quoteCons (v : vs) =
+      App (quoteCons vs) (quote v)
 
 
-type Context = [(Name, Value)]
+data Def term ty
+  = DExpr term ty
+  | DDataType ty
+  | DDataCons ty
 
 
-type Env = [(Name, Value)]
+type Result a =
+  Either String a
 
 
-evalInf :: Env -> InfTerm -> Value
+type TContext =
+  [(Name, Value)]
 
-evalInf env (Var x) =
-  maybe
-    (error ("Found free variable: " ++ x))
-    id
-    (snd <$> find ((==) x . fst) env)
 
-evalInf _ (DataType name) =
-  VDataType name
+type VContext =
+  TContext
 
-evalInf _ (Con c) =
-  VCon c []
 
-evalInf _ (Type lvl) =
+type Env =
+  [(Name, Def Value Value)]
+
+
+evalInf :: Env -> VContext -> InfTerm -> Value
+
+evalInf env ctx (Var x) =
+  case snd <$> find ((==) x . fst) ctx of
+    Just v ->
+      v
+
+    Nothing ->
+      case snd <$> find ((==) x . fst) env of
+        Just (DExpr v _) ->
+          v
+
+        Just (DDataType _) ->
+          VDataType x
+
+        Just (DDataCons _) ->
+          VDataCons x []
+
+        Nothing ->
+          error ("Found free variable: " ++ x)
+
+evalInf _ _ (Type lvl) =
   VType lvl
 
-evalInf env (Pi x e e') =
-  VPi x (evalInf env e) (\t -> evalInf ((x, t) : env) e')
+evalInf env ctx (Pi x e e') =
+  VPi x (evalInf env ctx e) (\t -> evalInf env ((x, t) : ctx) e')
 
-evalInf env (App e e') =
+evalInf env ctx (App e e') =
   let
-    t' = evalCheck env e'
+    t' = evalCheck env ctx e'
   in
-    case evalInf env e of
+    case evalInf env ctx e of
       VLam _ t ->
         t t'
 
-      VCon n ts ->
-        VCon n (t' : ts)
+      VDataCons n ts ->
+        VDataCons n (t' : ts)
 
       _ ->
         error "Application to non-function."
 
-evalInf env (Ann e _) =
-  evalCheck env e
+evalInf env ctx (Ann e _) =
+  evalCheck env ctx e
 
-evalInf _ (Constant IntType) =
+evalInf _ _ (Constant IntType) =
   VIntType
 
-evalInf _ (Constant (Int n)) =
+evalInf _ _ (Constant (Int n)) =
   VInt n
 
-evalInf _ (Constant Plus) =
+evalInf _ _ (Constant Plus) =
   VLam "x" (\(VInt x) -> VLam "y" (\(VInt y) -> VInt (x + y)))
 
 
-evalCheck :: Env -> CheckTerm -> Value
+evalCheck :: Env -> VContext -> CheckTerm -> Value
 
-evalCheck env (Inf e) =
-  evalInf env e
+evalCheck env ctx (Inf e) =
+  evalInf env ctx e
 
-evalCheck env (Lam x e) =
-  VLam x (\v -> evalCheck ((x, v) : env) e)
+evalCheck env ctx (Lam x e) =
+  VLam x (\v -> evalCheck env ((x, v) : ctx) e)
 
 
-typeInf :: Context -> InfTerm -> Result Value
+typeInf :: Env -> TContext -> InfTerm -> Result Value
 
-typeInf ctx (Var x) =
-  case find ((==) x . fst) ctx of
-    Just (_, t) ->
-      Right t
+typeInf env ctx (Var x) =
+  case snd <$> find ((==) x . fst) ctx of
+    Just v ->
+      return v
 
     Nothing ->
-      Left "4"
+      case snd <$> find ((==) x . fst) env of
+        Just (DExpr _ ty) ->
+          return ty
 
-typeInf ctx (DataType name) =
-  typeInf ctx (Var name)
+        Just (DDataType ty) ->
+          return ty
 
-typeInf ctx (Con c) =
-  typeInf ctx (Var c)
+        Just (DDataCons ty) ->
+          return ty
 
-typeInf _ (Type i) =
+        Nothing ->
+          error ("Found free variable: " ++ x)
+
+typeInf _ _ (Type i) =
   Right (VType (i + 1))
 
-typeInf ctx (Pi x e e') = do
-  t <- typeInf ctx e
+typeInf env ctx (Pi x e e') = do
+  t <- typeInf env ctx e
   case t of
     VType i -> do
-      t' <- typeInf ((x, t) : ctx) e'
+      t' <- typeInf env ((x, t) : ctx) e'
       case t' of
         VType j ->
           return (VType (max i j))
@@ -197,46 +219,46 @@ typeInf ctx (Pi x e e') = do
     _ ->
       Left "2"
 
-typeInf ctx (App e e') = do
-  s <- typeInf ctx e
+typeInf env ctx (App e e') = do
+  s <- typeInf env ctx e
   case s of
     VPi _ t t' -> do
-      typeCheck ctx e' t
-      return (t' (evalCheck [] e'))
+      typeCheck env ctx e' t
+      return (t' (evalCheck env [] e'))
 
     _ ->
       Left ("Applying to non-function: " ++ show (quote s))
 
-typeInf ctx (Ann e ty) = do
-  tyTy <- typeInf ctx ty
+typeInf env ctx (Ann e ty) = do
+  tyTy <- typeInf env ctx ty
   case tyTy of
     VType _ -> do
-      let ty' = evalInf [] ty
-      typeCheck ctx e ty'
+      let ty' = evalInf env [] ty
+      typeCheck env ctx e ty'
       return ty'
 
     _ ->
       Left ""
 
-typeInf _ (Constant IntType) =
+typeInf _ _ (Constant IntType) =
   return (VType 0)
 
-typeInf _ (Constant (Int _)) =
+typeInf _ _ (Constant (Int _)) =
   return VIntType
 
-typeInf _ (Constant Plus) =
+typeInf _ _ (Constant Plus) =
   return (VPi "" VIntType (const (VPi "" VIntType (const VIntType))))
 
 
-typeCheck :: Context -> CheckTerm -> Value -> Result ()
-typeCheck ctx (Lam x e) (VPi _ t t') =
-  typeCheck ((x, t) : ctx) e (t' (VNeutral (NVar x)))
+typeCheck :: Env -> TContext -> CheckTerm -> Value -> Result ()
+typeCheck env ctx (Lam x e) (VPi _ t t') =
+  typeCheck env ((x, t) : ctx) e (t' (VNeutral (NVar x)))
 
-typeCheck _ (Lam _ _) _ =
+typeCheck _ _ (Lam _ _) _ =
   Left "6"
 
-typeCheck ctx (Inf t) ty = do
-  ty' <- typeInf ctx t
+typeCheck env ctx (Inf t) ty = do
+  ty' <- typeInf env ctx t
   unless
     (quote ty == quote ty')
     (Left ("Type mismatch: " ++ show (quote ty) ++ ", " ++ show (quote ty')))

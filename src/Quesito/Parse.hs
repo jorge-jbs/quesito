@@ -4,7 +4,7 @@ module Quesito.Parse
 where
 
 
-import Quesito.TT (CheckTerm(..), InfTerm(..), Const(..))
+import Quesito.TT (CheckTerm(..), InfTerm(..), Const(..), Def(..), Name)
 
 import Text.Parsec ((<|>), try, parse, parserFail)
 import Text.Parsec.Error (ParseError)
@@ -176,19 +176,19 @@ checkTerm surrounded
   <|> (Inf <$> infTerm surrounded)
 
 
-annotation :: Parser (String, CheckTerm)
+annotation :: Parser (Name, InfTerm)
 
 annotation = do
   name <- symbol
   spaces
   _ <- char ':'
   spaces
-  ty <- checkTerm False
+  ty <- infTerm False
   _ <- char ';'
   return (name, ty)
 
 
-implementation :: Parser (String, CheckTerm)
+implementation :: Parser (Name, CheckTerm)
 
 implementation = do
   spaces
@@ -203,7 +203,7 @@ implementation = do
   return (name, body)
 
 
-definition :: Parser (String, CheckTerm, CheckTerm)
+definition :: Parser (Name, Def CheckTerm InfTerm)
 
 definition = do
   spaces
@@ -212,12 +212,12 @@ definition = do
   (name', body) <- implementation
   spaces
   if name == name' then
-    return (name, ty, body)
+    return (name, DExpr body ty)
   else
     parserFail ("Expecting implementation for \"" ++ name ++ "\" but found for \"" ++ show name ++ "\".")
 
 
-parse :: String -> Either ParseError [(String, CheckTerm, CheckTerm)]
+parse :: String -> Either ParseError [(Name, Def CheckTerm InfTerm)]
 
 parse =
   Text.Parsec.parse (many definition) ""
