@@ -24,9 +24,39 @@ number = do
 symbol :: Parser String
 
 symbol = do
-  c <- letter <|> oneOf "+_"
-  cs <- many (letter <|> digit <|> oneOf "+_")
-  return (c : cs)
+  c <- letter <|> oneOf operatorCharacters
+  cs <- many (letter <|> digit <|> oneOf operatorCharacters)
+  if any (not . flip elem operatorCharacters) (c : cs) then
+    return (c : cs)
+  else
+    parserFail "Expected symbol, found operator."
+
+
+operatorCharacters :: [Char]
+
+operatorCharacters =
+  "!#$%&*+./<=>?@\\^|-~"
+
+operator :: Parser String
+
+operator = do
+  str <- many1 (oneOf operatorCharacters)
+  if elem str ["->", ":"] then
+    parserFail ("Reserved operator: " ++ str)
+  else
+    return str
+
+
+var :: String -> InfTerm
+
+var "+" =
+  Constant Plus
+
+var "Int" =
+  Constant IntType
+
+var s =
+  Var s
 
 
 lambda :: Parser CheckTerm
@@ -34,12 +64,12 @@ lambda :: Parser CheckTerm
 lambda = do
   _ <- char '\\'
   spaces
-  var <- symbol
+  v <- symbol
   spaces
   _ <- string "->"
   spaces
   expr <- checkTerm False
-  return (Lam var expr)
+  return (Lam v expr)
 
 
 typeUniv :: Parser InfTerm
@@ -56,7 +86,7 @@ piExpr :: Parser InfTerm
 piExpr = do
   _ <- char '('
   spaces
-  var <- symbol
+  v <- symbol
   spaces
   _ <- char ':'
   spaces
@@ -67,15 +97,33 @@ piExpr = do
   _ <- string "->"
   spaces
   ty' <- infTerm False
-  return (Pi var ty ty')
+  return (Pi v ty ty')
+
+
+infixApp :: Parser InfTerm
+
+infixApp = do
+  e <- checkTerm True
+  spaces
+  op <- operator
+  spaces
+  e' <- checkTerm True
+  return (App (App (var op) e) e')
 
 
 app :: Parser InfTerm
 app = do
   e <- infTerm True
-  _ <- many1 space
-  e' <- checkTerm True
-  return (App e e')
+  es <- many1 (many1 space >> checkTerm True)
+  return (curryApp e es)
+  where
+    curryApp :: InfTerm -> [CheckTerm] -> InfTerm
+
+    curryApp e (e' : []) =
+      App e e'
+
+    curryApp e (e' : es) =
+      curryApp (App e e') es
 
 
 ann :: Parser InfTerm
@@ -111,21 +159,12 @@ infTerm :: Bool -> Parser InfTerm
 
 infTerm surrounded
     = try (surrIf surrounded typeUniv)
+  <|> try (surrIf surrounded infixApp)
   <|> try (surrIf surrounded app)
   <|> try (surrIf surrounded piExpr)
   <|> try (surrIf surrounded ann)
   <|> (Constant . Int <$> try number)
-  <|> (fmap
-         (\s ->
-             case s of
-               "+" ->
-                 Constant Plus
-               "Int" ->
-                 Constant IntType
-               _ ->
-                 Var s
-         )
-         (try symbol))
+  <|> (var <$> try symbol)
 
 
 checkTerm :: Bool -> Parser CheckTerm
@@ -180,4 +219,3 @@ parse :: String -> Either ParseError [(String, CheckTerm, CheckTerm)]
 
 parse =
   Text.Parsec.parse (many definition) ""
-
