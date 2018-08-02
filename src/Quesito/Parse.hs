@@ -37,6 +37,7 @@ operatorCharacters :: [Char]
 operatorCharacters =
   "!#$%&*+./<=>?@\\^|-~"
 
+
 operator :: Parser String
 
 operator = do
@@ -127,6 +128,7 @@ app = do
 
 
 ann :: Parser InfTerm
+
 ann = do
   e <- checkTerm True
   spaces
