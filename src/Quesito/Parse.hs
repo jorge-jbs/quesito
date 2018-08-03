@@ -1,3 +1,5 @@
+{-# LANGUAGE RankNTypes #-}
+
 module Quesito.Parse
   ( Quesito.Parse.parse
   )
@@ -6,7 +8,7 @@ where
 
 import Quesito.TT (CheckTerm(..), InfTerm(..), Const(..), Def(..), Name)
 
-import Text.Parsec ((<|>), try, parse, parserFail)
+import Text.Parsec ((<|>), try, parse, parserFail, eof)
 import Text.Parsec.Error (ParseError)
 import Text.Parsec.Prim (many)
 import Text.Parsec.Combinator (many1)
@@ -27,7 +29,10 @@ symbol = do
   c <- letter <|> oneOf operatorCharacters
   cs <- many (letter <|> digit <|> oneOf operatorCharacters)
   if any (not . flip elem operatorCharacters) (c : cs) then
-    return (c : cs)
+    if not (elem (c : cs) ["data", "where"]) then
+      return (c : cs)
+    else
+      parserFail ("Reserved symbol: " ++ (c : cs))
   else
     parserFail "Expected symbol, found operator."
 
@@ -82,18 +87,20 @@ typeUniv = do
   return (Type level)
 
 
-piExpr :: Parser InfTerm
-
-piExpr = do
-  _ <- char '('
-  spaces
+nameAnn :: Parser (Name, InfTerm)
+nameAnn = do
   v <- symbol
   spaces
   _ <- char ':'
   spaces
   ty <- infTerm False
-  spaces
-  _ <- char ')'
+  return (v, ty)
+
+
+piExpr :: Parser InfTerm
+
+piExpr = do
+  (v, ty) <- surround nameAnn
   spaces
   _ <- string "->"
   spaces
@@ -197,6 +204,26 @@ annotation = do
   return (name, ty)
 
 
+typeDecl :: forall a. Parser [(Name, Def a InfTerm)]
+typeDecl = do
+  _ <- string "data"
+  _ <- many1 space
+  (name, ty) <- nameAnn
+  _ <- many1 space
+  _ <- string "where"
+  spaces
+  _ <- char '{'
+  conss <- many $ try $ do
+    spaces
+    (name', ty') <- nameAnn
+    spaces
+    _ <- char ';'
+    return (name', DDataCons ty')
+  spaces
+  _ <- char '}'
+  return ((name, DDataType ty) : conss)
+
+
 implementation :: Parser (Name, CheckTerm)
 
 implementation = do
@@ -229,4 +256,15 @@ definition = do
 parse :: String -> Either ParseError [(Name, Def CheckTerm InfTerm)]
 
 parse =
-  Text.Parsec.parse (many definition) ""
+  Text.Parsec.parse
+    (do
+       defs <- concat <$> many
+              (do
+                  d <-  (\x -> [x]) <$> try definition
+                    <|> typeDecl
+                  return d
+              )
+       eof
+       return defs
+    )
+    ""
