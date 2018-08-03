@@ -104,18 +104,27 @@ piExpr = do
 infixApp :: Parser InfTerm
 
 infixApp = do
-  e <- checkTerm True
+  e <-  try (surround lambda)
+    <|> try (Inf <$>
+           (    try typeUniv
+            <|> try app
+            <|> try piExpr
+            <|> try ann
+            <|> (Constant . Int <$> try number)
+            <|> (var <$> try symbol)
+           )
+        )
   spaces
   op <- operator
   spaces
-  e' <- checkTerm True
+  e' <- checkTerm False
   return (App (App (var op) e) e')
 
 
 app :: Parser InfTerm
 app = do
   e <- infTerm True
-  es <- many1 (many1 space >> checkTerm True)
+  es <- many1 (try (many1 space >> checkTerm True))
   return (curryApp e es)
   where
     curryApp :: InfTerm -> [CheckTerm] -> InfTerm
