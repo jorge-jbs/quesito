@@ -199,7 +199,7 @@ typeInf env ctx (Var x) =
           return ty
 
         Nothing ->
-          error ("Found free variable: " ++ x)
+          Left ("Free variable: " ++ x)
 
 typeInf _ _ (Type i) =
   Right (VType (i + 1))
