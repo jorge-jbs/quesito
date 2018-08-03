@@ -22,10 +22,10 @@ checkEvalProgram
   :: [(Name, Def CheckTerm InfTerm)]
   -> [(Name, Def Value Value)]
   -> Result [(Name, Def Value Value)]
-checkEvalProgram [] definitions = Right definitions
-checkEvalProgram ((name, DExpr expr ty) : defs) definitions = do
-  _ <- typeInf definitions [] ty
-  let ty' = evalInf definitions [] ty
-  typeCheck definitions [] expr ty'
-  let expr' = evalCheck definitions [] expr
-  checkEvalProgram defs ((name, DExpr expr' ty') : definitions)
+checkEvalProgram [] evaledDefs = Right evaledDefs
+checkEvalProgram ((name, DExpr expr ty) : defs) evaledDefs = do
+  _ <- typeInf evaledDefs [] ty
+  let ty' = evalInf evaledDefs [] ty
+  typeCheck evaledDefs [] expr ty'
+  let expr' = evalCheck evaledDefs [] expr
+  checkEvalProgram defs ((name, DExpr expr' ty') : evaledDefs)
