@@ -206,6 +206,7 @@ annotation = do
 
 typeDecl :: forall a. Parser [(Name, Def a InfTerm)]
 typeDecl = do
+  spaces
   _ <- string "data"
   _ <- many1 space
   (name, ty) <- nameAnn
