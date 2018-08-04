@@ -83,7 +83,6 @@ quote (VInt n) =
 quote (VDataType n vs') =
   quote (VDataCons n vs')
 
-
 quote (VDataCons n vs') =
   Inf (quoteCons vs')
   where
