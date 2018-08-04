@@ -42,7 +42,7 @@ data Value
   | VNeutral Neutral
   | VIntType
   | VInt Int
-  | VDataType Name
+  | VDataType Name [Value]
   | VDataCons Name [Value]
 
 
@@ -80,8 +80,9 @@ quote VIntType =
 quote (VInt n) =
   Inf (Constant (Int n))
 
-quote (VDataType n) =
-  Inf (Var n)
+quote (VDataType n vs') =
+  quote (VDataCons n vs')
+
 
 quote (VDataCons n vs') =
   Inf (quoteCons vs')
@@ -130,7 +131,7 @@ evalInf env ctx (Var x) =
           v
 
         Just (DDataType _) ->
-          VDataType x
+          VDataType x []
 
         Just (DDataCons _) ->
           VDataCons x []
@@ -155,8 +156,11 @@ evalInf env ctx (App e e') =
       VDataCons n ts ->
         VDataCons n (t' : ts)
 
-      _ ->
-        error "Application to non-function."
+      VDataType n ts ->
+        VDataType n (t' : ts)
+
+      x ->
+        error ("Application to non-function: " ++ show (quote x))
 
 evalInf env ctx (Ann e _) =
   evalCheck env ctx e
@@ -208,7 +212,7 @@ typeInf env ctx (Pi x e e') = do
   t <- typeInf env ctx e
   case t of
     VType i -> do
-      t' <- typeInf env ((x, t) : ctx) e'
+      t' <- typeInf env ((x, evalInf env [] e) : ctx) e'
       case t' of
         VType j ->
           return (VType (max i j))
