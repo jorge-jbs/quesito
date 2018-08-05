@@ -1,10 +1,8 @@
 module Quesito.TT where
 
 
-import Data.List (find)
-
-
 import Control.Monad (unless)
+import Data.List (find)
 
 
 type Name = String
@@ -101,10 +99,6 @@ data Def term ty
   | DDataCons ty
 
 
-type Result a =
-  Either String a
-
-
 type TContext =
   [(Name, Value)]
 
@@ -115,6 +109,9 @@ type VContext =
 
 type Env =
   [(Name, Def Value Value)]
+
+
+-- * Evaling
 
 
 evalInf :: Env -> VContext -> InfTerm -> Value
@@ -181,6 +178,13 @@ evalCheck env ctx (Inf e) =
 
 evalCheck env ctx (Lam x e) =
   VLam x (\v -> evalCheck env ((x, v) : ctx) e)
+
+
+-- * Type inference and checking
+
+
+type Result a =
+  Either String a
 
 
 typeInf :: Env -> TContext -> InfTerm -> Result Value
@@ -254,6 +258,7 @@ typeInf _ _ (Constant Plus) =
 
 
 typeCheck :: Env -> TContext -> CheckTerm -> Value -> Result ()
+
 typeCheck env ctx (Lam x e) (VPi _ t t') =
   typeCheck env ((x, t) : ctx) e (t' (VNeutral (NVar x)))
 
