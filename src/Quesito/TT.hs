@@ -10,7 +10,8 @@ type Name = String
 
 -- | Inferable terms
 data InfTerm
-  = Var Name
+  = Bound Name
+  | Free Name
   | Type Int
   | Pi Name InfTerm InfTerm
   | App InfTerm CheckTerm
@@ -45,14 +46,15 @@ data Value
 
 
 data Neutral
-  = NVar Name  -- used for quotation
+  = NBound Name  -- used for quotation
+  | NFree Name
   | NApp Neutral Value
 
 
 quote :: Value -> CheckTerm
 
 quote (VLam x f) =
-  Lam x (quote (f (VNeutral (NVar x))))
+  Lam x (quote (f (VNeutral (NBound x))))
 
 quote (VType i) =
   Inf (Type i)
@@ -61,10 +63,13 @@ quote (VPi x v v') =
   Inf (Pi x t t')
   where
     Inf t = quote v
-    Inf t' = quote (v' (VNeutral (NVar x)))
+    Inf t' = quote (v' (VNeutral (NBound x)))
 
-quote (VNeutral (NVar x)) =
-  Inf (Var x)
+quote (VNeutral (NBound x)) =
+  Inf (Bound x)
+
+quote (VNeutral (NFree x)) =
+  Inf (Free x)
 
 quote (VNeutral (NApp n v)) =
   Inf (App n' v')
@@ -87,7 +92,7 @@ quote (VDataCons n vs') =
     quoteCons :: [Value] -> InfTerm
 
     quoteCons [] =
-      Var n
+      Bound n
 
     quoteCons (v : vs) =
       App (quoteCons vs) (quote v)
@@ -116,7 +121,7 @@ type Env =
 
 evalInf :: Env -> VContext -> InfTerm -> Value
 
-evalInf env ctx (Var x) =
+evalInf env ctx (Bound x) =
   case snd <$> find ((==) x . fst) ctx of
     Just v ->
       v
@@ -134,6 +139,9 @@ evalInf env ctx (Var x) =
 
         Nothing ->
           error ("Found free variable: " ++ x)
+
+evalInf _ _ (Free x) =
+  VNeutral (NFree x)
 
 evalInf _ _ (Type lvl) =
   VType lvl
@@ -189,7 +197,7 @@ type Result a =
 
 typeInf :: Env -> TContext -> InfTerm -> Result Value
 
-typeInf env ctx (Var x) =
+typeInf env ctx (Bound x) =
   case snd <$> find ((==) x . fst) ctx of
     Just v ->
       return v
@@ -208,6 +216,9 @@ typeInf env ctx (Var x) =
         Nothing ->
           Left ("Free variable: " ++ x)
 
+typeInf env ctx (Free x) =
+  typeInf env ctx (Bound x)
+
 typeInf _ _ (Type i) =
   Right (VType (i + 1))
 
@@ -215,7 +226,11 @@ typeInf env ctx (Pi x e e') = do
   t <- typeInf env ctx e
   case t of
     VType i -> do
-      t' <- typeInf env ((x, evalInf env [] e) : ctx) e'
+      t' <-
+        typeInf
+          env
+          ((x, evalInf env [] e) : ctx)
+          (substInf x (Free x) e')
       case t' of
         VType j ->
           return (VType (max i j))
@@ -225,6 +240,38 @@ typeInf env ctx (Pi x e e') = do
 
     _ ->
       Left "2"
+  where
+    substInf :: Name -> InfTerm -> InfTerm -> InfTerm
+    substInf name term (Bound name') =
+      if name == name' then
+        term
+      else
+        Bound name'
+    substInf _ _ (Free name') =
+      Free name'
+    substInf _ _ (Type level) =
+      Type level
+    substInf name term (Pi name' t t') =
+      if name == name' then
+        Pi name' t t'
+      else
+        Pi name' (substInf name term t) (substInf name term t')
+    substInf name term (App t t') =
+      App (substInf name term t) (substCheck name term t')
+    substInf name term (Ann t t') =
+      Ann (substCheck name term t) (substInf name term t')
+    substInf _ _ (Constant c) =
+      Constant c
+
+    substCheck :: Name -> InfTerm -> CheckTerm -> CheckTerm
+    substCheck name term (Inf t) =
+      Inf (substInf name term t)
+    substCheck name term (Lam name' t) =
+      if name == name' then
+        Lam name' t
+      else
+        Lam name' (substCheck name term t)
+
 
 typeInf env ctx (App e e') = do
   s <- typeInf env ctx e
@@ -260,7 +307,7 @@ typeInf _ _ (Constant Plus) =
 typeCheck :: Env -> TContext -> CheckTerm -> Value -> Result ()
 
 typeCheck env ctx (Lam x e) (VPi _ t t') =
-  typeCheck env ((x, t) : ctx) e (t' (VNeutral (NVar x)))
+  typeCheck env ((x, t) : ctx) e (t' (VNeutral (NBound x)))
 
 typeCheck _ _ (Lam _ _) _ =
   Left "6"

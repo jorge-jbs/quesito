@@ -62,7 +62,7 @@ var "Int" =
   Constant IntType
 
 var s =
-  Var s
+  Bound s
 
 
 lambda :: Parser CheckTerm
