@@ -1,7 +1,8 @@
 module Quesito.TT where
 
 
-import Control.Monad (unless)
+import Control.Monad (unless, when)
+import Data.Bifunctor (first)
 import Data.List (find)
 
 
@@ -317,3 +318,77 @@ typeCheck env ctx (Inf t) ty = do
   unless
     (quote ty == quote ty')
     (Left ("Type mismatch: " ++ show (quote ty) ++ ", " ++ show (quote ty')))
+
+
+-- * Declarations
+
+
+data Decl
+  = ExprDecl Name CheckTerm InfTerm
+  | TypeDecl
+      Name
+      InfTerm  -- ^ Type
+      [(Name, InfTerm)]  -- ^ Constructors
+
+
+checkDecl :: [(Name, Def Value Value)] -> Decl -> Result [(Name, Def Value Value)]
+
+checkDecl env (ExprDecl name expr ty) = do
+  tyTy <-
+    first
+      (\err -> "Type error while checking " ++ name ++ ": " ++ err)
+      (typeInf env [] ty)
+
+  case tyTy of
+    VType _ -> do
+      let ty' = evalInf env [] ty
+      typeCheck env [] expr ty'
+      return [(name, DExpr (evalCheck env [] expr) ty')]
+
+    _ ->
+      Left (name ++ "'s type is not of kind Type.")
+
+checkDecl env (TypeDecl name ty conss) = do
+  tyTy <- typeInf env [] ty
+  case tyTy of
+    VType _ ->
+      case getReturnType ty of
+        Type 0 -> do
+          let typeDef = (name, DDataType (evalInf env [] ty))
+          conss' <- mapM (uncurry (checkCons typeDef)) conss
+          return (typeDef : conss')
+
+        _ ->
+          Left (name ++ " is not a ground type.")
+
+    _ ->
+      Left (name ++ "'s type is not of kind Type.")
+  where
+    getReturnType :: InfTerm -> InfTerm
+    getReturnType (Pi _ _ x) =
+      getReturnType x
+    getReturnType x =
+      x
+
+    isConsOf :: InfTerm -> InfTerm -> Bool
+    isConsOf (App e _) (Pi _ _ t) =
+      isConsOf e t
+    isConsOf (Bound name') (Type 0) | name == name' =
+      True
+    isConsOf _ _ =
+      False
+
+    checkCons :: (Name, Def Value Value) -> Name -> InfTerm -> Result (Name, Def Value Value)
+    checkCons typeDef name' consTy = do
+      let env' = typeDef : env
+      tyTy <-
+        first
+          (\err -> "Type error while checking " ++ name' ++ ": " ++ err)
+          (typeInf env' [] consTy)
+      when
+        (case tyTy of VType _ -> False; _ -> True)
+        (Left (name' ++ "'s type is not of kind Type."))
+      when
+        (not (isConsOf (getReturnType consTy) ty))
+        (Left (name' ++ " is not a constructor for " ++ name ++ "."))
+      return (name', DDataCons (evalInf env' [] consTy))

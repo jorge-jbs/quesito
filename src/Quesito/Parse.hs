@@ -1,12 +1,10 @@
-{-# LANGUAGE RankNTypes #-}
-
 module Quesito.Parse
   ( Quesito.Parse.parse
   )
 where
 
 
-import Quesito.TT (CheckTerm(..), InfTerm(..), Const(..), Def(..), Name)
+import Quesito.TT (CheckTerm(..), InfTerm(..), Const(..), Decl(..), Name)
 
 import Text.Parsec ((<|>), try, parse, parserFail, eof)
 import Text.Parsec.Error (ParseError)
@@ -204,7 +202,7 @@ annotation = do
   return (name, ty)
 
 
-typeDecl :: forall a. Parser [(Name, Def a InfTerm)]
+typeDecl :: Parser Decl
 typeDecl = do
   spaces
   _ <- string "data"
@@ -219,10 +217,10 @@ typeDecl = do
     (name', ty') <- nameAnn
     spaces
     _ <- char ';'
-    return (name', DDataCons ty')
+    return (name', ty')
   spaces
   _ <- char '}'
-  return ((name, DDataType ty) : conss)
+  return (TypeDecl name ty conss)
 
 
 implementation :: Parser (Name, CheckTerm)
@@ -240,7 +238,7 @@ implementation = do
   return (name, body)
 
 
-definition :: Parser (Name, Def CheckTerm InfTerm)
+definition :: Parser Decl
 
 definition = do
   spaces
@@ -249,23 +247,18 @@ definition = do
   (name', body) <- implementation
   spaces
   if name == name' then
-    return (name, DExpr body ty)
+    return (ExprDecl name body ty)
   else
     parserFail ("Expecting implementation for \"" ++ name ++ "\" but found for \"" ++ show name ++ "\".")
 
 
-parse :: String -> Either ParseError [(Name, Def CheckTerm InfTerm)]
+parse :: String -> Either ParseError [Decl]
 
 parse =
   Text.Parsec.parse
     (do
-       defs <- concat <$> many
-              (do
-                  d <-  (\x -> [x]) <$> try definition
-                    <|> typeDecl
-                  return d
-              )
+       decls <- many (try definition <|> typeDecl)
        eof
-       return defs
+       return decls
     )
     ""
