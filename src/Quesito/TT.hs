@@ -9,14 +9,14 @@ import Data.List (find)
 type Name = String
 
 
-data Term
-  = Bound Name
-  | Free Name
+data Term v
+  = Bound v
+  | Free v
   | Type Int
-  | Pi Name Term Term
-  | App Term Term
-  | Ann Term Term
-  | Lam Name Term
+  | Pi Name (Term v) (Term v)
+  | App (Term v) (Term v)
+  | Ann (Term v) (Term v)
+  | Lam Name (Term v)
   deriving (Show, Eq)
 
 
@@ -36,7 +36,7 @@ data Neutral
   | NApp Neutral Value
 
 
-quote :: Value -> Term
+quote :: Value -> Term Name
 
 quote (VLam x f) =
   Lam x (quote (f (VNeutral (NBound x))))
@@ -71,18 +71,47 @@ quote (VDataType n vs') =
 quote (VDataCons n vs') =
   quoteCons vs'
   where
-    quoteCons :: [Value] -> Term
+    quoteCons :: [Value] -> Term Name
     quoteCons [] =
       Bound n
     quoteCons (v : vs) =
       App (quoteCons vs) (quote v)
 
 
+data DeBruijnVar = Index Int | DBFree Name
+  deriving (Show, Eq)
+
+
+deBruijnize :: Term Name -> Term DeBruijnVar
+deBruijnize =
+  deBruijnize' []
+  where
+    deBruijnize' :: [Name] -> Term Name -> Term DeBruijnVar
+    deBruijnize' vars (Bound v) =
+      case takeWhile (\v' -> v /= v') vars of
+        [] ->
+          Bound (DBFree v)
+        xs ->
+          Bound (Index (length xs))
+    deBruijnize' _ (Free v) =
+      Free (DBFree v)
+    deBruijnize' vars (Pi n t t') =
+      Pi "" (deBruijnize' vars t) (deBruijnize' (n : vars) t')
+    deBruijnize' vars (Lam n t) =
+      Lam "" (deBruijnize' (n : vars) t)
+    deBruijnize' _ (Type i) =
+      Type i
+    deBruijnize' vars (App t t') =
+      App (deBruijnize' vars t) (deBruijnize' vars t')
+    deBruijnize' vars (Ann t t') =
+      Ann (deBruijnize' vars t) (deBruijnize' vars t')
+
+
 data Def term ty
   = DExpr term ty
   | DDataType ty
   | DDataCons ty
-  | DCases Term
+  | DCases (Term Name)
 
 
 type TContext =
@@ -119,7 +148,7 @@ cases arity name p correspondence cases_
       (\case_ -> cases arity name p correspondence (case_:cases_))
 
 
-eval :: Env -> VContext -> Term -> Value
+eval :: Env -> VContext -> Term Name -> Value
 
 eval env ctx (Bound x) =
   case snd <$> find ((==) x . fst) ctx of
@@ -140,7 +169,7 @@ eval env ctx (Bound x) =
         Just (DCases ty) ->
           let
             cases_ = init $ init $ tail $ flattenPi ty
-            findNameCons :: Term -> Name
+            findNameCons :: Term Name -> Name
             findNameCons cons =
               let (App (Bound "P") e) = snd $ last $ flattenPi cons
               in findNameCons' e
@@ -203,7 +232,7 @@ type Result a =
   Either String a
 
 
-typeInf :: Env -> TContext -> Term -> Result Value
+typeInf :: Env -> TContext -> Term Name -> Result Value
 
 typeInf env ctx (Bound x) =
   case snd <$> find ((==) x . fst) ctx of
@@ -277,7 +306,7 @@ typeInf _ _ e@(Lam _ _) =
   Left ("Can't infer type of lambda expression " ++ show e)
 
 
-typeCheck :: Env -> TContext -> Term -> Value -> Result ()
+typeCheck :: Env -> TContext -> Term Name -> Value -> Result ()
 
 typeCheck env ctx (Lam x e) (VPi _ t t') =
   typeCheck env ((x, t) : ctx) e (t' (VNeutral (NBound x)))
@@ -288,11 +317,11 @@ typeCheck _ _ (Lam _ _) _ =
 typeCheck env ctx t ty = do
   ty' <- typeInf env ctx t
   unless
-    (quote ty == quote ty')
+    (deBruijnize (quote ty) == deBruijnize (quote ty'))
     (Left ("Type mismatch: " ++ show (quote ty) ++ ", " ++ show (quote ty')))
 
 
-subst :: Name -> Term -> Term -> Term
+subst :: Name -> Term Name -> Term Name -> Term Name
 
 subst name term (Bound name') =
   if name == name' then
@@ -329,11 +358,11 @@ subst name term (Lam name' t) =
 
 
 data Decl
-  = ExprDecl Name Term Term
+  = ExprDecl Name (Term Name) (Term Name)
   | TypeDecl
       Name
-      Term  -- ^ Type
-      [(Name, Term)]  -- ^ Constructors
+      (Term Name)  -- ^ Type
+      [(Name, Term Name)]  -- ^ Constructors
   deriving Show
 
 
@@ -370,13 +399,13 @@ checkDecl env (TypeDecl name ty conss) = do
     _ ->
       Left (name ++ "'s type is not of kind Type.")
   where
-    getReturnType :: Term -> Term
+    getReturnType :: Term Name -> Term Name
     getReturnType (Pi _ _ x) =
       getReturnType x
     getReturnType x =
       x
 
-    isConsOf :: Term -> Term -> Bool
+    isConsOf :: Term Name -> Term Name -> Bool
     isConsOf (App e _) (Pi _ _ t) =
       isConsOf e t
     isConsOf (Bound name') (Type 0) | name == name' =
@@ -384,7 +413,7 @@ checkDecl env (TypeDecl name ty conss) = do
     isConsOf _ _ =
       False
 
-    checkCons :: (Name, Def Value Value) -> Name -> Term -> Result (Name, Def Value Value)
+    checkCons :: (Name, Def Value Value) -> Name -> Term Name -> Result (Name, Def Value Value)
     checkCons typeDef name' consTy = do
       let env' = typeDef : env
       tyTy <-
@@ -400,7 +429,7 @@ checkDecl env (TypeDecl name ty conss) = do
       return (name', DDataCons (eval env' [] consTy))
 
 
-flattenPi :: Term -> [(Name, Term)]
+flattenPi :: Term Name -> [(Name, Term Name)]
 
 flattenPi (Pi v e e') =
   (v, e) : flattenPi e'
@@ -409,7 +438,7 @@ flattenPi e =
   [("", e)]
 
 
-unflattenPi :: [(Name, Term)] -> Term
+unflattenPi :: [(Name, Term Name)] -> Term Name
 
 unflattenPi [] =
   undefined
@@ -421,7 +450,7 @@ unflattenPi ((v, e) : es) =
   Pi v e (unflattenPi es)
 
 
-genCases :: Name -> Term -> [(Name, Term)] -> Term
+genCases :: Name -> Term Name -> [(Name, Term Name)] -> Term Name
 
 genCases name ty conss =
   Pi
@@ -447,11 +476,11 @@ genCases name ty conss =
         )
         conss
 
-    renameAll :: [(Name, Term)] -> [(Name, Term)]
+    renameAll :: [(Name, Term Name)] -> [(Name, Term Name)]
     renameAll =
       renameAll' 0 []
       where
-        renameAll' :: Int -> [(Name, Name)] -> [(Name, Term)] -> [(Name, Term)]
+        renameAll' :: Int -> [(Name, Name)] -> [(Name, Term Name)] -> [(Name, Term Name)]
         renameAll' _ _ [] =
           []
         renameAll' i substs ((v, e) : es) =
@@ -463,7 +492,7 @@ genCases name ty conss =
           )
             : renameAll' (i + 1) ((v, "x" ++ show i) : substs) es
 
-    addEnd :: Name -> Name -> [(Name, Term)] -> [(Name, Term)]
+    addEnd :: Name -> Name -> [(Name, Term Name)] -> [(Name, Term Name)]
     addEnd consName endName args' =
         let args = init args'
         in
@@ -481,7 +510,7 @@ genCases name ty conss =
             )
             ]
 
-    addTypeCons :: Name -> Name -> [(Name, Term)] -> [(Name, Term)]
+    addTypeCons :: Name -> Name -> [(Name, Term Name)] -> [(Name, Term Name)]
     addTypeCons typeName endName args' =
       let args = init args'
       in

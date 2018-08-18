@@ -17,7 +17,7 @@ import Text.Parsec.String (Parser)
 import Text.Parsec.Token
 
 
-raw :: Parser Term
+raw :: Parser (Term Name)
 raw =
   buildExpressionParser table expr
   where
@@ -83,7 +83,7 @@ identifier' = do
   return (c : cs)
 
 
-annotation :: Bool -> Parser (Name, Term)
+annotation :: Bool -> Parser (Name, Term Name)
 annotation semicolon = do
   name <- identifier'
   spaces
@@ -114,7 +114,7 @@ typeDecl = do
   return (TypeDecl name ty conss)
 
 
-implementation :: Parser (Name, Term)
+implementation :: Parser (Name, Term Name)
 implementation = do
   spaces
   name <- identifier'

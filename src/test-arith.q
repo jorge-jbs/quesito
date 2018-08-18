@@ -13,12 +13,11 @@ data Eq : (a : Type 0) -> a -> a -> Type 0 where {
 }
 
 zero? : Nat -> Bool;
-zero? = \x ->
+zero? =
   Nat-cases
     (\y -> Bool)
     True
-    (\z -> False)
-    x;
+    (\z -> False);
 
 zero?-zero : Bool;
 zero?-zero = zero? Zero;
