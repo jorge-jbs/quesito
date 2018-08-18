@@ -13,6 +13,7 @@ data Term v
   = Bound v
   | Free v
   | Type Int
+  | Fix
   | Pi Name (Term v) (Term v)
   | App (Term v) (Term v)
   | Ann (Term v) (Term v)
@@ -101,6 +102,8 @@ deBruijnize =
       Lam "" (deBruijnize' (n : vars) t)
     deBruijnize' _ (Type i) =
       Type i
+    deBruijnize' _ Fix =
+      Fix
     deBruijnize' vars (App t t') =
       App (deBruijnize' vars t) (deBruijnize' vars t')
     deBruijnize' vars (Ann t t') =
@@ -195,6 +198,10 @@ eval _ _ (Free x) =
 eval _ _ (Type lvl) =
   VType lvl
 
+eval env ctx Fix =
+  VLam "" (\a -> VLam "" (\(VLam _ f) ->
+                            f (case (case eval env ctx Fix of VLam _ f' -> f') a of VLam _ f' -> f' (VLam "" f))))
+
 eval env ctx (Pi x e e') =
   VPi x (eval env ctx e) (\t -> eval env ((x, t) : ctx) e')
 
@@ -261,6 +268,9 @@ typeInf env ctx (Free x) =
 
 typeInf _ _ (Type i) =
   Right (VType (i + 1))
+
+typeInf _ _ Fix =
+  Right (VPi "a" (VType 0) (\a -> VPi "" (VPi "" a (const a)) (const a)))
 
 typeInf env ctx (Pi x e e') = do
   t <- typeInf env ctx e
@@ -334,6 +344,9 @@ subst _ _ (Free name') =
 
 subst _ _ (Type level) =
   Type level
+
+subst _ _ Fix =
+  Fix
 
 subst name term (Pi name' t t') =
   if name == name' then

@@ -47,7 +47,8 @@ raw =
       <|> nonParen
 
     nonParen =
-      fmap Bound (identifier tp)
+      try (fmap Bound (identifier tp))
+      <|> try (reserved tp "fix" >> return Fix)
 
     appParser = do
       e <- nonParen <|> parens tp raw
@@ -65,7 +66,7 @@ raw =
           , identLetter = alphaNum <|> opLetter'
           , opStart = opLetter'
           , opLetter = opLetter'
-          , reservedNames = ["data", "where", "Type", "->"]
+          , reservedNames = ["data", "where", "Type", "fix", "->"]
           , reservedOpNames = ["->", ":", "\\", ";"]
           , caseSensitive = True
           }
@@ -73,7 +74,7 @@ raw =
 
 opLetter' :: Parser Char
 opLetter' =
-  oneOf "!#$%&*+./<=>?@\\^|-~"
+  oneOf "!#$%&*+./<=>?@\\^|-~'"
 
 
 identifier' :: Parser String
