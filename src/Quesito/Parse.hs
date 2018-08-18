@@ -4,202 +4,158 @@ module Quesito.Parse
 where
 
 
-import Quesito.TT (CheckTerm(..), InfTerm(..), Const(..), Decl(..), Name)
+import Quesito.TT (CheckTerm(..), InfTerm(..), Decl(..), Name)
 
-import Text.Parsec ((<|>), try, parse, parserFail, eof)
-import Text.Parsec.Error (ParseError)
-import Text.Parsec.Prim (many)
+import Control.Monad (when)
+import Data.Foldable (foldlM)
+import Text.Parsec ((<|>), try, parse, parserFail, eof, alphaNum, letter, oneOf, spaces, char, string, space)
 import Text.Parsec.Combinator (many1)
-import Text.Parsec.Char (char, digit, letter, spaces, space, string, oneOf)
+import Text.Parsec.Error (ParseError)
+import Text.Parsec.Expr
+import Text.Parsec.Prim (many)
 import Text.Parsec.String (Parser)
+import Text.Parsec.Token
 
 
-number :: Parser Int
-
-number = do
-  str <- many1 digit
-  return (read str)
-
-
-symbol :: Parser String
-
-symbol = do
-  c <- letter <|> oneOf operatorCharacters
-  cs <- many (letter <|> digit <|> oneOf operatorCharacters)
-  if any (not . flip elem operatorCharacters) (c : cs) then
-    if not (elem (c : cs) ["data", "where"]) then
-      return (c : cs)
-    else
-      parserFail ("Reserved symbol: " ++ (c : cs))
-  else
-    parserFail "Expected symbol, found operator."
+data Raw
+  = RBound Name
+  | RFree Name
+  | RType Int
+  | RPi Name Raw Raw
+  | RApp Raw Raw
+  | RLam Name Raw
+  | RAnn Raw Raw
+  deriving (Show, Eq)
 
 
-operatorCharacters :: [Char]
-
-operatorCharacters =
-  "!#$%&*+./<=>?@\\^|-~"
-
-
-operator :: Parser String
-
-operator = do
-  str <- many1 (oneOf operatorCharacters)
-  if elem str ["->", ":"] then
-    parserFail ("Reserved operator: " ++ str)
-  else
-    return str
-
-
-var :: String -> InfTerm
-
-var "+" =
-  Constant Plus
-
-var "Int" =
-  Constant IntType
-
-var s =
-  Bound s
-
-
-lambda :: Parser CheckTerm
-
-lambda = do
-  _ <- char '\\'
-  spaces
-  v <- symbol
-  spaces
-  _ <- string "->"
-  spaces
-  expr <- checkTerm False
-  return (Lam v expr)
-
-
-typeUniv :: Parser InfTerm
-
-typeUniv = do
-  _ <- string "Type"
-  _ <- many1 space
-  level <- number
-  return (Type level)
-
-
-nameAnn :: Parser (Name, InfTerm)
-nameAnn = do
-  v <- symbol
-  spaces
-  _ <- char ':'
-  spaces
-  ty <- infTerm False
-  return (v, ty)
-
-
-piExpr :: Parser InfTerm
-
-piExpr = do
-  (v, ty) <- surround nameAnn
-  spaces
-  _ <- string "->"
-  spaces
-  ty' <- infTerm False
-  return (Pi v ty ty')
-
-
-infixApp :: Parser InfTerm
-
-infixApp = do
-  e <-  try (surround lambda)
-    <|> try (Inf <$>
-           (    try typeUniv
-            <|> try app
-            <|> try piExpr
-            <|> try ann
-            <|> (Constant . Int <$> try number)
-            <|> (var <$> try symbol)
-           )
-        )
-  spaces
-  op <- operator
-  spaces
-  e' <- checkTerm False
-  return (App (App (var op) e) e')
-
-
-app :: Parser InfTerm
-app = do
-  e <- infTerm True
-  es <- many1 (try (many1 space >> checkTerm True))
-  return (curryApp e es)
+raw :: Parser Raw
+raw =
+  buildExpressionParser table expr
   where
-    curryApp :: InfTerm -> [CheckTerm] -> InfTerm
+    table =
+      [ [ Infix
+            (
+              reservedOp tp "->" >>
+              return
+                (\a b ->
+                  case a of
+                    RAnn (RBound x) ty ->
+                      RPi x ty b
+                    _ ->
+                      RPi "" a b
+                )
+            )
+            AssocRight
+        ]
+      , [ Infix (reservedOp tp ":" >> return (\a b -> RAnn a b)) AssocLeft ]
+      ]
 
-    curryApp e (e' : []) =
-      App e e'
+    expr =
+      try appParser
+      <|> try (reserved tp "Type" >> natural tp >>= \i -> return (RType (fromIntegral i)))
+      <|> try (parens tp raw)
+      <|> try (do reservedOp tp "\\"; x <- identifier tp; reservedOp tp "->"; body <- raw; return (RLam x body))
+      <|> nonParen
 
-    curryApp e (e' : es) =
-      curryApp (App e e') es
+    nonParen =
+      fmap RBound (identifier tp)
+
+    appParser = do
+      e <- nonParen <|> parens tp raw
+      es <- many1 (nonParen <|> parens tp raw)
+      foldlM (\acc x -> return (RApp acc x)) e es
+
+    tp =
+      makeTokenParser
+        LanguageDef
+          { commentStart = "{-"
+          , commentEnd = "-}"
+          , commentLine = "--"
+          , nestedComments = True
+          , identStart = letter <|> oneOf "-_"
+          , identLetter = alphaNum <|> opLetter'
+          , opStart = opLetter'
+          , opLetter = opLetter'
+          , reservedNames = ["data", "where", "Type", "->"]
+          , reservedOpNames = ["->", ":", "\\", ";"]
+          , caseSensitive = True
+          }
 
 
-ann :: Parser InfTerm
+opLetter' :: Parser Char
+opLetter' =
+  oneOf "!#$%&*+./<=>?@\\^|-~"
 
-ann = do
-  e <- checkTerm True
+
+identifier' :: Parser String
+identifier' = do
+  c <- letter <|> oneOf "-_"
+  cs <- many (alphaNum <|> opLetter')
+  return (c : cs)
+
+
+rawToInf :: Raw -> Maybe InfTerm
+
+rawToInf (RBound name) =
+  Just (Bound name)
+
+rawToInf (RFree name) =
+  Just (Free name)
+
+rawToInf (RType i) =
+  Just (Type i)
+
+rawToInf (RPi x e e') = do
+  t <- rawToInf e
+  t' <- rawToInf e'
+  return (Pi x t t')
+
+rawToInf (RApp e e') = do
+  t <- rawToInf e
+  t' <- rawToCheck e'
+  return (App t t')
+
+rawToInf (RLam _ _) =
+  Nothing
+
+rawToInf (RAnn e e') = do
+  t <- rawToCheck e
+  t' <- rawToInf e'
+  return (Ann t t')
+
+
+rawToCheck :: Raw -> Maybe CheckTerm
+
+rawToCheck e =
+  case rawToInf e of
+    Just t ->
+      Just (Inf t)
+
+    Nothing ->
+      case e of
+        RLam x e' -> do
+          t' <- rawToCheck e'
+          return (Lam x t')
+
+        _ ->
+          Nothing
+
+
+annotation :: Bool -> Parser (Name, InfTerm)
+annotation semicolon = do
+  name <- identifier'
   spaces
   _ <- char ':'
   spaces
-  e' <- infTerm False
-  return (Ann e e')
+  ty <- raw
+  case rawToInf ty of
+    Just ty' -> do
+      spaces
+      when semicolon (char ';' >> return ())
+      return (name, ty')
 
-surround :: Parser a -> Parser a
-
-surround p = do
-  _ <- char '('
-  spaces
-  e <- p
-  spaces
-  _ <- char ')'
-  return e
-
-
-surrIf :: Bool -> Parser a -> Parser a
-
-surrIf True =
-  surround
-
-surrIf False =
-  id
-
-
-infTerm :: Bool -> Parser InfTerm
-
-infTerm surrounded
-    = try (surrIf surrounded typeUniv)
-  <|> try (surrIf surrounded infixApp)
-  <|> try (surrIf surrounded app)
-  <|> try (surrIf surrounded piExpr)
-  <|> try (surrIf surrounded ann)
-  <|> (Constant . Int <$> try number)
-  <|> (var <$> try symbol)
-
-
-checkTerm :: Bool -> Parser CheckTerm
-
-checkTerm surrounded
-    = try (surrIf surrounded lambda)
-  <|> (Inf <$> infTerm surrounded)
-
-
-annotation :: Parser (Name, InfTerm)
-
-annotation = do
-  name <- symbol
-  spaces
-  _ <- char ':'
-  spaces
-  ty <- infTerm False
-  _ <- char ';'
-  return (name, ty)
+    Nothing ->
+      parserFail "inferable expression"
 
 
 typeDecl :: Parser Decl
@@ -207,16 +163,14 @@ typeDecl = do
   spaces
   _ <- string "data"
   _ <- many1 space
-  (name, ty) <- nameAnn
-  _ <- many1 space
+  (name, ty) <- annotation False
+  spaces
   _ <- string "where"
   spaces
   _ <- char '{'
   conss <- many $ try $ do
     spaces
-    (name', ty') <- nameAnn
-    spaces
-    _ <- char ';'
+    (name', ty') <- annotation True
     return (name', ty')
   spaces
   _ <- char '}'
@@ -224,25 +178,26 @@ typeDecl = do
 
 
 implementation :: Parser (Name, CheckTerm)
-
 implementation = do
   spaces
-  name <- symbol
+  name <- identifier'
   spaces
   _ <- char '='
   spaces
-  body <- checkTerm False
-  spaces
-  _ <- char ';'
-  spaces
-  return (name, body)
+  body <- raw
+  case rawToCheck body of
+    Just body' -> do
+      _ <- char ';'
+      return (name, body')
+
+    Nothing ->
+      parserFail "type checkable expression"
 
 
 definition :: Parser Decl
-
 definition = do
   spaces
-  (name, ty) <- annotation
+  (name, ty) <- annotation True
   spaces
   (name', body) <- implementation
   spaces
@@ -253,7 +208,6 @@ definition = do
 
 
 parse :: String -> Either ParseError [Decl]
-
 parse =
   Text.Parsec.parse
     (do

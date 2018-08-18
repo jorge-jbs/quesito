@@ -1,6 +1,6 @@
 data Nat : Type 0 where {
   Zero : Nat;
-  Succ : (x : Nat) -> Nat;
+  Succ : Nat -> Nat;
 }
 
 data Bool : Type 0 where {
@@ -8,11 +8,11 @@ data Bool : Type 0 where {
   False : Bool;
 }
 
-data Eq : (a : Type 0) -> (x : a) -> (y : a) -> Type 0 where {
+data Eq : (a : Type 0) -> a -> a -> Type 0 where {
   Refl : (a : Type 0) -> (x : a) -> Eq a x x;
 }
 
-zero? : (x : Nat) -> Bool;
+zero? : Nat -> Bool;
 zero? = \x ->
   Nat-cases
     (\y -> Bool)

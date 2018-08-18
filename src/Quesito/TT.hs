@@ -17,14 +17,6 @@ data InfTerm
   | Pi Name InfTerm InfTerm
   | App InfTerm CheckTerm
   | Ann CheckTerm InfTerm
-  | Constant Const
-  deriving (Show, Eq)
-
-
-data Const
-  = IntType
-  | Int Int
-  | Plus
   deriving (Show, Eq)
 
 
@@ -40,8 +32,6 @@ data Value
   | VType Int
   | VPi Name Value (Value -> Value)
   | VNeutral Neutral
-  | VIntType
-  | VInt Int
   | VDataType Name [Value]
   | VDataCons Name [Value]
   | VCases Name [Value] (Value -> Value)
@@ -81,12 +71,6 @@ quote (VNeutral (NApp n v)) =
   where
     Inf n' = quote (VNeutral n)
     v' = quote v
-
-quote VIntType =
-  Inf (Constant IntType)
-
-quote (VInt n) =
-  Inf (Constant (Int n))
 
 quote (VDataType n vs') =
   quote (VDataCons n vs')
@@ -220,15 +204,6 @@ evalInf env ctx (App e e') =
 evalInf env ctx (Ann e _) =
   evalCheck env ctx e
 
-evalInf _ _ (Constant IntType) =
-  VIntType
-
-evalInf _ _ (Constant (Int n)) =
-  VInt n
-
-evalInf _ _ (Constant Plus) =
-  VLam "x" (\(VInt x) -> VLam "y" (\(VInt y) -> VInt (x + y)))
-
 
 evalCheck :: Env -> VContext -> CheckTerm -> Value
 
@@ -317,15 +292,6 @@ typeInf env ctx (Ann e ty) = do
     _ ->
       Left ""
 
-typeInf _ _ (Constant IntType) =
-  return (VType 0)
-
-typeInf _ _ (Constant (Int _)) =
-  return VIntType
-
-typeInf _ _ (Constant Plus) =
-  return (VPi "" VIntType (const (VPi "" VIntType (const VIntType))))
-
 
 typeCheck :: Env -> TContext -> CheckTerm -> Value -> Result ()
 
@@ -367,9 +333,6 @@ substInf name term (App t t') =
 
 substInf name term (Ann t t') =
   Ann (substCheck name term t) (substInf name term t')
-
-substInf _ _ (Constant c) =
-  Constant c
 
 substCheck :: Name -> InfTerm -> CheckTerm -> CheckTerm
 

@@ -21,9 +21,6 @@ data Vect : (k : Nat) -> (a : Type 0) -> Type 0 where {
 id : (a : Type 0) -> (x : a) -> a;
 id = \a -> \x -> x;
 
-main1 : Int;
-main1 = 1 + 2 + id Int 2;
-
 main2 : Nat;
 main2 = Succ (Succ Zero);
 

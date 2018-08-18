@@ -12,9 +12,3 @@ zero-eq-zero = Refl Nat Zero;
 
 one-eq-one : Eq Nat (Succ Zero) (Succ Zero);
 one-eq-one = Refl Nat (Succ Zero);
-
-three-eq-three : Eq Int 3 3;
-three-eq-three = Refl Int 3;
-
-main : Int;
-main = 3;
