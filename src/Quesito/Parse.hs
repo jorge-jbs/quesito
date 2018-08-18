@@ -4,7 +4,7 @@ module Quesito.Parse
 where
 
 
-import Quesito.TT (CheckTerm(..), InfTerm(..), Decl(..), Name)
+import Quesito.TT (Term(..), Decl(..), Name)
 
 import Control.Monad (when)
 import Data.Foldable (foldlM)
@@ -17,18 +17,7 @@ import Text.Parsec.String (Parser)
 import Text.Parsec.Token
 
 
-data Raw
-  = RBound Name
-  | RFree Name
-  | RType Int
-  | RPi Name Raw Raw
-  | RApp Raw Raw
-  | RLam Name Raw
-  | RAnn Raw Raw
-  deriving (Show, Eq)
-
-
-raw :: Parser Raw
+raw :: Parser Term
 raw =
   buildExpressionParser table expr
   where
@@ -39,31 +28,31 @@ raw =
               return
                 (\a b ->
                   case a of
-                    RAnn (RBound x) ty ->
-                      RPi x ty b
+                    Ann (Bound x) ty ->
+                      Pi x ty b
                     _ ->
-                      RPi "" a b
+                      Pi "" a b
                 )
             )
             AssocRight
         ]
-      , [ Infix (reservedOp tp ":" >> return (\a b -> RAnn a b)) AssocLeft ]
+      , [ Infix (reservedOp tp ":" >> return (\a b -> Ann a b)) AssocLeft ]
       ]
 
     expr =
       try appParser
-      <|> try (reserved tp "Type" >> natural tp >>= \i -> return (RType (fromIntegral i)))
+      <|> try (reserved tp "Type" >> natural tp >>= \i -> return (Type (fromIntegral i)))
       <|> try (parens tp raw)
-      <|> try (do reservedOp tp "\\"; x <- identifier tp; reservedOp tp "->"; body <- raw; return (RLam x body))
+      <|> try (do reservedOp tp "\\"; x <- identifier tp; reservedOp tp "->"; body <- raw; return (Lam x body))
       <|> nonParen
 
     nonParen =
-      fmap RBound (identifier tp)
+      fmap Bound (identifier tp)
 
     appParser = do
       e <- nonParen <|> parens tp raw
       es <- many1 (nonParen <|> parens tp raw)
-      foldlM (\acc x -> return (RApp acc x)) e es
+      foldlM (\acc x -> return (App acc x)) e es
 
     tp =
       makeTokenParser
@@ -94,68 +83,16 @@ identifier' = do
   return (c : cs)
 
 
-rawToInf :: Raw -> Maybe InfTerm
-
-rawToInf (RBound name) =
-  Just (Bound name)
-
-rawToInf (RFree name) =
-  Just (Free name)
-
-rawToInf (RType i) =
-  Just (Type i)
-
-rawToInf (RPi x e e') = do
-  t <- rawToInf e
-  t' <- rawToInf e'
-  return (Pi x t t')
-
-rawToInf (RApp e e') = do
-  t <- rawToInf e
-  t' <- rawToCheck e'
-  return (App t t')
-
-rawToInf (RLam _ _) =
-  Nothing
-
-rawToInf (RAnn e e') = do
-  t <- rawToCheck e
-  t' <- rawToInf e'
-  return (Ann t t')
-
-
-rawToCheck :: Raw -> Maybe CheckTerm
-
-rawToCheck e =
-  case rawToInf e of
-    Just t ->
-      Just (Inf t)
-
-    Nothing ->
-      case e of
-        RLam x e' -> do
-          t' <- rawToCheck e'
-          return (Lam x t')
-
-        _ ->
-          Nothing
-
-
-annotation :: Bool -> Parser (Name, InfTerm)
+annotation :: Bool -> Parser (Name, Term)
 annotation semicolon = do
   name <- identifier'
   spaces
   _ <- char ':'
   spaces
   ty <- raw
-  case rawToInf ty of
-    Just ty' -> do
-      spaces
-      when semicolon (char ';' >> return ())
-      return (name, ty')
-
-    Nothing ->
-      parserFail "inferable expression"
+  spaces
+  when semicolon (char ';' >> return ())
+  return (name, ty)
 
 
 typeDecl :: Parser Decl
@@ -177,7 +114,7 @@ typeDecl = do
   return (TypeDecl name ty conss)
 
 
-implementation :: Parser (Name, CheckTerm)
+implementation :: Parser (Name, Term)
 implementation = do
   spaces
   name <- identifier'
@@ -185,13 +122,8 @@ implementation = do
   _ <- char '='
   spaces
   body <- raw
-  case rawToCheck body of
-    Just body' -> do
-      _ <- char ';'
-      return (name, body')
-
-    Nothing ->
-      parserFail "type checkable expression"
+  _ <- char ';'
+  return (name, body)
 
 
 definition :: Parser Decl

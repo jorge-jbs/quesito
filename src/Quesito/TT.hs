@@ -9,21 +9,14 @@ import Data.List (find)
 type Name = String
 
 
--- | Inferable terms
-data InfTerm
+data Term
   = Bound Name
   | Free Name
   | Type Int
-  | Pi Name InfTerm InfTerm
-  | App InfTerm CheckTerm
-  | Ann CheckTerm InfTerm
-  deriving (Show, Eq)
-
-
--- | Checkable terms
-data CheckTerm
-  = Inf InfTerm
-  | Lam Name CheckTerm
+  | Pi Name Term Term
+  | App Term Term
+  | Ann Term Term
+  | Lam Name Term
   deriving (Show, Eq)
 
 
@@ -43,46 +36,44 @@ data Neutral
   | NApp Neutral Value
 
 
-quote :: Value -> CheckTerm
+quote :: Value -> Term
 
 quote (VLam x f) =
   Lam x (quote (f (VNeutral (NBound x))))
 
 quote (VCases name args _) =
-  Lam "case" (Inf $ App (foldl (\acc e -> App acc e) (Bound name) (map quote args)) (Inf $ Bound "case"))
+  Lam "case" (App (foldl (\acc e -> App acc e) (Bound name) (map quote args)) (Bound "case"))
 
 quote (VType i) =
-  Inf (Type i)
+  Type i
 
 quote (VPi x v v') =
-  Inf (Pi x t t')
+  Pi x t t'
   where
-    Inf t = quote v
-    Inf t' = quote (v' (VNeutral (NBound x)))
+    t = quote v
+    t' = quote (v' (VNeutral (NBound x)))
 
 quote (VNeutral (NBound x)) =
-  Inf (Bound x)
+  Bound x
 
 quote (VNeutral (NFree x)) =
-  Inf (Free x)
+  Free x
 
 quote (VNeutral (NApp n v)) =
-  Inf (App n' v')
+  App n' v'
   where
-    Inf n' = quote (VNeutral n)
+    n' = quote (VNeutral n)
     v' = quote v
 
 quote (VDataType n vs') =
   quote (VDataCons n vs')
 
 quote (VDataCons n vs') =
-  Inf (quoteCons vs')
+  quoteCons vs'
   where
-    quoteCons :: [Value] -> InfTerm
-
+    quoteCons :: [Value] -> Term
     quoteCons [] =
       Bound n
-
     quoteCons (v : vs) =
       App (quoteCons vs) (quote v)
 
@@ -91,7 +82,7 @@ data Def term ty
   = DExpr term ty
   | DDataType ty
   | DDataCons ty
-  | DCases InfTerm
+  | DCases Term
 
 
 type TContext =
@@ -121,9 +112,6 @@ cases arity name p correspondence cases_
 
            x ->
              VNeutral (NApp (foldl (\acc e -> NApp acc e) (NBound name) (p : reverse cases_)) x)
-
-           -- x ->
-             -- error ("Parameter is not a constructor: " ++ show (quote x) ++ "; " ++ show arity ++ "; " ++ show correspondence)
       )
 
   | otherwise =
@@ -131,9 +119,9 @@ cases arity name p correspondence cases_
       (\case_ -> cases arity name p correspondence (case_:cases_))
 
 
-evalInf :: Env -> VContext -> InfTerm -> Value
+eval :: Env -> VContext -> Term -> Value
 
-evalInf env ctx (Bound x) =
+eval env ctx (Bound x) =
   case snd <$> find ((==) x . fst) ctx of
     Just v ->
       v
@@ -152,9 +140,9 @@ evalInf env ctx (Bound x) =
         Just (DCases ty) ->
           let
             cases_ = init $ init $ tail $ flattenPi ty
-            findNameCons :: InfTerm -> Name
+            findNameCons :: Term -> Name
             findNameCons cons =
-              let (App (Bound "P") (Inf e)) = snd $ last $ flattenPi cons
+              let (App (Bound "P") e) = snd $ last $ flattenPi cons
               in findNameCons' e
               where
                 findNameCons' (App e' _) =
@@ -172,20 +160,20 @@ evalInf env ctx (Bound x) =
         Nothing ->
           error ("Found free variable: " ++ x)
 
-evalInf _ _ (Free x) =
+eval _ _ (Free x) =
   VNeutral (NFree x)
 
-evalInf _ _ (Type lvl) =
+eval _ _ (Type lvl) =
   VType lvl
 
-evalInf env ctx (Pi x e e') =
-  VPi x (evalInf env ctx e) (\t -> evalInf env ((x, t) : ctx) e')
+eval env ctx (Pi x e e') =
+  VPi x (eval env ctx e) (\t -> eval env ((x, t) : ctx) e')
 
-evalInf env ctx (App e e') =
+eval env ctx (App e e') =
   let
-    t' = evalCheck env ctx e'
+    t' = eval env ctx e'
   in
-    case evalInf env ctx e of
+    case eval env ctx e of
       VLam _ t ->
         t t'
 
@@ -201,17 +189,11 @@ evalInf env ctx (App e e') =
       x ->
         error ("Application to non-function: " ++ show (quote x))
 
-evalInf env ctx (Ann e _) =
-  evalCheck env ctx e
+eval env ctx (Ann e _) =
+  eval env ctx e
 
-
-evalCheck :: Env -> VContext -> CheckTerm -> Value
-
-evalCheck env ctx (Inf e) =
-  evalInf env ctx e
-
-evalCheck env ctx (Lam x e) =
-  VLam x (\v -> evalCheck env ((x, v) : ctx) e)
+eval env ctx (Lam x e) =
+  VLam x (\v -> eval env ((x, v) : ctx) e)
 
 
 -- * Type inference and checking
@@ -221,7 +203,7 @@ type Result a =
   Either String a
 
 
-typeInf :: Env -> TContext -> InfTerm -> Result Value
+typeInf :: Env -> TContext -> Term -> Result Value
 
 typeInf env ctx (Bound x) =
   case snd <$> find ((==) x . fst) ctx of
@@ -240,7 +222,7 @@ typeInf env ctx (Bound x) =
           return ty
 
         Just (DCases ty) ->
-          return (evalInf env [] ty)
+          return (eval env [] ty)
 
         Nothing ->
           Left ("Free variable: " ++ x)
@@ -258,8 +240,8 @@ typeInf env ctx (Pi x e e') = do
       t' <-
         typeInf
           env
-          ((x, evalInf env [] e) : ctx)
-          (substInf x (Free x) e')
+          ((x, eval env [] e) : ctx)
+          (subst x (Free x) e')
       case t' of
         VType j ->
           return (VType (max i j))
@@ -270,13 +252,12 @@ typeInf env ctx (Pi x e e') = do
     _ ->
       Left "2"
 
-
 typeInf env ctx (App e e') = do
   s <- typeInf env ctx e
   case s of
     VPi _ t t' -> do
       typeCheck env ctx e' t
-      return (t' (evalCheck env [] e'))
+      return (t' (eval env [] e'))
 
     _ ->
       Left ("Applying to non-function: " ++ show (quote s))
@@ -285,15 +266,18 @@ typeInf env ctx (Ann e ty) = do
   tyTy <- typeInf env ctx ty
   case tyTy of
     VType _ -> do
-      let ty' = evalInf env [] ty
+      let ty' = eval env [] ty
       typeCheck env ctx e ty'
       return ty'
 
     _ ->
       Left ""
 
+typeInf _ _ e@(Lam _ _) =
+  Left ("Can't infer type of lambda expression " ++ show e)
 
-typeCheck :: Env -> TContext -> CheckTerm -> Value -> Result ()
+
+typeCheck :: Env -> TContext -> Term -> Value -> Result ()
 
 typeCheck env ctx (Lam x e) (VPi _ t t') =
   typeCheck env ((x, t) : ctx) e (t' (VNeutral (NBound x)))
@@ -301,60 +285,55 @@ typeCheck env ctx (Lam x e) (VPi _ t t') =
 typeCheck _ _ (Lam _ _) _ =
   Left "6"
 
-typeCheck env ctx (Inf t) ty = do
+typeCheck env ctx t ty = do
   ty' <- typeInf env ctx t
   unless
     (quote ty == quote ty')
     (Left ("Type mismatch: " ++ show (quote ty) ++ ", " ++ show (quote ty')))
 
 
-substInf :: Name -> InfTerm -> InfTerm -> InfTerm
+subst :: Name -> Term -> Term -> Term
 
-substInf name term (Bound name') =
+subst name term (Bound name') =
   if name == name' then
     term
   else
     Bound name'
 
-substInf _ _ (Free name') =
+subst _ _ (Free name') =
   Free name'
 
-substInf _ _ (Type level) =
+subst _ _ (Type level) =
   Type level
 
-substInf name term (Pi name' t t') =
+subst name term (Pi name' t t') =
   if name == name' then
     Pi name' t t'
   else
-    Pi name' (substInf name term t) (substInf name term t')
+    Pi name' (subst name term t) (subst name term t')
 
-substInf name term (App t t') =
-  App (substInf name term t) (substCheck name term t')
+subst name term (App t t') =
+  App (subst name term t) (subst name term t')
 
-substInf name term (Ann t t') =
-  Ann (substCheck name term t) (substInf name term t')
+subst name term (Ann t t') =
+  Ann (subst name term t) (subst name term t')
 
-substCheck :: Name -> InfTerm -> CheckTerm -> CheckTerm
-
-substCheck name term (Inf t) =
-  Inf (substInf name term t)
-
-substCheck name term (Lam name' t) =
+subst name term (Lam name' t) =
   if name == name' then
     Lam name' t
   else
-    Lam name' (substCheck name term t)
+    Lam name' (subst name term t)
 
 
 -- * Declarations
 
 
 data Decl
-  = ExprDecl Name CheckTerm InfTerm
+  = ExprDecl Name Term Term
   | TypeDecl
       Name
-      InfTerm  -- ^ Type
-      [(Name, InfTerm)]  -- ^ Constructors
+      Term  -- ^ Type
+      [(Name, Term)]  -- ^ Constructors
   deriving Show
 
 
@@ -368,9 +347,9 @@ checkDecl env (ExprDecl name expr ty) = do
 
   case tyTy of
     VType _ -> do
-      let ty' = evalInf env [] ty
+      let ty' = eval env [] ty
       typeCheck env [] expr ty'
-      return [(name, DExpr (evalCheck env [] expr) ty')]
+      return [(name, DExpr (eval env [] expr) ty')]
 
     _ ->
       Left (name ++ "'s type is not of kind Type.")
@@ -381,7 +360,7 @@ checkDecl env (TypeDecl name ty conss) = do
     VType _ ->
       case getReturnType ty of
         Type 0 -> do
-          let typeDef = (name, DDataType (evalInf env [] ty))
+          let typeDef = (name, DDataType (eval env [] ty))
           conss' <- mapM (uncurry (checkCons typeDef)) conss
           return (typeDef : conss' ++ [(name ++ "-cases", DCases (genCases name ty conss))])
 
@@ -391,13 +370,13 @@ checkDecl env (TypeDecl name ty conss) = do
     _ ->
       Left (name ++ "'s type is not of kind Type.")
   where
-    getReturnType :: InfTerm -> InfTerm
+    getReturnType :: Term -> Term
     getReturnType (Pi _ _ x) =
       getReturnType x
     getReturnType x =
       x
 
-    isConsOf :: InfTerm -> InfTerm -> Bool
+    isConsOf :: Term -> Term -> Bool
     isConsOf (App e _) (Pi _ _ t) =
       isConsOf e t
     isConsOf (Bound name') (Type 0) | name == name' =
@@ -405,7 +384,7 @@ checkDecl env (TypeDecl name ty conss) = do
     isConsOf _ _ =
       False
 
-    checkCons :: (Name, Def Value Value) -> Name -> InfTerm -> Result (Name, Def Value Value)
+    checkCons :: (Name, Def Value Value) -> Name -> Term -> Result (Name, Def Value Value)
     checkCons typeDef name' consTy = do
       let env' = typeDef : env
       tyTy <-
@@ -418,10 +397,10 @@ checkDecl env (TypeDecl name ty conss) = do
       when
         (not (isConsOf (getReturnType consTy) ty))
         (Left (name' ++ " is not a constructor for " ++ name ++ "."))
-      return (name', DDataCons (evalInf env' [] consTy))
+      return (name', DDataCons (eval env' [] consTy))
 
 
-flattenPi :: InfTerm -> [(Name, InfTerm)]
+flattenPi :: Term -> [(Name, Term)]
 
 flattenPi (Pi v e e') =
   (v, e) : flattenPi e'
@@ -430,7 +409,7 @@ flattenPi e =
   [("", e)]
 
 
-unflattenPi :: [(Name, InfTerm)] -> InfTerm
+unflattenPi :: [(Name, Term)] -> Term
 
 unflattenPi [] =
   undefined
@@ -442,7 +421,7 @@ unflattenPi ((v, e) : es) =
   Pi v e (unflattenPi es)
 
 
-genCases :: Name -> InfTerm -> [(Name, InfTerm)] -> InfTerm
+genCases :: Name -> Term -> [(Name, Term)] -> Term
 
 genCases name ty conss =
   Pi
@@ -468,23 +447,23 @@ genCases name ty conss =
         )
         conss
 
-    renameAll :: [(Name, InfTerm)] -> [(Name, InfTerm)]
+    renameAll :: [(Name, Term)] -> [(Name, Term)]
     renameAll =
       renameAll' 0 []
       where
-        renameAll' :: Int -> [(Name, Name)] -> [(Name, InfTerm)] -> [(Name, InfTerm)]
+        renameAll' :: Int -> [(Name, Name)] -> [(Name, Term)] -> [(Name, Term)]
         renameAll' _ _ [] =
           []
         renameAll' i substs ((v, e) : es) =
           ("x" ++ show i
           , foldl
-              (\e' (from, to) -> substInf from (Bound to) e')
+              (\e' (from, to) -> subst from (Bound to) e')
               e
               substs
           )
             : renameAll' (i + 1) ((v, "x" ++ show i) : substs) es
 
-    addEnd :: Name -> Name -> [(Name, InfTerm)] -> [(Name, InfTerm)]
+    addEnd :: Name -> Name -> [(Name, Term)] -> [(Name, Term)]
     addEnd consName endName args' =
         let args = init args'
         in
@@ -492,9 +471,9 @@ genCases name ty conss =
         ++ [( ""
             , App
                 (Bound endName)
-                (Inf $ foldl
+                (foldl
                   (\e (v, _) ->
-                    App e (Inf (Bound v))
+                    App e (Bound v)
                   )
                   (Bound consName)
                   args
@@ -502,7 +481,7 @@ genCases name ty conss =
             )
             ]
 
-    addTypeCons :: Name -> Name -> [(Name, InfTerm)] -> [(Name, InfTerm)]
+    addTypeCons :: Name -> Name -> [(Name, Term)] -> [(Name, Term)]
     addTypeCons typeName endName args' =
       let args = init args'
       in
@@ -510,10 +489,10 @@ genCases name ty conss =
         ++ [ ( "uniqueName"
               , foldl
                   (\e (v, _) ->
-                    App e (Inf (Bound v))
+                    App e (Bound v)
                   )
                   (Bound typeName)
                   args
               )
-          , ("", App (Bound endName) (Inf (Bound "uniqueName")))
+          , ("", App (Bound endName) (Bound "uniqueName"))
           ]
