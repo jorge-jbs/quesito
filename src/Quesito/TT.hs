@@ -44,6 +44,7 @@ data Value
   | VInt Int
   | VDataType Name [Value]
   | VDataCons Name [Value]
+  | VCases Name [Value] (Value -> Value)
 
 
 data Neutral
@@ -56,6 +57,9 @@ quote :: Value -> CheckTerm
 
 quote (VLam x f) =
   Lam x (quote (f (VNeutral (NBound x))))
+
+quote (VCases name args _) =
+  Lam "case" (Inf $ App (foldl (\acc e -> App acc e) (Bound name) (map quote args)) (Inf $ Bound "case"))
 
 quote (VType i) =
   Inf (Type i)
@@ -103,6 +107,7 @@ data Def term ty
   = DExpr term ty
   | DDataType ty
   | DDataCons ty
+  | DCases InfTerm
 
 
 type TContext =
@@ -118,6 +123,28 @@ type Env =
 
 
 -- * Evaling
+
+
+cases :: Int -> Name -> Value -> [(Name, Int)] -> [Value] -> Value
+cases arity name p correspondence cases_
+  | length cases_ == arity =
+    VCases name (p : reverse cases_)
+      (\cons ->
+         case cons of
+           VDataCons name' args ->
+             let case_ = (reverse cases_) !! (snd $ maybe undefined id $ find ((==) name' . fst) correspondence)
+             in foldl (\(VLam _ f) arg-> f arg) case_ args
+
+           x ->
+             VNeutral (NApp (foldl (\acc e -> NApp acc e) (NBound name) (p : reverse cases_)) x)
+
+           -- x ->
+             -- error ("Parameter is not a constructor: " ++ show (quote x) ++ "; " ++ show arity ++ "; " ++ show correspondence)
+      )
+
+  | otherwise =
+    VLam ""
+      (\case_ -> cases arity name p correspondence (case_:cases_))
 
 
 evalInf :: Env -> VContext -> InfTerm -> Value
@@ -137,6 +164,26 @@ evalInf env ctx (Bound x) =
 
         Just (DDataCons _) ->
           VDataCons x []
+
+        Just (DCases ty) ->
+          let
+            cases_ = init $ init $ tail $ flattenPi ty
+            findNameCons :: InfTerm -> Name
+            findNameCons cons =
+              let (App (Bound "P") (Inf e)) = snd $ last $ flattenPi cons
+              in findNameCons' e
+              where
+                findNameCons' (App e' _) =
+                  findNameCons' e'
+                findNameCons' (Bound e') =
+                  e'
+                findNameCons' _ =
+                  undefined
+          in
+            VLam "P"
+              (\p ->
+                  cases (length cases_) x p (zip (map (findNameCons . snd) cases_) [0..]) []
+              )
 
         Nothing ->
           error ("Found free variable: " ++ x)
@@ -163,6 +210,9 @@ evalInf env ctx (App e e') =
 
       VDataType n ts ->
         VDataType n (t' : ts)
+
+      VCases _ _ t ->
+        t t'
 
       x ->
         error ("Application to non-function: " ++ show (quote x))
@@ -214,6 +264,9 @@ typeInf env ctx (Bound x) =
         Just (DDataCons ty) ->
           return ty
 
+        Just (DCases ty) ->
+          return (evalInf env [] ty)
+
         Nothing ->
           Left ("Free variable: " ++ x)
 
@@ -241,37 +294,6 @@ typeInf env ctx (Pi x e e') = do
 
     _ ->
       Left "2"
-  where
-    substInf :: Name -> InfTerm -> InfTerm -> InfTerm
-    substInf name term (Bound name') =
-      if name == name' then
-        term
-      else
-        Bound name'
-    substInf _ _ (Free name') =
-      Free name'
-    substInf _ _ (Type level) =
-      Type level
-    substInf name term (Pi name' t t') =
-      if name == name' then
-        Pi name' t t'
-      else
-        Pi name' (substInf name term t) (substInf name term t')
-    substInf name term (App t t') =
-      App (substInf name term t) (substCheck name term t')
-    substInf name term (Ann t t') =
-      Ann (substCheck name term t) (substInf name term t')
-    substInf _ _ (Constant c) =
-      Constant c
-
-    substCheck :: Name -> InfTerm -> CheckTerm -> CheckTerm
-    substCheck name term (Inf t) =
-      Inf (substInf name term t)
-    substCheck name term (Lam name' t) =
-      if name == name' then
-        Lam name' t
-      else
-        Lam name' (substCheck name term t)
 
 
 typeInf env ctx (App e e') = do
@@ -320,6 +342,47 @@ typeCheck env ctx (Inf t) ty = do
     (Left ("Type mismatch: " ++ show (quote ty) ++ ", " ++ show (quote ty')))
 
 
+substInf :: Name -> InfTerm -> InfTerm -> InfTerm
+
+substInf name term (Bound name') =
+  if name == name' then
+    term
+  else
+    Bound name'
+
+substInf _ _ (Free name') =
+  Free name'
+
+substInf _ _ (Type level) =
+  Type level
+
+substInf name term (Pi name' t t') =
+  if name == name' then
+    Pi name' t t'
+  else
+    Pi name' (substInf name term t) (substInf name term t')
+
+substInf name term (App t t') =
+  App (substInf name term t) (substCheck name term t')
+
+substInf name term (Ann t t') =
+  Ann (substCheck name term t) (substInf name term t')
+
+substInf _ _ (Constant c) =
+  Constant c
+
+substCheck :: Name -> InfTerm -> CheckTerm -> CheckTerm
+
+substCheck name term (Inf t) =
+  Inf (substInf name term t)
+
+substCheck name term (Lam name' t) =
+  if name == name' then
+    Lam name' t
+  else
+    Lam name' (substCheck name term t)
+
+
 -- * Declarations
 
 
@@ -329,6 +392,7 @@ data Decl
       Name
       InfTerm  -- ^ Type
       [(Name, InfTerm)]  -- ^ Constructors
+  deriving Show
 
 
 checkDecl :: [(Name, Def Value Value)] -> Decl -> Result [(Name, Def Value Value)]
@@ -356,7 +420,7 @@ checkDecl env (TypeDecl name ty conss) = do
         Type 0 -> do
           let typeDef = (name, DDataType (evalInf env [] ty))
           conss' <- mapM (uncurry (checkCons typeDef)) conss
-          return (typeDef : conss')
+          return (typeDef : conss' ++ [(name ++ "-cases", DCases (genCases name ty conss))])
 
         _ ->
           Left (name ++ " is not a ground type.")
@@ -392,3 +456,101 @@ checkDecl env (TypeDecl name ty conss) = do
         (not (isConsOf (getReturnType consTy) ty))
         (Left (name' ++ " is not a constructor for " ++ name ++ "."))
       return (name', DDataCons (evalInf env' [] consTy))
+
+
+flattenPi :: InfTerm -> [(Name, InfTerm)]
+
+flattenPi (Pi v e e') =
+  (v, e) : flattenPi e'
+
+flattenPi e =
+  [("", e)]
+
+
+unflattenPi :: [(Name, InfTerm)] -> InfTerm
+
+unflattenPi [] =
+  undefined
+
+unflattenPi ((_, e) : []) =
+  e
+
+unflattenPi ((v, e) : es) =
+  Pi v e (unflattenPi es)
+
+
+genCases :: Name -> InfTerm -> [(Name, InfTerm)] -> InfTerm
+
+genCases name ty conss =
+  Pi
+    "P"
+    (unflattenPi
+      ((init $ addTypeCons name "" $ renameAll $ flattenPi $ ty)
+        ++ [("", Type 0)]
+      )
+    )
+    (foldr
+      (Pi "")
+      (unflattenPi $ addTypeCons name "P" $ renameAll $ flattenPi ty)
+      conss'
+    )
+  where
+    conss' =
+      map
+        (\(name', cons) ->
+            unflattenPi
+            $ addEnd name' "P"
+            $ renameAll
+            $ flattenPi cons
+        )
+        conss
+
+    renameAll :: [(Name, InfTerm)] -> [(Name, InfTerm)]
+    renameAll =
+      renameAll' 0 []
+      where
+        renameAll' :: Int -> [(Name, Name)] -> [(Name, InfTerm)] -> [(Name, InfTerm)]
+        renameAll' _ _ [] =
+          []
+        renameAll' i substs ((v, e) : es) =
+          ("x" ++ show i
+          , foldl
+              (\e' (from, to) -> substInf from (Bound to) e')
+              e
+              substs
+          )
+            : renameAll' (i + 1) ((v, "x" ++ show i) : substs) es
+
+    addEnd :: Name -> Name -> [(Name, InfTerm)] -> [(Name, InfTerm)]
+    addEnd consName endName args' =
+        let args = init args'
+        in
+        args
+        ++ [( ""
+            , App
+                (Bound endName)
+                (Inf $ foldl
+                  (\e (v, _) ->
+                    App e (Inf (Bound v))
+                  )
+                  (Bound consName)
+                  args
+                )
+            )
+            ]
+
+    addTypeCons :: Name -> Name -> [(Name, InfTerm)] -> [(Name, InfTerm)]
+    addTypeCons typeName endName args' =
+      let args = init args'
+      in
+        args
+        ++ [ ( "uniqueName"
+              , foldl
+                  (\e (v, _) ->
+                    App e (Inf (Bound v))
+                  )
+                  (Bound typeName)
+                  args
+              )
+          , ("", App (Bound endName) (Inf (Bound "uniqueName")))
+          ]
