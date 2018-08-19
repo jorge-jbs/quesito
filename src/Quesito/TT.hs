@@ -246,7 +246,7 @@ eval env ctx (Term pos k) =
                 cases_ = init $ init $ tail $ flattenPi ty
                 findNameCons :: Term Name -> Name
                 findNameCons cons =
-                  let (Term _ (App (Term _ (Bound "P")) e)) = snd $ last $ flattenPi cons
+                  let (Term _ (App _ e)) = snd $ last $ flattenPi cons
                   in findNameCons' e
                   where
                     findNameCons' (Term _ (App e' _)) =
@@ -392,7 +392,7 @@ typeInf env ctx (Term pos k) =
 typeCheck :: Env -> TContext -> Term Name -> Value -> Result ()
 
 typeCheck env ctx (Term _ (Lam x e)) (VPi _ t t') =
-  typeCheck env ((x, t) : ctx) (subst x (Free x) e) (t' (VNeutral (NBound x)))
+  typeCheck env ((x, t) : ctx) (subst x (Free x) e) (t' (VNeutral (NFree x)))
 
 typeCheck _ _ (Term pos (Lam _ _)) _ =
   Left ("6: " ++ show pos)
@@ -559,7 +559,7 @@ genCases name ty conss =
       map
         (\(name', cons) ->
             unflattenPi
-            $ addEnd name' "P"
+            $ addEnd name name' "P"
             $ renameAll
             $ flattenPi cons
         )
@@ -581,8 +581,8 @@ genCases name ty conss =
           )
             : renameAll' (i + 1) ((v, "x" ++ show i) : substs) es
 
-    addEnd :: Name -> Name -> [(Name, Term Name)] -> [(Name, Term Name)]
-    addEnd consName endName args' =
+    addEnd :: Name -> Name -> Name -> [(Name, Term Name)] -> [(Name, Term Name)]
+    addEnd typeName consName endName args' =
         let args = init args'
         in
         args
@@ -590,7 +590,7 @@ genCases name ty conss =
             , Term
                 None
                 (App
-                  (Term None (Bound endName))
+                  (subst typeName (Bound endName) (snd (last args')))
                   (foldl
                     (\e (v, _) ->
                       Term None (App e (Term None (Bound v)))
@@ -605,15 +605,17 @@ genCases name ty conss =
     addTypeCons :: Name -> Name -> [(Name, Term Name)] -> [(Name, Term Name)]
     addTypeCons typeName endName args' =
       let args = init args'
+          fullyAppliedType =
+            foldl
+              (\e (v, _) ->
+                Term None (App e (Term None (Bound v)))
+              )
+              (Term None (Bound typeName))
+              args
       in
         args
         ++ [ ( "uniqueName"
-              , foldl
-                  (\e (v, _) ->
-                    Term None (App e (Term None (Bound v)))
-                  )
-                  (Term None (Bound typeName))
-                  args
+             , fullyAppliedType
               )
-          , ("", Term None (App (Term None (Bound endName)) (Term None (Bound "uniqueName"))))
+          , ("", Term None (App (subst typeName (Bound endName) fullyAppliedType) (Term None (Bound "uniqueName"))))
           ]
