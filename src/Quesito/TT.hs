@@ -59,25 +59,25 @@ instance Printable v => Show (TermKind v) where
     print v
 
   show (Type i) =
-    "Type " ++ show i
+    "(" ++ "Type " ++ show i ++ ")"
 
   show Fix =
     "fix"
 
   show (Pi "" t t') =
-    show t ++ " -> " ++ show t'
+    "(" ++ show t ++ " -> " ++ show t' ++ ")"
 
   show (Pi n t t') =
-    "(" ++ n ++ " : "++ show t ++ ") -> " ++ show t'
+    "(" ++ "(" ++ n ++ " : "++ show t ++ ") -> " ++ show t' ++ ")"
 
   show (App t t') =
     "(" ++ show t ++ " " ++ show t' ++ ")"
 
   show (Ann t t') =
-    show t ++ " " ++ show t'
+    "(" ++ show t ++ " " ++ show t' ++ ")"
 
   show (Lam n t) =
-    "\\" ++ n ++ " -> " ++ show t
+    "(" ++ "\\" ++ n ++ " -> " ++ show t ++ ")"
 
 
 instance Printable v => Show (Term v) where
