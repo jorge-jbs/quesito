@@ -353,7 +353,7 @@ typeInf env ctx (Term pos k) =
             typeInf
               env
               ((x, eval env [] e) : ctx)
-              (subst x (Term pos (Free x)) e')
+              (subst x (Free x) e')
           case t' of
             VType j ->
               return (VType (max i j))
@@ -392,7 +392,7 @@ typeInf env ctx (Term pos k) =
 typeCheck :: Env -> TContext -> Term Name -> Value -> Result ()
 
 typeCheck env ctx (Term _ (Lam x e)) (VPi _ t t') =
-  typeCheck env ((x, t) : ctx) (subst x (Term None (Free x)) e) (t' (VNeutral (NBound x)))
+  typeCheck env ((x, t) : ctx) (subst x (Free x) e) (t' (VNeutral (NBound x)))
 
 typeCheck _ _ (Term pos (Lam _ _)) _ =
   Left ("6: " ++ show pos)
@@ -404,12 +404,12 @@ typeCheck env ctx t@(Term pos _) ty = do
     (Left ("Type mismatch at " ++ show pos ++ ". Expected " ++ show (quote ty) ++ " and got " ++ show (quote ty')))
 
 
-subst :: Name -> Term Name -> Term Name -> Term Name
+subst :: Name -> TermKind Name -> Term Name -> Term Name
 subst name term (Term pos k) =
   case k of
     Bound name' ->
       if name == name' then
-        term
+        Term pos term
       else
         Term pos (Bound name')
 
@@ -575,7 +575,7 @@ genCases name ty conss =
         renameAll' i substs ((v, e) : es) =
           ("x" ++ show i
           , foldl
-              (\e' (from, to) -> subst from (Term None (Bound to)) e')
+              (\e' (from, to) -> subst from (Bound to) e')
               e
               substs
           )
