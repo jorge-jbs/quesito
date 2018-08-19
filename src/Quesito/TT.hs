@@ -401,7 +401,7 @@ typeCheck env ctx t@(Term pos _) ty = do
   ty' <- typeInf env ctx t
   unless
     (deBruijnize (quote ty) == deBruijnize (quote ty'))
-    (Left ("Type mismatch at " ++ show pos ++ ": " ++ show (quote ty) ++ ", " ++ show (quote ty')))
+    (Left ("Type mismatch at " ++ show pos ++ ". Expected " ++ show (quote ty) ++ " and got " ++ show (quote ty')))
 
 
 subst :: Name -> Term Name -> Term Name -> Term Name
