@@ -4,11 +4,11 @@ module Quesito.Parse
 where
 
 
-import Quesito.TT (Term(..), Decl(..), Name)
+import Quesito.TT (Term(..), TermKind(..), Pos(..), Decl(..), Name)
 
 import Control.Monad (when)
 import Data.Foldable (foldlM)
-import Text.Parsec ((<|>), try, parse, parserFail, eof, alphaNum, letter, oneOf, spaces, char, string, space)
+import Text.Parsec ((<|>), try, parse, parserFail, eof, alphaNum, letter, oneOf, spaces, char, string, space, getPosition, sourceLine, sourceColumn)
 import Text.Parsec.Combinator (many1)
 import Text.Parsec.Error (ParseError)
 import Text.Parsec.Expr
@@ -28,32 +28,46 @@ raw =
               return
                 (\a b ->
                   case a of
-                    Ann (Bound x) ty ->
-                      Pi x ty b
-                    _ ->
-                      Pi "" a b
+                    Term pos (Ann (Term _ (Bound x)) ty) ->
+                      Term pos (Pi x ty b)
+                    Term pos _ ->
+                      Term pos (Pi "" a b)
                 )
             )
             AssocRight
         ]
-      , [ Infix (reservedOp tp ":" >> return (\a b -> Ann a b)) AssocLeft ]
+      , [ Infix (reservedOp tp ":" >> return (\a@(Term pos _) b -> Term pos (Ann a b))) AssocLeft ]
       ]
 
     expr =
-      try appParser
-      <|> try (reserved tp "Type" >> natural tp >>= \i -> return (Type (fromIntegral i)))
-      <|> try (parens tp raw)
-      <|> try (do reservedOp tp "\\"; x <- identifier tp; reservedOp tp "->"; body <- raw; return (Lam x body))
-      <|> nonParen
+        try appParser
+        <|> try typeParser
+        <|> try (parens tp raw)
+        <|> try lambdaParser
+        <|> nonParen
 
-    nonParen =
-      try (fmap Bound (identifier tp))
-      <|> try (reserved tp "fix" >> return Fix)
+    attachPos f = do
+      pos <- pPosToQPos <$> getPosition
+      Term pos <$> f
+
+    typeParser =
+      attachPos (reserved tp "Type" >> natural tp >>= \i -> return (Type (fromIntegral i)))
+
+    lambdaParser =
+      attachPos (do reservedOp tp "\\"; x <- identifier tp; reservedOp tp "->"; body <- raw; return (Lam x body))
+
+    nonParen = do
+      pos <- pPosToQPos <$> getPosition
+      try (fmap (Term pos . Bound) (identifier tp))
+        <|> try (reserved tp "fix" >> return (Term pos Fix))
 
     appParser = do
-      e <- nonParen <|> parens tp raw
+      e@(Term pos _) <- nonParen <|> parens tp raw
       es <- many1 (nonParen <|> parens tp raw)
-      foldlM (\acc x -> return (App acc x)) e es
+      foldlM (\acc x -> return (Term pos (App acc x))) e es
+
+    pPosToQPos pos =
+      Pos (sourceLine pos) (sourceColumn pos)
 
     tp =
       makeTokenParser
