@@ -279,7 +279,7 @@ eval env ctx (Term pos k) =
 
     App e e' ->
       let
-        t' = eval env ctx e'
+        !t' = eval env ctx e'
       in
         case eval env ctx e of
           VLam _ t ->
@@ -392,7 +392,7 @@ typeInf env ctx (Term pos k) =
 typeCheck :: Env -> TContext -> Term Name -> Value -> Result ()
 
 typeCheck env ctx (Term _ (Lam x e)) (VPi _ t t') =
-  typeCheck env ((x, t) : ctx) e (t' (VNeutral (NBound x)))
+  typeCheck env ((x, t) : ctx) (subst x (Term None (Free x)) e) (t' (VNeutral (NBound x)))
 
 typeCheck _ _ (Term pos (Lam _ _)) _ =
   Left ("6: " ++ show pos)
