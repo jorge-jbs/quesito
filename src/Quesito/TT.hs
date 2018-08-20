@@ -211,7 +211,7 @@ cases arity name p correspondence cases_
          case cons of
            VDataCons name' args ->
              let case_ = (reverse cases_) !! (snd $ maybe undefined id $ find ((==) name' . fst) correspondence)
-             in foldl (\(VLam _ f) arg-> f arg) case_ args
+             in foldr (\arg (VLam _ f) -> f arg) case_ args
 
            x ->
              VNeutral (NApp (foldl (\acc e -> NApp acc e) (NBound name) (p : reverse cases_)) x)
