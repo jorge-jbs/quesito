@@ -343,7 +343,7 @@ typeInf env ctx (Term pos k) =
       Right (VType (i + 1))
 
     Fix ->
-      Right (VPi "a" (VType 0) (\a -> VPi "" (VPi "" a (const a)) (const a)))
+      Right (VPi "a" (VType 1000) (\a -> VPi "" (VPi "" a (const a)) (const a)))
 
     Pi x e e' -> do
       t <- typeInf env ctx e
@@ -396,6 +396,18 @@ typeCheck env ctx (Term _ (Lam x e)) (VPi _ t t') =
 
 typeCheck _ _ (Term pos (Lam _ _)) _ =
   Left ("6: " ++ show pos)
+
+typeCheck env ctx t@(Term pos _) (VType j) = do
+  t' <- typeInf env ctx t
+  case t' of
+    VType i  ->
+      if i <= j then
+        Right ()
+      else
+        Left ("Incorrect type universe at " ++ show pos ++ ". Expected level " ++ show j ++ " and got " ++ show i)
+
+    v ->
+      Left ("Expected type at " ++ show pos ++ " and got: " ++ show (quote v))
 
 typeCheck env ctx t@(Term pos _) ty = do
   ty' <- typeInf env ctx t
@@ -545,7 +557,7 @@ genCases name ty conss =
       "P"
       (unflattenPi
         ((init $ addTypeCons name "" $ renameAll $ flattenPi $ ty)
-          ++ [("", Term None (Type 0))]
+          ++ [("", Term None (Type 1000))]
         )
       )
       (foldr
