@@ -91,13 +91,13 @@ data Value
   | VType Int
   | VPi Name Value (Value -> Value)
   | VNeutral Neutral
-  | VDataType Name [Value]
-  | VDataCons Name [Value]
   | VCases Name [Value] (Value -> Value)
 
 
 data Neutral
   = NBound Name  -- used for quotation
+  | NDataType Name
+  | NDataCons Name
   | NFree Name
   | NApp Neutral Value
 
@@ -131,17 +131,11 @@ quote (VNeutral (NApp n v)) =
     n' = quote (VNeutral n)
     v' = quote v
 
-quote (VDataType n vs') =
-  quote (VDataCons n vs')
+quote (VNeutral (NDataType n)) =
+  Term None (Bound n)
 
-quote (VDataCons n vs') =
-  quoteCons vs'
-  where
-    quoteCons :: [Value] -> Term Name
-    quoteCons [] =
-      Term None (Bound n)
-    quoteCons (v : vs) =
-      Term None (App (quoteCons vs) (quote v))
+quote (VNeutral (NDataCons n)) =
+  Term None (Bound n)
 
 
 data DeBruijnVar = Index Int | DBFree Name
@@ -196,6 +190,18 @@ type Env =
 
 -- * Evaling
 
+getCons :: Neutral -> Maybe (Name, [Value])
+
+getCons (NDataCons n) =
+  Just (n, [])
+
+getCons (NApp n v) = do
+  (name, args) <- getCons n
+  return (name, v : args)
+
+getCons _ =
+  Nothing
+
 
 cases :: Int -> Name -> Value -> [(Name, Int)] -> [Value] -> Value
 cases arity name p correspondence cases_
@@ -203,9 +209,14 @@ cases arity name p correspondence cases_
     VCases name (p : reverse cases_)
       (\cons ->
          case cons of
-           VDataCons name' args ->
-             let case_ = (reverse cases_) !! (snd $ maybe undefined id $ find ((==) name' . fst) correspondence)
-             in foldr (\arg (VLam _ f) -> f arg) case_ args
+           VNeutral n ->
+             case getCons n of
+               Just (name', args) ->
+                 let case_ = (reverse cases_) !! (snd $ maybe undefined id $ find ((==) name' . fst) correspondence)
+                 in foldr (\arg (VLam _ f) -> f arg) case_ args
+
+               Nothing ->
+                 VNeutral (NApp (foldl (\acc e -> NApp acc e) (NBound name) (p : reverse cases_)) (VNeutral n))
 
            x ->
              VNeutral (NApp (foldl (\acc e -> NApp acc e) (NBound name) (p : reverse cases_)) x)
@@ -230,10 +241,10 @@ eval env ctx (Term pos k) =
               v
 
             Just (DDataType _) ->
-              VDataType x []
+              VNeutral (NDataType x)
 
             Just (DDataCons _) ->
-              VDataCons x []
+              VNeutral (NDataCons x)
 
             Just (DCases ty) ->
               let
@@ -275,17 +286,11 @@ eval env ctx (Term pos k) =
           VLam _ t ->
             t t'
 
-          VDataCons n ts ->
-            VDataCons n (t' : ts)
-
-          VDataType n ts ->
-            VDataType n (t' : ts)
+          VNeutral n ->
+            VNeutral (NApp n t')
 
           VCases _ _ t ->
             t t'
-
-          VNeutral n ->
-            VNeutral (NApp n t')
 
           x ->
             error ("Application to non-function at " ++ show pos ++ ": " ++ show (quote x))
