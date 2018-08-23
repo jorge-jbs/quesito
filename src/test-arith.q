@@ -32,38 +32,32 @@ zero-is-not-one : Eq Bool zero?-one False;
 zero-is-not-one = Refl Bool False;
 
 baia : Eq Bool True False;
-baia = fix (Eq Bool True False) (\rec -> rec);
+baia = baia;
 
 plus : Nat -> Nat -> Nat;
-plus =
-  fix
-    (Nat -> Nat -> Nat)
-    (\rec -> \n -> \m ->
-      Nat-cases (\_ -> Nat)
-        m
-        (\n' ->
-          Succ (rec n' m)
-        )
-        n
-    );
+plus = \n -> \m ->
+  Nat-cases
+    (\_ -> Nat)
+    m
+    (\n' ->
+      Succ (plus n' m)
+    )
+    n;
 
 fib : Nat -> Nat;
-fib =
-  fix
-    (Nat -> Nat)
-    (\rec -> \n ->
+fib = \n ->
+  Nat-cases
+    (\_ -> Nat)
+    (Succ Zero)
+    (\n' ->
       Nat-cases (\_ -> Nat)
         (Succ Zero)
-        (\n' ->
-          Nat-cases (\_ -> Nat)
-            (Succ Zero)
-            (\n'' ->
-              plus (rec n'') (rec n')
-            )
-            n'
+        (\n'' ->
+          plus (fib n'') (fib n')
         )
-        n
-    );
+        n'
+    )
+    n;
 
 main : Nat;
 main = plus (Succ (Succ (Succ Zero))) (Succ (Succ Zero));
