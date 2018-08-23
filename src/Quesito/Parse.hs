@@ -51,7 +51,9 @@ raw =
       Term pos <$> f
 
     typeParser =
-      attachPos (reserved tp "Type" >> natural tp >>= \i -> return (Type (fromIntegral i)))
+      attachPos
+        (try (reserved tp "Type" >> natural tp >>= \i -> return (Type (fromIntegral i)))
+        <|> (reserved tp "Type" >> return (Type 0)))
 
     lambdaParser =
       attachPos (do reservedOp tp "\\"; x <- identifier tp; reservedOp tp "->"; body <- raw; return (Lam x body))
@@ -59,7 +61,6 @@ raw =
     nonParen = do
       pos <- pPosToQPos <$> getPosition
       try (fmap (Term pos . Bound) (identifier tp))
-        <|> try (reserved tp "fix" >> return (Term pos Fix))
 
     appParser = do
       e@(Term pos _) <- nonParen <|> parens tp raw
@@ -80,7 +81,7 @@ raw =
           , identLetter = alphaNum <|> opLetter'
           , opStart = opLetter'
           , opLetter = opLetter'
-          , reservedNames = ["data", "where", "Type", "fix", "->"]
+          , reservedNames = ["data", "where", "Type", "->"]
           , reservedOpNames = ["->", ":", "\\", ";"]
           , caseSensitive = True
           }

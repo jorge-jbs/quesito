@@ -25,7 +25,6 @@ data TermKind v
   = Bound v
   | Free v
   | Type Int
-  | Fix
   | Pi Name (Term v) (Term v)
   | App (Term v) (Term v)
   | Ann (Term v) (Term v)
@@ -60,9 +59,6 @@ instance Printable v => Show (TermKind v) where
 
   show (Type i) =
     "(" ++ "Type " ++ show i ++ ")"
-
-  show Fix =
-    "fix"
 
   show (Pi "" t t') =
     "(" ++ show t ++ " -> " ++ show t' ++ ")"
@@ -173,8 +169,6 @@ deBruijnize =
           Term pos (Lam "" (deBruijnize' (n : vars) t))
         Type i ->
           Term pos (Type i)
-        Fix ->
-          Term pos (Fix)
         App t t' ->
           Term pos (App (deBruijnize' vars t) (deBruijnize' vars t'))
         Ann t t' ->
@@ -270,10 +264,6 @@ eval env ctx (Term pos k) =
     Type lvl ->
       VType lvl
 
-    Fix ->
-      VLam "" (\a -> VLam "" (\(VLam _ f) ->
-                                f (case (case eval env ctx (Term pos Fix) of VLam _ f' -> f') a of VLam _ f' -> f' (VLam "" f))))
-
     Pi x e e' ->
       VPi x (eval env ctx e) (\t -> eval env ((x, t) : ctx) e')
 
@@ -293,6 +283,9 @@ eval env ctx (Term pos k) =
 
           VCases _ _ t ->
             t t'
+
+          VNeutral n ->
+            VNeutral (NApp n t')
 
           x ->
             error ("Application to non-function at " ++ show pos ++ ": " ++ show (quote x))
@@ -341,9 +334,6 @@ typeInf env ctx (Term pos k) =
 
     Type i ->
       Right (VType (i + 1))
-
-    Fix ->
-      Right (VPi "a" (VType 1000) (\a -> VPi "" (VPi "" a (const a)) (const a)))
 
     Pi x e e' -> do
       t <- typeInf env ctx e
@@ -431,9 +421,6 @@ subst name term (Term pos k) =
     Type level ->
       Term pos (Type level)
 
-    Fix ->
-      Term pos Fix
-
     Pi name' t t' ->
       if name == name' then
         Term pos (Pi name' t t')
@@ -475,8 +462,9 @@ checkDecl env (ExprDecl name expr ty) = do
   case tyTy of
     VType _ -> do
       let ty' = eval env [] ty
-      typeCheck env [] expr ty'
-      return [(name, DExpr (eval env [] expr) ty')]
+      typeCheck ((name, DExpr undefined ty') : env) [] (subst name (Free name) expr) ty'
+      let expr' = eval ((name, DExpr expr' ty') : env) [] expr
+      return [(name, DExpr expr' ty')]
 
     _ ->
       Left (name ++ "'s type is not of kind Type.")
