@@ -8,7 +8,8 @@ import Quesito.TT (Term(..), TermKind(..), Pos(..), Decl(..), Name)
 
 import Control.Monad (when)
 import Data.Foldable (foldlM)
-import Text.Parsec ((<|>), try, parse, parserFail, eof, alphaNum, letter, oneOf, spaces, char, string, space, getPosition, sourceLine, sourceColumn)
+import Data.Functor.Identity (Identity)
+import Text.Parsec (SourcePos, (<|>), try, parse, parserFail, eof, alphaNum, letter, oneOf, spaces, char, string, space, getPosition, sourceLine, sourceColumn)
 import Text.Parsec.Combinator (many1)
 import Text.Parsec.Error (ParseError)
 import Text.Parsec.Expr
@@ -39,52 +40,68 @@ raw =
       , [ Infix (reservedOp tp ":" >> return (\a@(Term pos _) b -> Term pos (Ann a b))) AssocLeft ]
       ]
 
-    expr =
-        try appParser
-        <|> try typeParser
-        <|> try (parens tp raw)
-        <|> try lambdaParser
-        <|> nonParen
 
-    attachPos f = do
-      pos <- pPosToQPos <$> getPosition
-      Term pos <$> f
+expr :: Parser (Term Name)
+expr =
+    try appParser
+    <|> try typeParser
+    <|> try (parens tp raw)
+    <|> try lambdaParser
+    <|> nonParen
 
-    typeParser =
-      attachPos
-        (try (reserved tp "Type" >> natural tp >>= \i -> return (Type (fromIntegral i)))
-        <|> (reserved tp "Type" >> return (Type 0)))
 
-    lambdaParser =
-      attachPos (do reservedOp tp "\\"; x <- identifier tp; reservedOp tp "->"; body <- raw; return (Lam x body))
+attachPos :: Parser (TermKind Name) -> Parser (Term Name)
+attachPos f = do
+  pos <- pPosToQPos <$> getPosition
+  Term pos <$> f
 
-    nonParen = do
-      pos <- pPosToQPos <$> getPosition
-      try (fmap (Term pos . Bound) (identifier tp))
 
-    appParser = do
-      e@(Term pos _) <- nonParen <|> parens tp raw
-      es <- many1 (nonParen <|> parens tp raw)
-      foldlM (\acc x -> return (Term pos (App acc x))) e es
+typeParser :: Parser (Term Name)
+typeParser =
+  attachPos
+    (try (reserved tp "Type" >> natural tp >>= \i -> return (Type (fromIntegral i)))
+    <|> (reserved tp "Type" >> return (Type 0)))
 
-    pPosToQPos pos =
-      Pos (sourceLine pos) (sourceColumn pos)
 
-    tp =
-      makeTokenParser
-        LanguageDef
-          { commentStart = "{-"
-          , commentEnd = "-}"
-          , commentLine = "--"
-          , nestedComments = True
-          , identStart = letter <|> oneOf "-_"
-          , identLetter = alphaNum <|> opLetter'
-          , opStart = opLetter'
-          , opLetter = opLetter'
-          , reservedNames = ["data", "where", "Type", "->"]
-          , reservedOpNames = ["->", ":", "\\", ";"]
-          , caseSensitive = True
-          }
+lambdaParser :: Parser (Term Name)
+lambdaParser =
+  attachPos (do reservedOp tp "\\"; x <- identifier tp; reservedOp tp "->"; body <- raw; return (Lam x body))
+
+
+nonParen :: Parser (Term Name)
+nonParen = do
+  pos <- pPosToQPos <$> getPosition
+  try (fmap (Term pos . Bound) (identifier tp))
+
+
+appParser :: Parser (Term Name)
+appParser = do
+  e@(Term pos _) <- nonParen <|> parens tp raw
+  es <- many1 (nonParen <|> parens tp raw)
+  foldlM (\acc x -> return (Term pos (App acc x))) e es
+
+
+pPosToQPos :: SourcePos -> Pos
+pPosToQPos pos =
+  Pos (sourceLine pos) (sourceColumn pos)
+
+
+tp :: GenTokenParser String () Identity
+tp =
+  makeTokenParser
+    LanguageDef
+      { commentStart = "{-"
+      , commentEnd = "-}"
+      , commentLine = "--"
+      , nestedComments = True
+      , identStart = letter <|> oneOf "-_"
+      , identLetter = alphaNum <|> opLetter'
+      , opStart = opLetter'
+      , opLetter = opLetter'
+      , reservedNames = ["data", "where", "Type", "->"]
+      , reservedOpNames = ["->", ":", "\\", ";"]
+      , caseSensitive = True
+      }
 
 
 opLetter' :: Parser Char
