@@ -91,7 +91,6 @@ data Value
   | VType Int
   | VPi Name Value (Value -> Value)
   | VNeutral Neutral
-  | VCases Name [Value] (Value -> Value)
 
 
 data Neutral
@@ -106,9 +105,6 @@ quote :: Value -> Term Name
 
 quote (VLam x f) =
   Term None (Lam x (quote (f (VNeutral (NBound x)))))
-
-quote (VCases name args _) =
-  Term None (Lam "case" (Term None (App (foldl (\acc e -> Term None (App acc e)) (Term None (Bound name)) (map quote args)) (Term None (Bound "case")))))
 
 quote (VType i) =
   Term None (Type i)
@@ -173,7 +169,6 @@ data Def term ty
   = DExpr term ty
   | DDataType ty
   | DDataCons ty
-  | DCases (Term Name)
 
 
 type TContext =
@@ -203,30 +198,6 @@ getCons _ =
   Nothing
 
 
-cases :: Int -> Name -> Value -> [(Name, Int)] -> [Value] -> Value
-cases arity name p correspondence cases_
-  | length cases_ == arity =
-    VCases name (p : reverse cases_)
-      (\cons ->
-         case cons of
-           VNeutral n ->
-             case getCons n of
-               Just (name', args) ->
-                 let case_ = (reverse cases_) !! (snd $ maybe undefined id $ find ((==) name' . fst) correspondence)
-                 in foldr (\arg (VLam _ f) -> f arg) case_ args
-
-               Nothing ->
-                 VNeutral (NApp (foldl (\acc e -> NApp acc e) (NBound name) (p : reverse cases_)) (VNeutral n))
-
-           x ->
-             VNeutral (NApp (foldl (\acc e -> NApp acc e) (NBound name) (p : reverse cases_)) x)
-      )
-
-  | otherwise =
-    VLam ""
-      (\case_ -> cases arity name p correspondence (case_:cases_))
-
-
 eval :: Env -> VContext -> Term Name -> Value
 eval env ctx (Term pos k) =
   case k of
@@ -245,26 +216,6 @@ eval env ctx (Term pos k) =
 
             Just (DDataCons _) ->
               VNeutral (NDataCons x)
-
-            Just (DCases ty) ->
-              let
-                cases_ = init $ init $ tail $ flattenPi ty
-                findNameCons :: Term Name -> Name
-                findNameCons cons =
-                  let (Term _ (App _ e)) = snd $ last $ flattenPi cons
-                  in findNameCons' e
-                  where
-                    findNameCons' (Term _ (App e' _)) =
-                      findNameCons' e'
-                    findNameCons' (Term _ (Bound e')) =
-                      e'
-                    findNameCons' _ =
-                      undefined
-              in
-                VLam "P"
-                  (\p ->
-                      cases (length cases_) x p (zip (map (findNameCons . snd) cases_) [0..]) []
-                  )
 
             Nothing ->
               error ("Found free variable at " ++ show pos ++ ": " ++ x)
@@ -288,9 +239,6 @@ eval env ctx (Term pos k) =
 
           VNeutral n ->
             VNeutral (NApp n t')
-
-          VCases _ _ t ->
-            t t'
 
           x ->
             error ("Application to non-function at " ++ show pos ++ ": " ++ show (quote x))
@@ -327,9 +275,6 @@ typeInf env ctx (Term pos k) =
 
             Just (DDataCons ty) ->
               return ty
-
-            Just (DCases ty) ->
-              return (eval env [] ty)
 
             Nothing ->
               Left ("Free variable at " ++ show pos ++ ": " ++ x)
@@ -482,7 +427,7 @@ checkDecl env (TypeDecl name ty conss) = do
         Term _ (Type 0) -> do
           let typeDef = (name, DDataType (eval env [] ty))
           conss' <- mapM (uncurry (checkCons typeDef)) conss
-          return (typeDef : conss' ++ [(name ++ "-cases", DCases (genCases name ty conss))])
+          return (typeDef : conss')
 
         _ ->
           Left (name ++ " is not a ground type.")
