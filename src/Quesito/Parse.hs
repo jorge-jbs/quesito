@@ -4,12 +4,16 @@ module Quesito.Parse
 where
 
 
-import Quesito.TT (Term(..), TermKind(..), Pos(..), Decl(..), Name)
+import Quesito.TT (Term(..), TermKind(..), Pos(..), Decl(..), RawMatch, Name)
 
 import Control.Monad (when)
 import Data.Foldable (foldlM)
 import Data.Functor.Identity (Identity)
-import Text.Parsec (SourcePos, (<|>), try, parse, parserFail, eof, alphaNum, letter, oneOf, spaces, char, string, space, getPosition, sourceLine, sourceColumn)
+import Text.Parsec
+  ( SourcePos, (<|>), try, parse, parserFail, eof, alphaNum, letter, oneOf
+  , spaces, char, string, space, getPosition, sourceLine, sourceColumn, sepBy
+  , option
+  )
 import Text.Parsec.Combinator (many1)
 import Text.Parsec.Error (ParseError)
 import Text.Parsec.Expr
@@ -99,7 +103,7 @@ tp =
       , opStart = opLetter'
       , opLetter = opLetter'
       , reservedNames = ["data", "where", "Type", "->"]
-      , reservedOpNames = ["->", ":", "\\", ";"]
+      , reservedOpNames = ["->", ":", "\\", ";", "," , "."]
       , caseSensitive = True
       }
 
@@ -159,6 +163,66 @@ implementation = do
   return (name, body)
 
 
+matchFunctionParser :: Name -> Parser [([(Name, Term Name)], [RawMatch], Term Name)]
+matchFunctionParser name = do
+  defs <- many1 (try matchFunctionCaseParser)
+  when (any (\(name', _, _, _) -> name /= name') defs) (parserFail ("definition of " ++ name))
+  spaces
+  return (map (\(_, y, z, w) -> (y, z, w)) defs)
+
+
+matchFunctionCaseParser :: Parser (Name, [(Name, Term Name)], [RawMatch], Term Name)
+matchFunctionCaseParser = do
+  vars <- option [] $ do
+    spaces
+    vars <- try (annotation False) `sepBy` try (spaces >> char ',' >> spaces)
+    spaces
+    _ <- char '.'
+    spaces
+    return vars
+  spaces
+  lhs <- raw
+  let match = tail (flatten lhs)
+  spaces
+  name <-
+    case findName lhs of
+      Just x ->
+        return x
+      Nothing ->
+        parserFail "function name"
+  spaces
+  _ <- char '='
+  spaces
+  body <- raw
+  spaces
+  _ <- char ';'
+  spaces
+  return (name, vars, match, body)
+  where
+    findName :: Term Name -> Maybe Name
+    findName (Term _ (App e _)) =
+      findName e
+    findName (Term _ (Bound x)) =
+      Just x
+    findName _ =
+      Nothing
+
+    flatten :: Term Name -> [Term Name]
+    flatten (Term _ (App e t)) =
+      flatten e ++ [t]
+    flatten e =
+      [e]
+
+matchFunctionDefinition :: Parser Decl
+matchFunctionDefinition = do
+  spaces
+  (name, ty) <- annotation True
+  spaces
+  defs <- matchFunctionParser name
+  spaces
+  return (MatchFunctionDecl name defs ty)
+
+
 definition :: Parser Decl
 definition = do
   spaces
@@ -176,7 +240,7 @@ parse :: String -> Either ParseError [Decl]
 parse =
   Text.Parsec.parse
     (do
-       decls <- many (try definition <|> typeDecl)
+       decls <- many (try matchFunctionDefinition <|> try definition <|> typeDecl)
        eof
        return decls
     )

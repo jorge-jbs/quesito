@@ -169,6 +169,17 @@ data Def term ty
   = DExpr term ty
   | DDataType ty
   | DDataCons ty
+  | DMatchFunction [([Match Name], term)]
+
+
+data Match name
+  = Binding name
+  | Inaccessible (Term name)
+  | Constructor name
+  | MatchApp (Match name) (Match name)
+
+
+type RawMatch = Term Name
 
 
 type TContext =
@@ -395,6 +406,7 @@ subst name term (Term pos k) =
 
 data Decl
   = ExprDecl Name (Term Name) (Term Name)
+  | MatchFunctionDecl Name [([(Name, Term Name)], [RawMatch], Term Name)] (Term Name)
   | TypeDecl
       Name
       (Term Name)  -- ^ Type
