@@ -6,7 +6,7 @@ module Quesito.TT where
 import Prelude hiding (print)
 import Control.Monad (unless, when)
 import Data.Bifunctor (first)
-import Data.List (find)
+import Data.List (find, foldl')
 
 
 class Printable a where
@@ -169,7 +169,7 @@ data Def term ty
   = DExpr term ty
   | DDataType ty
   | DDataCons ty
-  | DMatchFunction [([Match Name], term)]
+  | DMatchFunction [([Match Name], term)] ty
 
 
 data Match name
@@ -177,6 +177,7 @@ data Match name
   | Inaccessible (Term name)
   | Constructor name
   | MatchApp (Match name) (Match name)
+  deriving Show
 
 
 type RawMatch = Term Name
@@ -285,6 +286,9 @@ typeInf env ctx (Term pos k) =
               return ty
 
             Just (DDataCons ty) ->
+              return ty
+
+            Just (DMatchFunction _ ty) ->
               return ty
 
             Nothing ->
@@ -430,6 +434,60 @@ checkDecl env (ExprDecl name expr ty) = do
 
     _ ->
       Left (name ++ "'s type is not of kind Type.")
+
+checkDecl env (MatchFunctionDecl name equations ty) = do
+  typeCheck env [] ty (VType 1000)
+  let ty' = eval env [] ty
+  checkedEquations <-
+    mapM
+      (\(vars, lhs, rhs) -> do
+        vars' <-
+          mapM
+            (\(name', term) -> do
+              typeCheck env [] term (VType 1000)
+              return (name', eval env [] term)
+            )
+            vars
+        lhs' <- mapM (rawToMatch (map fst vars') True) lhs
+        checkEquation vars' (foldl (\a b -> Term None (App a b)) (Term None (Bound name)) lhs) lhs' rhs ty'
+      )
+      equations
+  return [(name, DMatchFunction checkedEquations ty')]
+  where
+    rawToMatch :: [Name] -> Bool -> RawMatch -> Result (Match Name)
+    rawToMatch vars normalized (Term pos (Bound x))
+      | elem x vars =
+        Right (Binding x)
+      | otherwise =
+        case find ((==) x . fst) env of
+          Just (_, DDataCons _) ->
+            Right (Constructor x)
+          Just _ | not normalized ->
+            Right (Inaccessible (Term pos (Bound x)))
+          _ ->
+            Left ("Free variable at " ++ show pos ++ ".")
+    rawToMatch vars normalized (Term pos (Free x)) =
+      rawToMatch vars normalized (Term pos (Bound x))
+    rawToMatch vars _ (Term _ (App l r)) = do
+      l' <- rawToMatch vars True l
+      r' <- rawToMatch vars False r
+      return (MatchApp l' r')
+    rawToMatch _ _ (Term pos (Type _)) =
+      Left ("Can't pattern match on type universes (at " ++ show pos ++ ")")
+    rawToMatch _ _ (Term pos (Pi _ _ _)) =
+      Left ("Can't pattern match on function spaces (at " ++ show pos ++ ")")
+    rawToMatch _ _ (Term pos (Ann _ _)) =
+      Left ("Can't pattern match on type annotations (at " ++ show pos ++ ")")
+    rawToMatch _ _ (Term pos (Lam _ _)) =
+      Left ("Can't pattern match on lambda expressions (at " ++ show pos ++ ")")
+
+    checkEquation :: [(Name, Value)] -> Term Name -> [Match Name] -> Term Name -> Value -> Result ([Match Name], Value)
+    checkEquation vars lhs lhs' rhs ty' = do
+      lhsTy <- typeInf env ((name, ty') : vars) lhs
+      rhsTy <- typeInf env ((name, ty') : vars) rhs
+      unless (deBruijnize (quote lhsTy) == deBruijnize (quote rhsTy))
+        (Left "ñe")
+      return (lhs', eval env [] (foldl' (\t (v, _) -> subst v (Free v) t) rhs vars))
 
 checkDecl env (TypeDecl name ty conss) = do
   tyTy <- typeInf env [] ty
