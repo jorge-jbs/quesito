@@ -176,9 +176,6 @@ data Pattern name
   deriving Show
 
 
-type RawMatch = Term Name
-
-
 type TContext =
   [(Name, Value)]
 
@@ -454,7 +451,7 @@ subst name term (Term pos k) =
 
 data Decl
   = ExprDecl Name (Term Name) (Term Name)
-  | MatchFunctionDecl Name [([(Name, Term Name)], [RawMatch], Term Name)] (Term Name)
+  | MatchFunctionDecl Name [([(Name, Term Name)], Term Name, Term Name)] (Term Name)
   | TypeDecl
       Name
       (Term Name)  -- ^ Type
@@ -482,23 +479,35 @@ checkDecl env (ExprDecl name expr ty) = do
 checkDecl env (MatchFunctionDecl name equations ty) = do
   typeCheck env [] ty (VType 1000)
   let ty' = eval env [] ty
-  checkedEquations <-
-    mapM
-      (\(vars, lhs, rhs) -> do
-        vars' <-
-          mapM
-            (\(name', term) -> do
-              typeCheck env [] term (VType 1000)
-              return (name', eval env [] term)
-            )
-            vars
-        lhs' <- mapM (rawToMatch (map fst vars') True) lhs
-        checkEquation vars' (foldl (\a b -> Term None (App a b)) (Term None (Bound name)) lhs) lhs' rhs ty'
-      )
-      equations
-  return [(name, DMatchFunction checkedEquations ty')]
+  checkedVars <- mapM (\(vars, _, _) -> checkVars vars) equations
+  mapM_ (\(vars', (_, rhs, lhs)) -> checkEquation vars' rhs lhs ty') (zip checkedVars equations)
+  lhss' <- mapM (\(vars', lhs) -> mapM (rawToMatch (map fst vars') True) (tail $ flattenApp lhs)) (zip checkedVars (map (\(_, x, _) -> x) equations))
+  let evaledEquations = map (uncurry $ evalEquation (DMatchFunction evaledEquations ty')) (zip lhss' (map (\(_, _, x) -> x) equations))
+  return [(name, DMatchFunction evaledEquations ty')]
   where
-    rawToMatch :: [Name] -> Bool -> RawMatch -> Result (Pattern Name)
+    checkVars :: [(Name, Term Name)] -> Result [(Name, Value)]
+    checkVars vars =
+      mapM
+        (\(name', ty') -> do
+          tyTy' <- typeInf env [] ty'
+          when
+            (case tyTy' of VType _ -> False; _ -> True)
+            (Left (name' ++ " variable at function declaration " ++ name ++ " is not of kind Type."))
+          return (name', eval env [] ty')
+        )
+        vars
+
+    flattenApp :: Term Name -> [Term Name]
+    flattenApp =
+      flattenApp' []
+      where
+        flattenApp' :: [Term Name] -> Term Name -> [Term Name]
+        flattenApp' as (Term _ (App f a)) =
+          flattenApp' (a:as) f
+        flattenApp' as f =
+          f:as
+
+    rawToMatch :: [Name] -> Bool -> Term Name -> Result (Pattern Name)
     rawToMatch vars normalized (Term pos (Bound x))
       | elem x vars =
         Right (Binding x)
@@ -525,13 +534,16 @@ checkDecl env (MatchFunctionDecl name equations ty) = do
     rawToMatch _ _ (Term pos (Lam _ _)) =
       Left ("Can't pattern match on lambda expressions (at " ++ show pos ++ ")")
 
-    checkEquation :: [(Name, Value)] -> Term Name -> [Pattern Name] -> Term Name -> Value -> Result ([Pattern Name], [(Name, Value)] -> Value)
-    checkEquation vars lhs lhs' rhs ty' = do
+    checkEquation :: [(Name, Value)] -> Term Name -> Term Name -> Value -> Result ()
+    checkEquation vars lhs rhs ty' = do
       lhsTy <- typeInf env ((name, ty') : vars) lhs
       rhsTy <- typeInf env ((name, ty') : vars) rhs
       unless (deBruijnize (quote lhsTy) == deBruijnize (quote rhsTy))
         (Left ("Type mismatch between left hand side of equation (" ++ show (quote lhsTy) ++ ") and right hand side (" ++ show (quote rhsTy) ++ ")."))
-      return (lhs', \ctx -> eval env ctx rhs)
+
+    evalEquation :: Def Value Value -> [Pattern Name] -> Term Name -> ([Pattern Name], [(Name, Value)] -> Value)
+    evalEquation recur lhs' rhs =
+      (lhs', \ctx -> eval ((name, recur):env) ctx rhs)
 
 checkDecl env (TypeDecl name ty conss) = do
   tyTy <- typeInf env [] ty

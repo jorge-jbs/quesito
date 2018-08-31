@@ -4,7 +4,7 @@ module Quesito.Parse
 where
 
 
-import Quesito.TT (Term(..), TermKind(..), Pos(..), Decl(..), RawMatch, Name)
+import Quesito.TT (Term(..), TermKind(..), Pos(..), Decl(..), Name)
 
 import Control.Monad (when)
 import Data.Foldable (foldlM)
@@ -163,7 +163,7 @@ implementation = do
   return (name, body)
 
 
-matchFunctionParser :: Name -> Parser [([(Name, Term Name)], [RawMatch], Term Name)]
+matchFunctionParser :: Name -> Parser [([(Name, Term Name)], Term Name, Term Name)]
 matchFunctionParser name = do
   defs <- many1 (try matchFunctionCaseParser)
   when (any (\(name', _, _, _) -> name /= name') defs) (parserFail ("definition of " ++ name))
@@ -171,7 +171,7 @@ matchFunctionParser name = do
   return (map (\(_, y, z, w) -> (y, z, w)) defs)
 
 
-matchFunctionCaseParser :: Parser (Name, [(Name, Term Name)], [RawMatch], Term Name)
+matchFunctionCaseParser :: Parser (Name, [(Name, Term Name)], Term Name, Term Name)
 matchFunctionCaseParser = do
   vars <- option [] $ do
     spaces
@@ -182,7 +182,6 @@ matchFunctionCaseParser = do
     return vars
   spaces
   lhs <- raw
-  let match = tail (flatten lhs)
   spaces
   name <-
     case findName lhs of
@@ -193,11 +192,11 @@ matchFunctionCaseParser = do
   spaces
   _ <- char '='
   spaces
-  body <- raw
+  rhs <- raw
   spaces
   _ <- char ';'
   spaces
-  return (name, vars, match, body)
+  return (name, vars, lhs, rhs)
   where
     findName :: Term Name -> Maybe Name
     findName (Term _ (App e _)) =
@@ -206,12 +205,6 @@ matchFunctionCaseParser = do
       Just x
     findName _ =
       Nothing
-
-    flatten :: Term Name -> [Term Name]
-    flatten (Term _ (App e t)) =
-      flatten e ++ [t]
-    flatten e =
-      [e]
 
 matchFunctionDefinition :: Parser Decl
 matchFunctionDefinition = do
