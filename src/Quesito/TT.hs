@@ -4,9 +4,9 @@ module Quesito.TT where
 
 
 import Prelude hiding (print)
-import Control.Monad (unless, when)
+import Control.Monad (unless, when, join)
 import Data.Bifunctor (first)
-import Data.List (find, foldl')
+import Data.List (find)
 
 
 class Printable a where
@@ -90,21 +90,17 @@ data Value
   = VLam Name (Value -> Value)
   | VType Int
   | VPi Name Value (Value -> Value)
-  | VNeutral Neutral
-
-
-data Neutral
-  = NBound Name  -- used for quotation
-  | NDataType Name
-  | NDataCons Name
-  | NFree Name
-  | NApp Neutral Value
+  | VBound Name  -- used for quotation
+  | VDataType Name
+  | VDataCons Name
+  | VFree Name
+  | VApp Value Value
 
 
 quote :: Value -> Term Name
 
 quote (VLam x f) =
-  Term None (Lam x (quote (f (VNeutral (NBound x)))))
+  Term None (Lam x (quote (f (VBound x))))
 
 quote (VType i) =
   Term None (Type i)
@@ -113,24 +109,24 @@ quote (VPi x v v') =
   Term None (Pi x t t')
   where
     t = quote v
-    t' = quote (v' (VNeutral (NBound x)))
+    t' = quote (v' (VBound x))
 
-quote (VNeutral (NBound x)) =
+quote (VBound x) =
   Term None (Bound x)
 
-quote (VNeutral (NFree x)) =
+quote (VFree x) =
   Term None (Free x)
 
-quote (VNeutral (NApp n v)) =
-  Term None (App n' v')
+quote (VApp u v) =
+  Term None (App u' v')
   where
-    n' = quote (VNeutral n)
+    u' = quote u
     v' = quote v
 
-quote (VNeutral (NDataType n)) =
+quote (VDataType n) =
   Term None (Bound n)
 
-quote (VNeutral (NDataCons n)) =
+quote (VDataCons n) =
   Term None (Bound n)
 
 
@@ -169,14 +165,14 @@ data Def term ty
   = DExpr term ty
   | DDataType ty
   | DDataCons ty
-  | DMatchFunction [([Match Name], term)] ty
+  | DMatchFunction [([Pattern Name], [(Name, term)] -> term)] ty
 
 
-data Match name
+data Pattern name
   = Binding name
   | Inaccessible (Term name)
   | Constructor name
-  | MatchApp (Match name) (Match name)
+  | MatchApp (Pattern name) (Pattern name)
   deriving Show
 
 
@@ -197,19 +193,6 @@ type Env =
 
 -- * Evaling
 
-getCons :: Neutral -> Maybe (Name, [Value])
-
-getCons (NDataCons n) =
-  Just (n, [])
-
-getCons (NApp n v) = do
-  (name, args) <- getCons n
-  return (name, v : args)
-
-getCons _ =
-  Nothing
-
-
 eval :: Env -> VContext -> Term Name -> Value
 eval env ctx (Term pos k) =
   case k of
@@ -224,16 +207,22 @@ eval env ctx (Term pos k) =
               v
 
             Just (DDataType _) ->
-              VNeutral (NDataType x)
+              VDataType x
 
             Just (DDataCons _) ->
-              VNeutral (NDataCons x)
+              VDataCons x
+
+            Just (DMatchFunction [([], f)] _) ->
+              f []
+
+            Just (DMatchFunction _ _) ->
+              VBound x
 
             Nothing ->
               error ("Found free variable at " ++ show pos ++ ": " ++ x)
 
     Free x ->
-      VNeutral (NFree x)
+      VFree x
 
     Type lvl ->
       VType lvl
@@ -242,18 +231,73 @@ eval env ctx (Term pos k) =
       VPi x (eval env ctx e) (\t -> eval env ((x, t) : ctx) e')
 
     App e e' ->
-      let
-        !t' = eval env ctx e'
-      in
-        case eval env ctx e of
-          VLam _ t ->
-            t t'
+      uncurry apply (flattenVApp (VApp (eval env ctx e) (eval env ctx e')))
+      where
+        flattenVApp :: Value -> (Value, [Value])
+        flattenVApp =
+          flattenVApp' []
+          where
+            flattenVApp' :: [Value] -> Value -> (Value, [Value])
+            flattenVApp' as (VApp f a) =
+              flattenVApp' (a:as) f
+            flattenVApp' as f =
+              (f, as)
 
-          VNeutral n ->
-            VNeutral (NApp n t')
+        apply :: Value -> [Value] -> Value
+        apply (VLam _ f) (a:as) =
+          apply (f a) as
+        apply (VBound name) args@(a:as) =
+          case snd <$> find ((==) name . fst) env of
+            Just (DMatchFunction equations _) ->
+              let
+                matchedEq
+                  = join
+                  $ find (\x -> case x of Just _ -> True; _ -> False)
+                  $ map (\(p, body) -> do s <- matchEquation p args; return (s, body)) equations
+              in
+                case matchedEq of
+                  Just (s, t) ->
+                    t s
+                  Nothing ->
+                    apply (VApp (VBound name) a) as
+        apply f (a:as) =
+          apply (VApp f a) as
+        apply f [] =
+          f
 
-          x ->
-            error ("Application to non-function at " ++ show pos ++ ": " ++ show (quote x))
+        match :: Pattern Name -> Value -> Maybe [(Name, Value)]
+        match (Binding n) t =
+          Just [(n, t)]
+        match (Inaccessible _) _ =
+          Just []
+        match (Constructor n) (VDataCons n') =
+          if n == n' then
+            Just []
+          else
+            Nothing
+        match (Constructor _) _ =
+          Nothing
+        match (MatchApp p p') (VApp t t') = do
+          l <- match p t
+          l' <- match p' t'
+          return (l ++ l')
+        match (MatchApp _ _) _ =
+          Nothing
+
+        matchEquation :: [Pattern Name] -> [Value] -> Maybe [(Name, Value)]
+        matchEquation =
+          matchEquation' []
+          where
+            matchEquation' :: [(Name, Value)] -> [Pattern Name] -> [Value] -> Maybe [(Name, Value)]
+            matchEquation' l (p:ps) (v:vs) = do
+              l' <- match p v
+              matchEquation' (l ++ l') ps vs
+            matchEquation' l [] [] =
+              return l
+            matchEquation' _ [] _ =
+              Nothing
+            matchEquation' _ _ [] =
+              Nothing
 
     Ann e _ ->
       eval env ctx e
@@ -347,7 +391,7 @@ typeInf env ctx (Term pos k) =
 typeCheck :: Env -> TContext -> Term Name -> Value -> Result ()
 
 typeCheck env ctx (Term _ (Lam x e)) (VPi _ t t') =
-  typeCheck env ((x, t) : ctx) (subst x (Free x) e) (t' (VNeutral (NFree x)))
+  typeCheck env ((x, t) : ctx) (subst x (Free x) e) (t' (VFree x))
 
 typeCheck _ _ (Term pos (Lam _ _)) _ =
   Left ("6: " ++ show pos)
@@ -454,7 +498,7 @@ checkDecl env (MatchFunctionDecl name equations ty) = do
       equations
   return [(name, DMatchFunction checkedEquations ty')]
   where
-    rawToMatch :: [Name] -> Bool -> RawMatch -> Result (Match Name)
+    rawToMatch :: [Name] -> Bool -> RawMatch -> Result (Pattern Name)
     rawToMatch vars normalized (Term pos (Bound x))
       | elem x vars =
         Right (Binding x)
@@ -481,13 +525,13 @@ checkDecl env (MatchFunctionDecl name equations ty) = do
     rawToMatch _ _ (Term pos (Lam _ _)) =
       Left ("Can't pattern match on lambda expressions (at " ++ show pos ++ ")")
 
-    checkEquation :: [(Name, Value)] -> Term Name -> [Match Name] -> Term Name -> Value -> Result ([Match Name], Value)
+    checkEquation :: [(Name, Value)] -> Term Name -> [Pattern Name] -> Term Name -> Value -> Result ([Pattern Name], [(Name, Value)] -> Value)
     checkEquation vars lhs lhs' rhs ty' = do
       lhsTy <- typeInf env ((name, ty') : vars) lhs
       rhsTy <- typeInf env ((name, ty') : vars) rhs
       unless (deBruijnize (quote lhsTy) == deBruijnize (quote rhsTy))
-        (Left "ñe")
-      return (lhs', eval env [] (foldl' (\t (v, _) -> subst v (Free v) t) rhs vars))
+        (Left ("Type mismatch between left hand side of equation (" ++ show (quote lhsTy) ++ ") and right hand side (" ++ show (quote rhsTy) ++ ")."))
+      return (lhs', \ctx -> eval env ctx rhs)
 
 checkDecl env (TypeDecl name ty conss) = do
   tyTy <- typeInf env [] ty

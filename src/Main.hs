@@ -13,8 +13,8 @@ main = do
       = either (error . show) id
       $ parse input
   case head <$> checkEvalProgram declarations [] of
-    Right (_, DExpr e _) ->
-      putStrLn $ show $ quote e
+    Right (_, DMatchFunction [([], e)] _) ->
+      putStrLn $ show $ quote (e [])
     Left err ->
       putStrLn ("Type checking failed: " ++ err)
 
