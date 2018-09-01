@@ -40,26 +40,20 @@ main3 = Cons Nat Zero (Cons Nat (Succ Zero) (Nil Nat));
 main4 : Vect (Succ Zero) Nat;
 main4 = VCons Nat Zero Zero (VNil Nat);
 
-null : (a : Type 0) -> List a -> Bool;
-null = \a -> \l ->
-  List-cases
-    (\_ -> \_ -> Bool)
-    (\_ -> True)
-    (\_ -> \_ -> \_ -> False)
-    a
-    l;
+nil? : (a : Type 0) -> List a -> Bool;
+a : Type 0 . nil? a (Nil a) =
+  True;
+a : Type 0 , x : a , l : List a . nil? a (Cons a x l) =
+  False;
 
 head : (a : Type 0) -> List a -> Maybe a;
-head = \a -> \l ->
-  List-cases
-    (\a -> \_ -> Maybe a)
-    (\a -> Nothing a)
-    (\a -> \x -> \l' -> Just a x)
-    a
-    l;
+a : Type 0 . head a (Nil a) =
+  Nothing a;
+a : Type 0 , x : a , l : List a . head a (Cons a x l) =
+  Just a x;
 
 main5 : Bool;
-main5 = null Nat (Cons Nat Zero (Nil Nat));
+main5 = nil? Nat (Cons Nat Zero (Nil Nat));
 
 main6 : Maybe Nat;
-main6 = head Nat (Cons Nat (Succ Zero) (Nil Nat));
+main6 = head Nat (Cons Nat (Succ Zero) (Cons Nat Zero (Nil Nat)));

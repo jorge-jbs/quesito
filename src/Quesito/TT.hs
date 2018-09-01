@@ -6,6 +6,7 @@ module Quesito.TT where
 import Prelude hiding (print)
 import Control.Monad (unless, when, join)
 import Data.Bifunctor (first)
+import Data.Foldable (foldlM, foldl')
 import Data.List (find)
 
 
@@ -446,6 +447,11 @@ subst name term (Term pos k) =
         Term pos (Lam name' (subst name term t))
 
 
+freeVars :: [Name] -> Term Name -> Term Name
+freeVars vars term =
+  foldl' (\term' v -> subst v (Free v) term') term vars
+
+
 -- * Declarations
 
 
@@ -487,14 +493,16 @@ checkDecl env (MatchFunctionDecl name equations ty) = do
   where
     checkVars :: [(Name, Term Name)] -> Result [(Name, Value)]
     checkVars vars =
-      mapM
-        (\(name', ty') -> do
-          tyTy' <- typeInf env [] ty'
+      foldlM
+        (\vars' (name', ty') -> do
+          let freedTy' = freeVars (map fst vars') ty'
+          tyTy' <- typeInf env vars' freedTy'
           when
             (case tyTy' of VType _ -> False; _ -> True)
             (Left (name' ++ " variable at function declaration " ++ name ++ " is not of kind Type."))
-          return (name', eval env [] ty')
+          return ((name', eval env [] freedTy') : vars')
         )
+        []
         vars
 
     flattenApp :: Term Name -> [Term Name]
@@ -536,10 +544,10 @@ checkDecl env (MatchFunctionDecl name equations ty) = do
 
     checkEquation :: [(Name, Value)] -> Term Name -> Term Name -> Value -> Result ()
     checkEquation vars lhs rhs ty' = do
-      lhsTy <- typeInf env ((name, ty') : vars) lhs
-      rhsTy <- typeInf env ((name, ty') : vars) rhs
-      unless (deBruijnize (quote lhsTy) == deBruijnize (quote rhsTy))
-        (Left ("Type mismatch between left hand side of equation (" ++ show (quote lhsTy) ++ ") and right hand side (" ++ show (quote rhsTy) ++ ")."))
+      let freedLhs = freeVars (map fst vars) lhs
+      let freedRhs = freeVars (map fst vars) rhs
+      lhsTy <- typeInf env ((name, ty') : vars) freedLhs
+      typeCheck env ((name, ty') : vars) freedRhs lhsTy
 
     evalEquation :: Def Value Value -> [Pattern Name] -> Term Name -> ([Pattern Name], [(Name, Value)] -> Value)
     evalEquation recur lhs' rhs =
