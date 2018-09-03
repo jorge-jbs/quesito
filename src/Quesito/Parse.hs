@@ -1,8 +1,4 @@
-module Quesito.Parse
-  ( Quesito.Parse.parse
-  )
-where
-
+module Quesito.Parse (Quesito.Parse.parse) where
 
 import Quesito.TT (Term(..), TermKind(..), Pos(..), Decl(..), Name)
 
@@ -16,11 +12,14 @@ import Text.Parsec
   )
 import Text.Parsec.Combinator (many1)
 import Text.Parsec.Error (ParseError)
-import Text.Parsec.Expr
+import Text.Parsec.Expr (buildExpressionParser , Operator(..) , Assoc(..))
 import Text.Parsec.Prim (many)
 import Text.Parsec.String (Parser)
 import Text.Parsec.Token
-
+  ( GenTokenParser(..), GenLanguageDef(..), commentStart, commentEnd
+  , commentLine, nestedComments, identStart, identLetter, opStart, opLetter
+  , reservedNames, reservedOpNames, caseSensitive, makeTokenParser
+  )
 
 raw :: Parser (Term Name)
 raw =
@@ -44,7 +43,6 @@ raw =
       , [ Infix (reservedOp tp ":" >> return (\a@(Term pos _) b -> Term pos (Ann a b))) AssocLeft ]
       ]
 
-
 expr :: Parser (Term Name)
 expr =
     try appParser
@@ -53,12 +51,10 @@ expr =
     <|> try lambdaParser
     <|> nonParen
 
-
 attachPos :: Parser (TermKind Name) -> Parser (Term Name)
 attachPos f = do
   pos <- pPosToQPos <$> getPosition
   Term pos <$> f
-
 
 typeParser :: Parser (Term Name)
 typeParser =
@@ -66,17 +62,14 @@ typeParser =
     (try (reserved tp "Type" >> natural tp >>= \i -> return (Type (fromIntegral i)))
     <|> (reserved tp "Type" >> return (Type 0)))
 
-
 lambdaParser :: Parser (Term Name)
 lambdaParser =
   attachPos (do reservedOp tp "\\"; x <- identifier tp; reservedOp tp "->"; body <- raw; return (Lam x body))
-
 
 nonParen :: Parser (Term Name)
 nonParen = do
   pos <- pPosToQPos <$> getPosition
   try (fmap (Term pos . Bound) (identifier tp))
-
 
 appParser :: Parser (Term Name)
 appParser = do
@@ -84,11 +77,9 @@ appParser = do
   es <- many1 (nonParen <|> parens tp raw)
   foldlM (\acc x -> return (Term pos (App acc x))) e es
 
-
 pPosToQPos :: SourcePos -> Pos
 pPosToQPos pos =
   Pos (sourceLine pos) (sourceColumn pos)
-
 
 tp :: GenTokenParser String () Identity
 tp =
@@ -107,18 +98,15 @@ tp =
       , caseSensitive = True
       }
 
-
 opLetter' :: Parser Char
 opLetter' =
   oneOf "!#$%&*+./<=>?@\\^|-~'"
-
 
 identifier' :: Parser String
 identifier' = do
   c <- letter <|> oneOf "-_"
   cs <- many (alphaNum <|> opLetter')
   return (c : cs)
-
 
 annotation :: Bool -> Parser (Name, Term Name)
 annotation semicolon = do
@@ -130,7 +118,6 @@ annotation semicolon = do
   spaces
   when semicolon (char ';' >> return ())
   return (name, ty)
-
 
 typeDecl :: Parser Decl
 typeDecl = do
@@ -150,7 +137,6 @@ typeDecl = do
   _ <- char '}'
   return (TypeDecl name ty conss)
 
-
 implementation :: Parser (Name, Term Name)
 implementation = do
   spaces
@@ -162,14 +148,12 @@ implementation = do
   _ <- char ';'
   return (name, body)
 
-
 matchFunctionParser :: Name -> Parser [([(Name, Term Name)], Term Name, Term Name)]
 matchFunctionParser name = do
   defs <- many1 (try matchFunctionCaseParser)
   when (any (\(name', _, _, _) -> name /= name') defs) (parserFail ("definition of " ++ name))
   spaces
   return (map (\(_, y, z, w) -> (y, z, w)) defs)
-
 
 matchFunctionCaseParser :: Parser (Name, [(Name, Term Name)], Term Name, Term Name)
 matchFunctionCaseParser = do
@@ -215,7 +199,6 @@ matchFunctionDefinition = do
   spaces
   return (MatchFunctionDecl name defs ty)
 
-
 definition :: Parser Decl
 definition = do
   spaces
@@ -227,7 +210,6 @@ definition = do
     return (ExprDecl name body ty)
   else
     parserFail ("Expecting implementation for \"" ++ name ++ "\" but found for \"" ++ show name ++ "\".")
-
 
 parse :: String -> Either ParseError [Decl]
 parse =

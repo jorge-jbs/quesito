@@ -1,7 +1,25 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
 
-module Quesito.TT where
-
+module Quesito.TT
+  ( -- * Types
+    Name
+  , Pos(..)
+  , Term(..)
+  , TermKind(..)
+  , Value(..)
+  , quote
+  , Result
+    -- * Evaling
+  , eval
+    -- * Type checking
+  , typeInf
+  , typeCheck
+    -- * Top-level
+  , Def(..)
+  , Decl(..)
+  , checkDecl
+  )
+  where
 
 import Prelude hiding (print)
 import Control.Monad (unless, when, join)
@@ -9,18 +27,14 @@ import Data.Bifunctor (first)
 import Data.Foldable (foldlM, foldl')
 import Data.List (find)
 
-
 class Printable a where
   print :: a -> String
 
-
 type Name = String
-
 
 instance Printable Name where
   print n =
     n
-
 
 data TermKind v
   = Bound v
@@ -32,7 +46,6 @@ data TermKind v
   | Lam Name (Term v)
   deriving Eq
 
-
 data Pos
   = Pos
       Int  -- ^ line
@@ -40,52 +53,39 @@ data Pos
   | None
   deriving Eq
 
-
 instance Show Pos where
   show (Pos y x) =
     "line " ++ show y ++ " and column " ++ show x
   show None =
     "MISSING"
 
-
 data Term v = Term Pos (TermKind v)
-
 
 instance Printable v => Show (TermKind v) where
   show (Bound v) =
     print v
-
   show (Free v) =
     print v
-
   show (Type i) =
     "(" ++ "Type " ++ show i ++ ")"
-
   show (Pi "" t t') =
     "(" ++ show t ++ " -> " ++ show t' ++ ")"
-
   show (Pi n t t') =
     "(" ++ "(" ++ n ++ " : "++ show t ++ ") -> " ++ show t' ++ ")"
-
   show (App t t') =
     "(" ++ show t ++ " " ++ show t' ++ ")"
-
   show (Ann t t') =
     "(" ++ show t ++ " " ++ show t' ++ ")"
-
   show (Lam n t) =
     "(" ++ "\\" ++ n ++ " -> " ++ show t ++ ")"
-
 
 instance Printable v => Show (Term v) where
   show (Term _ k) =
     show k
 
-
 instance Eq v => Eq (Term v) where
   Term _ t == Term _ t' =
     t == t'
-
 
 data Value
   = VLam Name (Value -> Value)
@@ -97,43 +97,32 @@ data Value
   | VFree Name
   | VApp Value Value
 
-
 quote :: Value -> Term Name
-
 quote (VLam x f) =
   Term None (Lam x (quote (f (VBound x))))
-
 quote (VType i) =
   Term None (Type i)
-
 quote (VPi x v v') =
   Term None (Pi x t t')
   where
     t = quote v
     t' = quote (v' (VBound x))
-
 quote (VBound x) =
   Term None (Bound x)
-
 quote (VFree x) =
   Term None (Free x)
-
 quote (VApp u v) =
   Term None (App u' v')
   where
     u' = quote u
     v' = quote v
-
 quote (VDataType n) =
   Term None (Bound n)
-
 quote (VDataCons n) =
   Term None (Bound n)
 
-
 data DeBruijnVar = Index Int | DBFree Name
   deriving Eq
-
 
 deBruijnize :: Term Name -> Term DeBruijnVar
 deBruijnize =
@@ -161,13 +150,11 @@ deBruijnize =
         Ann t t' ->
           Term pos (Ann (deBruijnize' vars t) (deBruijnize' vars t'))
 
-
 data Def term ty
   = DExpr term ty
   | DDataType ty
   | DDataCons ty
   | DMatchFunction [([Pattern Name], [(Name, term)] -> term)] ty
-
 
 data Pattern name
   = Binding name
@@ -176,20 +163,14 @@ data Pattern name
   | MatchApp (Pattern name) (Pattern name)
   deriving Show
 
-
 type TContext =
   [(Name, Value)]
-
 
 type VContext =
   TContext
 
-
 type Env =
   [(Name, Def Value Value)]
-
-
--- * Evaling
 
 eval :: Env -> VContext -> Term Name -> Value
 eval env ctx (Term pos k) =
@@ -198,36 +179,26 @@ eval env ctx (Term pos k) =
       case snd <$> find ((==) x . fst) ctx of
         Just v ->
           v
-
         Nothing ->
           case snd <$> find ((==) x . fst) env of
             Just (DExpr v _) ->
               v
-
             Just (DDataType _) ->
               VDataType x
-
             Just (DDataCons _) ->
               VDataCons x
-
             Just (DMatchFunction [([], f)] _) ->
               f []
-
             Just (DMatchFunction _ _) ->
               VBound x
-
             Nothing ->
               error ("Found free variable at " ++ show pos ++ ": " ++ x)
-
     Free x ->
       VFree x
-
     Type lvl ->
       VType lvl
-
     Pi x e e' ->
       VPi x (eval env ctx e) (\t -> eval env ((x, t) : ctx) e')
-
     App e e' ->
       uncurry apply (flattenVApp (VApp (eval env ctx e) (eval env ctx e')))
       where
@@ -258,6 +229,10 @@ eval env ctx (Term pos k) =
                     t s
                   Nothing ->
                     apply (VApp (VBound name) a) as
+            Just _ ->
+              error ("Variable should have been evaluated at " ++ show pos ++ ": " ++ name)
+            Nothing ->
+              error ("Free variable found at " ++ show pos ++ ": " ++ name)
         apply f (a:as) =
           apply (VApp f a) as
         apply f [] =
@@ -296,20 +271,13 @@ eval env ctx (Term pos k) =
               Nothing
             matchEquation' _ _ [] =
               Nothing
-
     Ann e _ ->
       eval env ctx e
-
     Lam x e ->
       VLam x (\v -> eval env ((x, v) : ctx) e)
 
-
--- * Type inference and checking
-
-
 type Result a =
   Either String a
-
 
 typeInf :: Env -> TContext -> Term Name -> Result Value
 typeInf env ctx (Term pos k) =
@@ -318,30 +286,22 @@ typeInf env ctx (Term pos k) =
       case snd <$> find ((==) x . fst) ctx of
         Just v ->
           return v
-
         Nothing ->
           case snd <$> find ((==) x . fst) env of
             Just (DExpr _ ty) ->
               return ty
-
             Just (DDataType ty) ->
               return ty
-
             Just (DDataCons ty) ->
               return ty
-
             Just (DMatchFunction _ ty) ->
               return ty
-
             Nothing ->
               Left ("Free variable at " ++ show pos ++ ": " ++ x)
-
     Free x ->
       typeInf env ctx (Term pos (Bound x))
-
     Type i ->
       Right (VType (i + 1))
-
     Pi x e e' -> do
       t <- typeInf env ctx e
       case t of
@@ -354,23 +314,18 @@ typeInf env ctx (Term pos k) =
           case t' of
             VType j ->
               return (VType (max i j))
-
             _ ->
               Left ("1: " ++ show pos)
-
         _ ->
           Left ("2: " ++ show pos)
-
     App e e' -> do
       s <- typeInf env ctx e
       case s of
         VPi _ t t' -> do
           typeCheck env ctx e' t
           return (t' (eval env [] e'))
-
         _ ->
           Left ("Applying to non-function at " ++ show pos ++ ": " ++ show (quote s))
-
     Ann e ty -> do
       tyTy <- typeInf env ctx ty
       case tyTy of
@@ -378,22 +333,16 @@ typeInf env ctx (Term pos k) =
           let ty' = eval env [] ty
           typeCheck env ctx e ty'
           return ty'
-
         _ ->
           Left ""
-
     e@(Lam _ _) ->
       Left ("Can't infer type of lambda expression " ++ show e)
 
-
 typeCheck :: Env -> TContext -> Term Name -> Value -> Result ()
-
 typeCheck env ctx (Term _ (Lam x e)) (VPi _ t t') =
   typeCheck env ((x, t) : ctx) (subst x (Free x) e) (t' (VFree x))
-
 typeCheck _ _ (Term pos (Lam _ _)) _ =
   Left ("6: " ++ show pos)
-
 typeCheck env ctx t@(Term pos _) (VType j) = do
   t' <- typeInf env ctx t
   case t' of
@@ -405,13 +354,11 @@ typeCheck env ctx t@(Term pos _) (VType j) = do
 
     v ->
       Left ("Expected type at " ++ show pos ++ " and got: " ++ show (quote v))
-
 typeCheck env ctx t@(Term pos _) ty = do
   ty' <- typeInf env ctx t
   unless
     (deBruijnize (quote ty) == deBruijnize (quote ty'))
     (Left ("Type mismatch at " ++ show pos ++ ". Expected " ++ show (quote ty) ++ " and got " ++ show (quote ty')))
-
 
 subst :: Name -> TermKind Name -> Term Name -> Term Name
 subst name term (Term pos k) =
@@ -421,39 +368,28 @@ subst name term (Term pos k) =
         Term pos term
       else
         Term pos (Bound name')
-
     Free name' ->
       Term pos (Free name')
-
     Type level ->
       Term pos (Type level)
-
     Pi name' t t' ->
       if name == name' then
         Term pos (Pi name' t t')
       else
         Term pos (Pi name' (subst name term t) (subst name term t'))
-
     App t t' ->
       Term pos (App (subst name term t) (subst name term t'))
-
     Ann t t' ->
       Term pos (Ann (subst name term t) (subst name term t'))
-
     Lam name' t ->
       if name == name' then
         Term pos (Lam name' t)
       else
         Term pos (Lam name' (subst name term t))
 
-
 freeVars :: [Name] -> Term Name -> Term Name
 freeVars vars term =
   foldl' (\term' v -> subst v (Free v) term') term vars
-
-
--- * Declarations
-
 
 data Decl
   = ExprDecl Name (Term Name) (Term Name)
@@ -465,7 +401,6 @@ data Decl
 
 
 checkDecl :: [(Name, Def Value Value)] -> Decl -> Result [(Name, Def Value Value)]
-
 checkDecl env (ExprDecl name expr ty) = do
   tyTy <-
     first
@@ -478,7 +413,6 @@ checkDecl env (ExprDecl name expr ty) = do
       typeCheck ((name, DExpr undefined ty') : env) [] (subst name (Free name) expr) ty'
       let expr' = eval ((name, DExpr expr' ty') : env) [] expr
       return [(name, DExpr expr' ty')]
-
     _ ->
       Left (name ++ "'s type is not of kind Type.")
 
@@ -562,10 +496,8 @@ checkDecl env (TypeDecl name ty conss) = do
           let typeDef = (name, DDataType (eval env [] ty))
           conss' <- mapM (uncurry (checkCons typeDef)) conss
           return (typeDef : conss')
-
         _ ->
           Left (name ++ " is not a ground type.")
-
     _ ->
       Left (name ++ "'s type is not of kind Type.")
   where
@@ -597,109 +529,3 @@ checkDecl env (TypeDecl name ty conss) = do
         (not (isConsOf (getReturnType consTy) ty))
         (Left (name' ++ " is not a constructor for " ++ name ++ "."))
       return (name', DDataCons (eval env' [] consTy))
-
-
-flattenPi :: Term Name -> [(Name, Term Name)]
-
-flattenPi (Term _ (Pi v e e')) =
-  (v, e) : flattenPi e'
-
-flattenPi e =
-  [("", e)]
-
-
-unflattenPi :: [(Name, Term Name)] -> Term Name
-
-unflattenPi [] =
-  undefined
-
-unflattenPi ((_, e) : []) =
-  e
-
-unflattenPi ((v, e) : es) =
-  Term None (Pi v e (unflattenPi es))
-
-
-genCases :: Name -> Term Name -> [(Name, Term Name)] -> Term Name
-
-genCases name ty conss =
-  Term
-    None
-    (Pi
-      "P"
-      (unflattenPi
-        ((init $ addTypeCons name "" $ renameAll $ flattenPi $ ty)
-          ++ [("", Term None (Type 1000))]
-        )
-      )
-      (foldr
-        (\a b -> Term None (Pi "" a b))
-        (unflattenPi $ addTypeCons name "P" $ renameAll $ flattenPi ty)
-        conss'
-      )
-    )
-  where
-    conss' =
-      map
-        (\(name', cons) ->
-            unflattenPi
-            $ addEnd name name' "P"
-            $ renameAll
-            $ flattenPi cons
-        )
-        conss
-
-    renameAll :: [(Name, Term Name)] -> [(Name, Term Name)]
-    renameAll =
-      renameAll' 0 []
-      where
-        renameAll' :: Int -> [(Name, Name)] -> [(Name, Term Name)] -> [(Name, Term Name)]
-        renameAll' _ _ [] =
-          []
-        renameAll' i substs ((v, e) : es) =
-          ("x" ++ show i
-          , foldl
-              (\e' (from, to) -> subst from (Bound to) e')
-              e
-              substs
-          )
-            : renameAll' (i + 1) ((v, "x" ++ show i) : substs) es
-
-    addEnd :: Name -> Name -> Name -> [(Name, Term Name)] -> [(Name, Term Name)]
-    addEnd typeName consName endName args' =
-        let args = init args'
-        in
-        args
-        ++ [( ""
-            , Term
-                None
-                (App
-                  (subst typeName (Bound endName) (snd (last args')))
-                  (foldl
-                    (\e (v, _) ->
-                      Term None (App e (Term None (Bound v)))
-                    )
-                    (Term None (Bound consName))
-                    args
-                  )
-                )
-            )
-            ]
-
-    addTypeCons :: Name -> Name -> [(Name, Term Name)] -> [(Name, Term Name)]
-    addTypeCons typeName endName args' =
-      let args = init args'
-          fullyAppliedType =
-            foldl
-              (\e (v, _) ->
-                Term None (App e (Term None (Bound v)))
-              )
-              (Term None (Bound typeName))
-              args
-      in
-        args
-        ++ [ ( "uniqueName"
-             , fullyAppliedType
-              )
-          , ("", Term None (App (subst typeName (Bound endName) fullyAppliedType) (Term None (Bound "uniqueName"))))
-          ]
