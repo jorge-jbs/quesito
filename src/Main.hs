@@ -1,6 +1,7 @@
 module Main where
 
-import Quesito.TT (Name, Value, quote, Result, Decl, Def(..), checkDecl)
+import Quesito
+import Quesito.TT (Name, Value, quote, Decl, Def(..), checkDecl)
 import Quesito.Parse (parse)
 
 main :: IO ()
@@ -10,7 +11,7 @@ main = do
     declarations
       = either (error . show) id
       $ parse input
-  case head <$> checkEvalProgram declarations [] of
+  case runQues $ head <$> checkEvalProgram declarations [] of
     Right (_, DMatchFunction [([], e)] _) ->
       putStrLn $ show $ quote (e [])
     Right _ ->
@@ -18,9 +19,9 @@ main = do
     Left err ->
       putStrLn ("Type checking failed: " ++ err)
 
-checkEvalProgram :: [Decl] -> [(Name, Def Value Value)] -> Result [(Name, Def Value Value)]
+checkEvalProgram :: [Decl] -> [(Name, Def Value Value)] -> Ques [(Name, Def Value Value)]
 checkEvalProgram [] evaledDefs =
-  Right evaledDefs
+  return evaledDefs
 checkEvalProgram (decl : decls) evaledDefs = do
   def <- checkDecl evaledDefs decl
   checkEvalProgram decls (def ++ evaledDefs)

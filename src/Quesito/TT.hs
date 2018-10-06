@@ -8,7 +8,6 @@ module Quesito.TT
   , TermKind(..)
   , Value(..)
   , quote
-  , Result
     -- * Evaling
   , eval
     -- * Type checking
@@ -26,6 +25,8 @@ import Control.Monad (unless, when, join)
 import Data.Bifunctor (first)
 import Data.Foldable (foldlM, foldl')
 import Data.List (find)
+
+import Quesito
 
 class Printable a where
   print :: a -> String
@@ -276,10 +277,7 @@ eval env ctx (Term pos k) =
     Lam x e ->
       VLam x (\v -> eval env ((x, v) : ctx) e)
 
-type Result a =
-  Either String a
-
-typeInf :: Env -> TContext -> Term Name -> Result Value
+typeInf :: Env -> TContext -> Term Name -> Ques Value
 typeInf env ctx (Term pos k) =
   case k of
     Bound x ->
@@ -297,11 +295,11 @@ typeInf env ctx (Term pos k) =
             Just (DMatchFunction _ ty) ->
               return ty
             Nothing ->
-              Left ("Free variable at " ++ show pos ++ ": " ++ x)
+              throwError ("Free variable at " ++ show pos ++ ": " ++ x)
     Free x ->
       typeInf env ctx (Term pos (Bound x))
     Type i ->
-      Right (VType (i + 1))
+      return (VType (i + 1))
     Pi x e e' -> do
       t <- typeInf env ctx e
       case t of
@@ -315,9 +313,9 @@ typeInf env ctx (Term pos k) =
             VType j ->
               return (VType (max i j))
             _ ->
-              Left ("1: " ++ show pos)
+              throwError ("1: " ++ show pos)
         _ ->
-          Left ("2: " ++ show pos)
+          throwError ("2: " ++ show pos)
     App e e' -> do
       s <- typeInf env ctx e
       case s of
@@ -325,7 +323,7 @@ typeInf env ctx (Term pos k) =
           typeCheck env ctx e' t
           return (t' (eval env [] e'))
         _ ->
-          Left ("Applying to non-function at " ++ show pos ++ ": " ++ show (quote s))
+          throwError ("Applying to non-function at " ++ show pos ++ ": " ++ show (quote s))
     Ann e ty -> do
       tyTy <- typeInf env ctx ty
       case tyTy of
@@ -334,31 +332,31 @@ typeInf env ctx (Term pos k) =
           typeCheck env ctx e ty'
           return ty'
         _ ->
-          Left ""
+          throwError ""
     e@(Lam _ _) ->
-      Left ("Can't infer type of lambda expression " ++ show e)
+      throwError ("Can't infer type of lambda expression " ++ show e)
 
-typeCheck :: Env -> TContext -> Term Name -> Value -> Result ()
+typeCheck :: Env -> TContext -> Term Name -> Value -> Ques ()
 typeCheck env ctx (Term _ (Lam x e)) (VPi _ t t') =
   typeCheck env ((x, t) : ctx) (subst x (Free x) e) (t' (VFree x))
 typeCheck _ _ (Term pos (Lam _ _)) _ =
-  Left ("6: " ++ show pos)
+  throwError ("6: " ++ show pos)
 typeCheck env ctx t@(Term pos _) (VType j) = do
   t' <- typeInf env ctx t
   case t' of
     VType i  ->
       if i <= j then
-        Right ()
+        return ()
       else
-        Left ("Incorrect type universe at " ++ show pos ++ ". Expected level " ++ show j ++ " and got " ++ show i)
+        throwError ("Incorrect type universe at " ++ show pos ++ ". Expected level " ++ show j ++ " and got " ++ show i)
 
     v ->
-      Left ("Expected type at " ++ show pos ++ " and got: " ++ show (quote v))
+      throwError ("Expected type at " ++ show pos ++ " and got: " ++ show (quote v))
 typeCheck env ctx t@(Term pos _) ty = do
   ty' <- typeInf env ctx t
   unless
     (deBruijnize (quote ty) == deBruijnize (quote ty'))
-    (Left ("Type mismatch at " ++ show pos ++ ". Expected " ++ show (quote ty) ++ " and got " ++ show (quote ty')))
+    (throwError ("Type mismatch at " ++ show pos ++ ". Expected " ++ show (quote ty) ++ " and got " ++ show (quote ty')))
 
 subst :: Name -> TermKind Name -> Term Name -> Term Name
 subst name term (Term pos k) =
@@ -400,12 +398,11 @@ data Decl
       [(Name, Term Name)]  -- ^ Constructors
 
 
-checkDecl :: [(Name, Def Value Value)] -> Decl -> Result [(Name, Def Value Value)]
+checkDecl :: [(Name, Def Value Value)] -> Decl -> Ques [(Name, Def Value Value)]
 checkDecl env (ExprDecl name expr ty) = do
   tyTy <-
-    first
-      (\err -> "Type error while checking " ++ name ++ ": " ++ err)
-      (typeInf env [] ty)
+    typeInf env [] ty `catchError`
+      \err -> throwError ("Type error while checking " ++ name ++ ": " ++ err)
 
   case tyTy of
     VType _ -> do
@@ -414,7 +411,7 @@ checkDecl env (ExprDecl name expr ty) = do
       let expr' = eval ((name, DExpr expr' ty') : env) [] expr
       return [(name, DExpr expr' ty')]
     _ ->
-      Left (name ++ "'s type is not of kind Type.")
+      throwError (name ++ "'s type is not of kind Type.")
 
 checkDecl env (MatchFunctionDecl name equations ty) = do
   typeCheck env [] ty (VType 1000)
@@ -425,7 +422,7 @@ checkDecl env (MatchFunctionDecl name equations ty) = do
   let evaledEquations = map (uncurry $ evalEquation (DMatchFunction evaledEquations ty')) (zip lhss' (map (\(_, _, x) -> x) equations))
   return [(name, DMatchFunction evaledEquations ty')]
   where
-    checkVars :: [(Name, Term Name)] -> Result [(Name, Value)]
+    checkVars :: [(Name, Term Name)] -> Ques [(Name, Value)]
     checkVars vars =
       foldlM
         (\vars' (name', ty') -> do
@@ -433,7 +430,7 @@ checkDecl env (MatchFunctionDecl name equations ty) = do
           tyTy' <- typeInf env vars' freedTy'
           when
             (case tyTy' of VType _ -> False; _ -> True)
-            (Left (name' ++ " variable at function declaration " ++ name ++ " is not of kind Type."))
+            (throwError (name' ++ " variable at function declaration " ++ name ++ " is not of kind Type."))
           return ((name', eval env [] freedTy') : vars')
         )
         []
@@ -449,18 +446,18 @@ checkDecl env (MatchFunctionDecl name equations ty) = do
         flattenApp' as f =
           f:as
 
-    rawToMatch :: [Name] -> Bool -> Term Name -> Result (Pattern Name)
+    rawToMatch :: [Name] -> Bool -> Term Name -> Ques (Pattern Name)
     rawToMatch vars normalized (Term pos (Bound x))
       | elem x vars =
-        Right (Binding x)
+        return (Binding x)
       | otherwise =
         case find ((==) x . fst) env of
           Just (_, DDataCons _) ->
-            Right (Constructor x)
+            return (Constructor x)
           Just _ | not normalized ->
-            Right (Inaccessible (Term pos (Bound x)))
+            return (Inaccessible (Term pos (Bound x)))
           _ ->
-            Left ("Free variable at " ++ show pos ++ ".")
+            throwError ("Free variable at " ++ show pos ++ ".")
     rawToMatch vars normalized (Term pos (Free x)) =
       rawToMatch vars normalized (Term pos (Bound x))
     rawToMatch vars _ (Term _ (App l r)) = do
@@ -468,15 +465,15 @@ checkDecl env (MatchFunctionDecl name equations ty) = do
       r' <- rawToMatch vars False r
       return (MatchApp l' r')
     rawToMatch _ _ (Term pos (Type _)) =
-      Left ("Can't pattern match on type universes (at " ++ show pos ++ ")")
+      throwError ("Can't pattern match on type universes (at " ++ show pos ++ ")")
     rawToMatch _ _ (Term pos (Pi _ _ _)) =
-      Left ("Can't pattern match on function spaces (at " ++ show pos ++ ")")
+      throwError ("Can't pattern match on function spaces (at " ++ show pos ++ ")")
     rawToMatch _ _ (Term pos (Ann _ _)) =
-      Left ("Can't pattern match on type annotations (at " ++ show pos ++ ")")
+      throwError ("Can't pattern match on type annotations (at " ++ show pos ++ ")")
     rawToMatch _ _ (Term pos (Lam _ _)) =
-      Left ("Can't pattern match on lambda expressions (at " ++ show pos ++ ")")
+      throwError ("Can't pattern match on lambda expressions (at " ++ show pos ++ ")")
 
-    checkEquation :: [(Name, Value)] -> Term Name -> Term Name -> Value -> Result ()
+    checkEquation :: [(Name, Value)] -> Term Name -> Term Name -> Value -> Ques ()
     checkEquation vars lhs rhs ty' = do
       let freedLhs = freeVars (map fst vars) lhs
       let freedRhs = freeVars (map fst vars) rhs
@@ -497,9 +494,9 @@ checkDecl env (TypeDecl name ty conss) = do
           conss' <- mapM (uncurry (checkCons typeDef)) conss
           return (typeDef : conss')
         _ ->
-          Left (name ++ " is not a ground type.")
+          throwError (name ++ " is not a ground type.")
     _ ->
-      Left (name ++ "'s type is not of kind Type.")
+      throwError (name ++ "'s type is not of kind Type.")
   where
     getReturnType :: Term Name -> Term Name
     getReturnType (Term _ (Pi _ _ x)) =
@@ -515,17 +512,16 @@ checkDecl env (TypeDecl name ty conss) = do
     isConsOf _ _ =
       False
 
-    checkCons :: (Name, Def Value Value) -> Name -> Term Name -> Result (Name, Def Value Value)
+    checkCons :: (Name, Def Value Value) -> Name -> Term Name -> Ques (Name, Def Value Value)
     checkCons typeDef name' consTy = do
       let env' = typeDef : env
       tyTy <-
-        first
-          (\err -> "Type error while checking " ++ name' ++ ": " ++ err)
-          (typeInf env' [] consTy)
+          typeInf env' [] consTy `catchError`
+            \err -> throwError ("Type error while checking " ++ name' ++ ": " ++ err)
       when
         (case tyTy of VType _ -> False; _ -> True)
-        (Left (name' ++ "'s type is not of kind Type."))
+        (throwError (name' ++ "'s type is not of kind Type."))
       when
         (not (isConsOf (getReturnType consTy) ty))
-        (Left (name' ++ " is not a constructor for " ++ name ++ "."))
+        (throwError (name' ++ " is not a constructor for " ++ name ++ "."))
       return (name', DDataCons (eval env' [] consTy))
