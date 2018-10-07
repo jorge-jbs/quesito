@@ -1,6 +1,7 @@
 module Quesito.Parse (Quesito.Parse.parse) where
 
-import Quesito.TT (Term(..), TermKind(..), Pos(..), Decl(..), Name)
+import Quesito
+import Quesito.TT (Term(..), Decl(..), Name)
 
 import Control.Monad (when)
 import Data.Foldable (foldlM)
@@ -32,15 +33,15 @@ raw =
               return
                 (\a b ->
                   case a of
-                    Term pos (Ann (Term _ (Bound x)) ty) ->
-                      Term pos (Pi x ty b)
-                    Term pos _ ->
-                      Term pos (Pi "" a b)
+                    Ann (Bound u) ty ->
+                      Pi u ty b
+                    _ ->
+                      Pi "" a b
                 )
             )
             AssocRight
         ]
-      , [ Infix (reservedOp tp ":" >> return (\a@(Term pos _) b -> Term pos (Ann a b))) AssocLeft ]
+      , [ Infix (reservedOp tp ":" >> return (\a b -> Ann a b)) AssocLeft ]
       ]
 
 expr :: Parser (Term Name)
@@ -51,10 +52,10 @@ expr =
     <|> try lambdaParser
     <|> nonParen
 
-attachPos :: Parser (TermKind Name) -> Parser (Term Name)
+attachPos :: Parser (Term Name) -> Parser (Term Name)
 attachPos f = do
-  pos <- pPosToQPos <$> getPosition
-  Term pos <$> f
+  -- loc <- pPosToQPos <$> getPosition
+  f
 
 typeParser :: Parser (Term Name)
 typeParser =
@@ -68,18 +69,18 @@ lambdaParser =
 
 nonParen :: Parser (Term Name)
 nonParen = do
-  pos <- pPosToQPos <$> getPosition
-  try (fmap (Term pos . Bound) (identifier tp))
+  -- loc <- pPosToQPos <$> getPosition
+  try (fmap Bound (identifier tp))
 
 appParser :: Parser (Term Name)
 appParser = do
-  e@(Term pos _) <- nonParen <|> parens tp raw
+  e <- nonParen <|> parens tp raw
   es <- many1 (nonParen <|> parens tp raw)
-  foldlM (\acc x -> return (Term pos (App acc x))) e es
+  foldlM (\acc x -> return (App acc x)) e es
 
-pPosToQPos :: SourcePos -> Pos
-pPosToQPos pos =
-  Pos (sourceLine pos) (sourceColumn pos)
+pPosToQPos :: SourcePos -> Location
+pPosToQPos loc =
+  Location (sourceLine loc) (sourceColumn loc)
 
 tp :: GenTokenParser String () Identity
 tp =
@@ -183,9 +184,9 @@ matchFunctionCaseParser = do
   return (name, vars, lhs, rhs)
   where
     findName :: Term Name -> Maybe Name
-    findName (Term _ (App e _)) =
+    findName (App e _) =
       findName e
-    findName (Term _ (Bound x)) =
+    findName (Bound x) =
       Just x
     findName _ =
       Nothing

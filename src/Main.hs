@@ -11,9 +11,17 @@ main = do
     declarations
       = either (error . show) id
       $ parse input
-  case runQues $ head <$> checkEvalProgram declarations [] of
-    Right (_, DMatchFunction [([], e)] _) ->
-      putStrLn $ show $ quote (e [])
+  let (x, w) = runQues $ head <$> checkEvalProgram declarations []
+  putStrLn w
+  case x of
+    Right (_, DMatchFunction [([], e)] _) -> do
+      case runQues (quote =<< e []) of
+        (Right qe, w') -> do
+          putStrLn w'
+          putStrLn $ show qe
+        (Left err, w') -> do
+          putStrLn w'
+          putStrLn ("Error: " ++ err)
     Right _ ->
       putStrLn "The last expression of a source file must be a simple (non-pattern-matching) expression."
     Left err ->
