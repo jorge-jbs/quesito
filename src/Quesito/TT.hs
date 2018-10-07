@@ -4,6 +4,8 @@ module Quesito.TT
   ( -- * Types
     Name
   , Term(..)
+  , mapInLoc
+  , remLoc
   , Value(..)
   , quote
     -- * Evaling
@@ -42,8 +44,19 @@ data Term v
   | App (Term v) (Term v)
   | Ann (Term v) (Term v)
   | Lam Name (Term v)
-  deriving Eq
+  | Loc Location (Term v)
 
+mapInLoc :: Term v -> (Term v -> Term v) -> Term v
+mapInLoc (Loc loc t) f =
+  Loc loc (mapInLoc t f)
+mapInLoc t f =
+  f t
+
+remLoc :: Term v -> Term v
+remLoc (Loc _ t) =
+  remLoc t
+remLoc t =
+  t
 
 instance Printable v => Show (Term v) where
   show (Bound v) =
@@ -62,6 +75,28 @@ instance Printable v => Show (Term v) where
     "(" ++ show t ++ " " ++ show t' ++ ")"
   show (Lam n t) =
     "(" ++ "\\" ++ n ++ " -> " ++ show t ++ ")"
+  show (Loc t _) =
+    show t
+
+instance Eq v => Eq (Term v) where
+  Loc _ t == t' =
+    t == t'
+  t == Loc _ t' =
+    t == t'
+  Bound v == Bound w =
+    v == w
+  Free v == Free w =
+    v == w
+  Type i == Type j =
+    i == j
+  Pi v s s' == Pi w t t' =
+    v == w && s == t && s' == t'
+  App s s' == App t t' =
+    s == t && s' == t'
+  Ann s sty == Ann t tty =
+    s == t && sty == tty
+  _ == _ =
+    False
 
 data Value
   = VLam Name (Value -> Ques Value)
@@ -121,6 +156,8 @@ deBruijnize =
       App (deBruijnize' vars t) (deBruijnize' vars t')
     deBruijnize' vars (Ann t t') =
       Ann (deBruijnize' vars t) (deBruijnize' vars t')
+    deBruijnize' vars (Loc loc t) =
+      Loc loc (deBruijnize' vars t)
 
 data Def term ty
   = DExpr term ty
@@ -252,6 +289,8 @@ eval env ctx (Ann e _) =
   eval env ctx e
 eval env ctx (Lam x e) =
   return (VLam x (\v -> eval env ((x, v) : ctx) e))
+eval env ctx (Loc loc t) =
+  eval env ctx t `locatedAt` loc
 
 typeInf :: Env -> TContext -> Term Name -> Ques Value
 typeInf env ctx (Bound x) =
@@ -316,6 +355,8 @@ typeInf env ctx (Ann e ty) = do
       throwError ""
 typeInf _ _ e@(Lam _ _) =
   throwError ("Can't infer type of lambda expression " ++ show e)
+typeInf env ctx (Loc loc t) =
+  typeInf env ctx t `locatedAt` loc
 
 typeCheck :: Env -> TContext -> Term Name -> Value -> Ques ()
 typeCheck env ctx (Lam x e) (VPi _ v w) = do
@@ -338,6 +379,8 @@ typeCheck env ctx t (VType j) = do
       loc <- getLocation
       qv <- quote v
       throwError ("Expected type at " ++ show loc ++ " and got: " ++ show qv)
+typeCheck env ctx (Loc loc t) ty =
+  typeCheck env ctx t ty `locatedAt` loc
 typeCheck env ctx t ty = do
   ty' <- typeInf env ctx t
   qty <- quote ty
@@ -371,6 +414,8 @@ subst name term (Lam name' t) =
     Lam name' t
   else
     Lam name' (subst name term t)
+subst name term (Loc loc t) =
+  Loc loc (subst name term t)
 
 freeVars :: [Name] -> Term Name -> Term Name
 freeVars vars term =
@@ -440,6 +485,8 @@ checkDecl env (MatchFunctionDecl name equations ty) = do
         flattenApp' :: [Term Name] -> Term Name -> [Term Name]
         flattenApp' as (App f a) =
           flattenApp' (a:as) f
+        flattenApp' as (Loc _ a) =
+          flattenApp' as a
         flattenApp' as f =
           f:as
 
@@ -474,6 +521,8 @@ checkDecl env (MatchFunctionDecl name equations ty) = do
     rawToMatch _ _ (Lam _ _) = do
       loc <- getLocation
       throwError ("Can't pattern match on lambda expressions (at " ++ show loc ++ ")")
+    rawToMatch vars normalized (Loc loc t) =
+      rawToMatch vars normalized t `locatedAt` loc
 
     checkEquation :: [(Name, Value)] -> Term Name -> Term Name -> Value -> Ques ()
     checkEquation vars lhs rhs ty' = do
@@ -507,6 +556,8 @@ checkDecl env (TypeDecl name ty conss) = do
     getReturnType :: Term Name -> Term Name
     getReturnType (Pi _ _ x) =
       getReturnType x
+    getReturnType (Loc _ x) =
+      getReturnType x
     getReturnType x =
       x
 
@@ -515,6 +566,10 @@ checkDecl env (TypeDecl name ty conss) = do
       isConsOf e t
     isConsOf (Bound name') (Type 0) | name == name' =
       True
+    isConsOf (Loc _ e) t =
+      isConsOf e t
+    isConsOf e (Loc _ t) =
+      isConsOf e t
     isConsOf _ _ =
       False
 

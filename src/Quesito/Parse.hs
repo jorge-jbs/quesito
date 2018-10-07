@@ -1,7 +1,7 @@
 module Quesito.Parse (Quesito.Parse.parse) where
 
 import Quesito
-import Quesito.TT (Term(..), Decl(..), Name)
+import Quesito.TT (Term(..), mapInLoc, remLoc, Decl(..), Name)
 
 import Control.Monad (when)
 import Data.Foldable (foldlM)
@@ -32,11 +32,19 @@ raw =
               reservedOp tp "->" >>
               return
                 (\a b ->
-                  case a of
-                    Ann (Bound u) ty ->
-                      Pi u ty b
-                    _ ->
-                      Pi "" a b
+                   mapInLoc
+                     a
+                     (\a' ->
+                        case a' of
+                          Ann v ty ->
+                            case remLoc v of
+                              Bound u ->
+                                Pi u ty b
+                              _ ->
+                                Pi "" a b
+                          _ ->
+                            Pi "" a b
+                     )
                 )
             )
             AssocRight
@@ -53,9 +61,13 @@ expr =
     <|> nonParen
 
 attachPos :: Parser (Term Name) -> Parser (Term Name)
-attachPos f = do
-  -- loc <- pPosToQPos <$> getPosition
-  f
+attachPos x = do
+  loc <- pPosToQPos <$> getPosition
+  Loc loc <$> x
+  where
+    pPosToQPos :: SourcePos -> Location
+    pPosToQPos loc =
+      Location (sourceLine loc) (sourceColumn loc)
 
 typeParser :: Parser (Term Name)
 typeParser =
@@ -64,23 +76,23 @@ typeParser =
     <|> (reserved tp "Type" >> return (Type 0)))
 
 lambdaParser :: Parser (Term Name)
-lambdaParser =
-  attachPos (do reservedOp tp "\\"; x <- identifier tp; reservedOp tp "->"; body <- raw; return (Lam x body))
+lambdaParser = attachPos $ do
+  reservedOp tp "\\"
+  x <- identifier tp
+  reservedOp tp "->"
+  body <- raw
+  return (Lam x body)
 
 nonParen :: Parser (Term Name)
-nonParen = do
-  -- loc <- pPosToQPos <$> getPosition
-  try (fmap Bound (identifier tp))
+nonParen =
+  attachPos
+    (try (fmap Bound (identifier tp)))
 
 appParser :: Parser (Term Name)
-appParser = do
-  e <- nonParen <|> parens tp raw
-  es <- many1 (nonParen <|> parens tp raw)
+appParser = attachPos $ do
+  e <- try nonParen <|> parens tp raw
+  es <- many1 (try nonParen <|> parens tp raw)
   foldlM (\acc x -> return (App acc x)) e es
-
-pPosToQPos :: SourcePos -> Location
-pPosToQPos loc =
-  Location (sourceLine loc) (sourceColumn loc)
 
 tp :: GenTokenParser String () Identity
 tp =
@@ -188,6 +200,8 @@ matchFunctionCaseParser = do
       findName e
     findName (Bound x) =
       Just x
+    findName (Loc _ e) =
+      findName e
     findName _ =
       Nothing
 
