@@ -1,7 +1,8 @@
 module Quesito.Parse (Quesito.Parse.parse) where
 
 import Quesito
-import Quesito.TT (Term(..), mapInLoc, remLoc, Decl(..), Name)
+import Quesito.TT (Term(..), mapInLoc, remLoc, Name)
+import Quesito.TT.TopLevel (Decl(..))
 
 import Control.Monad (when)
 import Data.Foldable (foldlM)

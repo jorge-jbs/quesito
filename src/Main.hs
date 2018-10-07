@@ -1,7 +1,9 @@
 module Main where
 
 import Quesito
-import Quesito.TT (Name, Value, quote, Decl, Def(..), checkDecl)
+import Quesito.TT (Name)
+import Quesito.TT.Eval (Value, Def(..), quote)
+import Quesito.TT.TopLevel (Decl, checkDecl)
 import Quesito.Parse (parse)
 
 main :: IO ()
