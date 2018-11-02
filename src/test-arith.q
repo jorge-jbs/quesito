@@ -34,9 +34,11 @@ baia : Eq Bool True False;
 baia = baia;
 
 plus : Nat -> Nat -> Nat;
-m : Nat . plus Zero m =
+m : Nat .
+plus Zero m =
   m;
-n : Nat , m : Nat . plus (Succ n) m =
+n : Nat , m : Nat .
+plus (Succ n) m =
   Succ (plus n m);
 
 fib : Nat -> Nat;
@@ -44,7 +46,8 @@ fib Zero =
   Succ Zero;
 fib (Succ Zero) =
   Succ Zero;
-n : Nat . fib (Succ (Succ n)) =
+n : Nat .
+fib (Succ (Succ n)) =
   plus (fib (Succ n)) (fib n);
 
 main : Nat;
