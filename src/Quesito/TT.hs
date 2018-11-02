@@ -30,6 +30,8 @@ data Term v
   = Bound v
   | Free v
   | Type Int
+  | BytesType Int
+  | Num Int
   | Pi Name (Term v) (Term v)
   | App (Term v) (Term v)
   | Ann (Term v) (Term v)
@@ -55,6 +57,10 @@ instance Printable v => Show (Term v) where
     print v
   show (Type i) =
     "(" ++ "Type " ++ show i ++ ")"
+  show (BytesType n) =
+    "(" ++ "Bytes " ++ show n ++ ")"
+  show (Num n) =
+    show n
   show (Pi "" t t') =
     "(" ++ show t ++ " -> " ++ show t' ++ ")"
   show (Pi n t t') =
@@ -79,6 +85,10 @@ instance Eq v => Eq (Term v) where
     v == w
   Type i == Type j =
     i == j
+  BytesType n == BytesType m =
+    n == m
+  Num x == Num y =
+    x == y
   Pi v s s' == Pi w t t' =
     v == w && s == t && s' == t'
   App s s' == App t t' =
@@ -110,6 +120,10 @@ deBruijnize =
       Lam "" (deBruijnize' (n : vars) t)
     deBruijnize' _ (Type i) =
       Type i
+    deBruijnize' _ (BytesType n) =
+      BytesType n
+    deBruijnize' _ (Num n) =
+      Num n
     deBruijnize' vars (App t t') =
       App (deBruijnize' vars t) (deBruijnize' vars t')
     deBruijnize' vars (Ann t t') =
@@ -127,6 +141,10 @@ subst _ _ (Free name') =
   Free name'
 subst _ _ (Type level) =
   Type level
+subst _ _ (BytesType n) =
+  BytesType n
+subst _ _ (Num n) =
+  Num n
 subst name term (Pi name' t t') =
   if name == name' then
     Pi name' t t'

@@ -16,10 +16,6 @@ typeInf env ctx (Bound x) =
       case snd <$> find ((==) x . fst) env of
         Just (DExpr _ ty) ->
           return ty
-        Just (DDataType ty) ->
-          return ty
-        Just (DDataCons ty) ->
-          return ty
         Just (DMatchFunction _ ty) ->
           return ty
         Nothing -> do
@@ -29,6 +25,11 @@ typeInf env ctx (Free x) =
   typeInf env ctx (Bound x)
 typeInf _ _ (Type i) =
   return (VType (i + 1))
+typeInf _ _ (BytesType _) =
+  return (VType 0)
+typeInf _ _ (Num n) = do
+  loc <- getLocation
+  throwError ("Cannot infer byte size of number " ++ show n ++ ": " ++ show loc)
 typeInf env ctx (Pi x e f) = do
   t <- typeInf env ctx e
   case t of
@@ -80,6 +81,15 @@ typeCheck env ctx (Lam x e) (VPi _ v w) = do
 typeCheck _ _ (Lam _ _) _ = do
   loc <- getLocation
   throwError ("6: " ++ show loc)
+typeCheck _ _ (Num x) (VBytesType n) =
+  if x >= 0 && x < (2^(n*8)) then
+    return ()
+  else do
+    loc <- getLocation
+    if x < 0 then
+      throwError ("Bytes cannot be negative numbers: " ++ show loc)
+    else
+      throwError ("Number " ++ show x ++ " is larger than byte size: " ++ show loc)
 typeCheck env ctx t (VType j) = do
   t' <- typeInf env ctx t
   case t' of
@@ -104,4 +114,3 @@ typeCheck env ctx t ty = do
   unless
     (deBruijnize qty == deBruijnize qty')
     (throwError ("Type mismatch at " ++ show loc ++ ". Expected " ++ show qty ++ " and got " ++ show qty'))
-

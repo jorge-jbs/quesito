@@ -9,8 +9,7 @@ import Data.Foldable (foldlM)
 import Data.Functor.Identity (Identity)
 import Text.Parsec
   ( SourcePos, (<|>), try, parse, parserFail, eof, alphaNum, letter, oneOf
-  , spaces, char, string, space, getPosition, sourceLine, sourceColumn, sepBy
-  , option
+  , spaces, char, getPosition, sourceLine, sourceColumn, sepBy, option
   )
 import Text.Parsec.Combinator (many1)
 import Text.Parsec.Error (ParseError)
@@ -74,7 +73,8 @@ typeParser :: Parser (Term Name)
 typeParser =
   attachPos
     (try (reserved tp "Type" >> natural tp >>= \i -> return (Type (fromIntegral i)))
-    <|> (reserved tp "Type" >> return (Type 0)))
+    <|> try (reserved tp "Type" >> return (Type 0))
+    <|> (reserved tp "Bytes" >> natural tp >>= \i -> return (BytesType (fromIntegral i))))
 
 lambdaParser :: Parser (Term Name)
 lambdaParser = attachPos $ do
@@ -87,7 +87,8 @@ lambdaParser = attachPos $ do
 nonParen :: Parser (Term Name)
 nonParen =
   attachPos
-    (try (fmap Bound (identifier tp)))
+    (try (try (fmap Bound (identifier tp))
+    <|> (Num . fromIntegral <$> natural tp)))
 
 appParser :: Parser (Term Name)
 appParser = attachPos $ do
@@ -107,7 +108,7 @@ tp =
       , identLetter = alphaNum <|> opLetter'
       , opStart = opLetter'
       , opLetter = opLetter'
-      , reservedNames = ["data", "where", "Type", "->"]
+      , reservedNames = ["data", "where", "Type", "Bytes", "->"]
       , reservedOpNames = ["->", ":", "\\", ";", "," , "."]
       , caseSensitive = True
       }
@@ -132,24 +133,6 @@ annotation semicolon = do
   spaces
   when semicolon (char ';' >> return ())
   return (name, ty)
-
-typeDecl :: Parser Decl
-typeDecl = do
-  spaces
-  _ <- string "data"
-  _ <- many1 space
-  (name, ty) <- annotation False
-  spaces
-  _ <- string "where"
-  spaces
-  _ <- char '{'
-  conss <- many $ try $ do
-    spaces
-    (name', ty') <- annotation True
-    return (name', ty')
-  spaces
-  _ <- char '}'
-  return (TypeDecl name ty conss)
 
 implementation :: Parser (Name, Term Name)
 implementation = do
@@ -231,7 +214,7 @@ parse :: String -> Either ParseError [Decl]
 parse =
   Text.Parsec.parse
     (do
-       decls <- many (try matchFunctionDefinition <|> try definition <|> typeDecl)
+       decls <- many (try matchFunctionDefinition <|> definition)
        eof
        return decls
     )
