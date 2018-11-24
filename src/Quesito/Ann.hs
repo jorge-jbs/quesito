@@ -17,6 +17,7 @@ data Term v
   | Ann (Term v) (Term v)
   | Lam TT.Name (Term v)
   | Loc Location (Term v)
+  deriving Show
 
 type Context v =
   [(Name, Term Name)]

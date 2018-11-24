@@ -2,16 +2,38 @@ module Quesito.TT.CodeGen where
 
 import Quesito
 import Quesito.LC as LC
+import qualified Quesito.TT.Eval as TT
 
+import Data.String (fromString)
 import Control.Monad (join)
 import LLVM as L
-import LLVM.AST as L
+import LLVM.AST as L hiding (function)
 import LLVM.AST.Constant as L
+import LLVM.AST.Global as L
 import LLVM.IRBuilder.Instruction as L
 import LLVM.IRBuilder.Module as L
 import LLVM.IRBuilder.Monad as L
 
-codeGen :: Term LC.Name -> L.IRBuilderT Ques L.Operand
+defCodeGen
+  :: LC.Name
+  -> [(LC.Name, LC.Type LC.Name)]  -- ^ Arguments
+  -> LC.Term LC.Name  -- ^ Body
+  -> LC.Type LC.Name  -- ^ Return type
+  -> ModuleBuilderT Ques ()
+defCodeGen name args t retTy = do
+  _ <- L.function
+    (mkName name)
+    ( map
+        (\(argName, ty) ->
+          (typeToLType ty, ParameterName (fromString argName))
+        )
+        args
+    )
+    (typeToLType retTy)
+    (const (codeGen t >> return ()))
+  return ()
+
+codeGen :: Term LC.Name -> L.IRBuilderT (ModuleBuilderT Ques) L.Operand
 codeGen (Var v ty) =
   return (L.LocalReference (gtypeToLType ty) (mkName v))
 codeGen (Lit n) =

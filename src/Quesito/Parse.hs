@@ -189,6 +189,7 @@ matchFunctionCaseParser = do
     findName _ =
       Nothing
 
+{-
 matchFunctionDefinition :: Parser Decl
 matchFunctionDefinition = do
   spaces
@@ -197,6 +198,7 @@ matchFunctionDefinition = do
   defs <- matchFunctionParser name
   spaces
   return (MatchFunctionDecl name defs ty)
+-}
 
 definition :: Parser Decl
 definition = do
@@ -214,7 +216,8 @@ parse :: String -> Either ParseError [Decl]
 parse =
   Text.Parsec.parse
     (do
-       decls <- many (try matchFunctionDefinition <|> definition)
+       decls <- many (-- try matchFunctionDefinition <|>
+                      definition)
        eof
        return decls
     )

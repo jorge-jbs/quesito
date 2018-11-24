@@ -11,7 +11,7 @@ import Control.Monad (when)
 
 data Decl
   = ExprDecl Name (Term Name) (Term Name)
-  | MatchFunctionDecl Name [([(Name, Term Name)], Term Name, Term Name)] (Term Name)
+  -- | MatchFunctionDecl Name [([(Name, Term Name)], Term Name, Term Name)] (Term Name)
 
 checkDecl :: [(Name, Def Value Value)] -> Decl -> Ques [(Name, Def Value Value)]
 checkDecl env (ExprDecl name expr ty) = do
@@ -36,6 +36,7 @@ checkDecl env (ExprDecl name expr ty) = do
       tell ["Finished recurring on " ++ name]
       eval ((name, DExpr expr' ty') : env) [] expr
 
+{-
 checkDecl env (MatchFunctionDecl name equations ty) = do
   tell ["Checking pattern matching function declaration " ++ name]
   typeCheck env [] ty (VType 1000)
@@ -123,3 +124,4 @@ checkDecl env (MatchFunctionDecl name equations ty) = do
     evalEquation :: Def Value Value -> [Pattern Name] -> Term Name -> ([Pattern Name], [(Name, Value)] -> Ques Value)
     evalEquation recur lhs' rhs =
       (lhs', \ctx -> eval ((name, recur):env) ctx rhs)
+-}
