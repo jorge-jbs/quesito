@@ -1,7 +1,7 @@
 module Main where
 
 import Quesito
-import Quesito.TT (Name)
+import Quesito.TT (Name, pprint)
 import Quesito.TT.Eval (Value, Def(..), quote)
 import Quesito.TT.TopLevel (Decl, checkDecl)
 import Quesito.Parse (parse)
@@ -20,7 +20,7 @@ main = do
       case runQues (quote =<< e []) of
         (Right qe, w') -> do
           putStrLn w'
-          putStrLn $ show qe
+          putStrLn $ pprint qe
         (Left err, w') -> do
           putStrLn w'
           putStrLn ("Error: " ++ err)
