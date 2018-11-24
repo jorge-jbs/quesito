@@ -16,6 +16,7 @@ data Decl
       Name
       (Term Name)  -- ^ Type
       [(Name, Term Name)]  -- ^ Constructors
+  deriving Show
 
 checkDecl :: [(Name, Def Value Value)] -> Decl -> Ques [(Name, Def Value Value)]
 checkDecl env (ExprDecl name expr ty) = do
@@ -89,7 +90,7 @@ checkDecl env (MatchFunctionDecl name equations ty) = do
             return (Inaccessible (Bound x))
           _ -> do
             loc <- getLocation
-            throwError ("Free variable at " ++ show loc ++ ".")
+            throwError ("Free variable at " ++ pprint loc ++ ".")
     rawToMatch vars normalized (Free x) =
       rawToMatch vars normalized (Bound x)
     rawToMatch vars _ (App l r) = do
@@ -98,16 +99,16 @@ checkDecl env (MatchFunctionDecl name equations ty) = do
       return (MatchApp l' r')
     rawToMatch _ _ (Type _) = do
       loc <- getLocation
-      throwError ("Can't pattern match on type universes (at " ++ show loc ++ ")")
+      throwError ("Can't pattern match on type universes (at " ++ pprint loc ++ ")")
     rawToMatch _ _ (Pi _ _ _) = do
       loc <- getLocation
-      throwError ("Can't pattern match on function spaces (at " ++ show loc ++ ")")
+      throwError ("Can't pattern match on function spaces (at " ++ pprint loc ++ ")")
     rawToMatch _ _ (Ann _ _) = do
       loc <- getLocation
-      throwError ("Can't pattern match on type annotations (at " ++ show loc ++ ")")
+      throwError ("Can't pattern match on type annotations (at " ++ pprint loc ++ ")")
     rawToMatch _ _ (Lam _ _) = do
       loc <- getLocation
-      throwError ("Can't pattern match on lambda expressions (at " ++ show loc ++ ")")
+      throwError ("Can't pattern match on lambda expressions (at " ++ pprint loc ++ ")")
     rawToMatch vars normalized (Loc loc t) =
       rawToMatch vars normalized t `locatedAt` loc
 

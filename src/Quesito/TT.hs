@@ -3,7 +3,6 @@
 module Quesito.TT
   ( -- * Types
     Name
-  , PPrint(pprint)
   , Term(..)
   , mapInLoc
   , remLoc
@@ -17,9 +16,6 @@ import Quesito
 
 import Prelude hiding (print)
 import Data.Foldable (foldl')
-
-class PPrint a where
-  pprint :: a -> String
 
 type Name = String
 
