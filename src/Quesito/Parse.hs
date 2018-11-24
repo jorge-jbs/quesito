@@ -8,19 +8,21 @@ import Control.Monad (when)
 import Data.Foldable (foldlM)
 import Data.Functor.Identity (Identity)
 import Text.Parsec
-  ( SourcePos, (<|>), try, parse, parserFail, eof, alphaNum, letter, oneOf
+  ( Parsec, SourcePos, (<|>), try, parserFail, eof, alphaNum, letter , oneOf
   , spaces, char, getPosition, sourceLine, sourceColumn, sepBy, option
+  , runParser, putState, getState
   )
 import Text.Parsec.Combinator (many1)
 import Text.Parsec.Error (ParseError)
 import Text.Parsec.Expr (buildExpressionParser , Operator(..) , Assoc(..))
 import Text.Parsec.Prim (many)
-import Text.Parsec.String (Parser)
 import Text.Parsec.Token
   ( GenTokenParser(..), GenLanguageDef(..), commentStart, commentEnd
   , commentLine, nestedComments, identStart, identLetter, opStart, opLetter
   , reservedNames, reservedOpNames, caseSensitive, makeTokenParser
   )
+
+type Parser = Parsec String [Name]
 
 raw :: Parser (Term Name)
 raw =
@@ -81,14 +83,23 @@ lambdaParser = attachPos $ do
   reservedOp tp "\\"
   x <- identifier tp
   reservedOp tp "->"
+  st <- getState
+  putState (x : st)
   body <- raw
   return (Lam x body)
 
 nonParen :: Parser (Term Name)
-nonParen =
+nonParen = getState >>= \st ->
   attachPos
-    (try (try (fmap Bound (identifier tp))
-    <|> (Num . fromIntegral <$> natural tp)))
+    (try (do
+      v <- identifier tp
+      if v `elem` st then
+        return (Bound v)
+      else
+        return (Free v)
+    )
+    <|> (Num . fromIntegral <$> natural tp)
+    )
 
 appParser :: Parser (Term Name)
 appParser = attachPos $ do
@@ -96,7 +107,7 @@ appParser = attachPos $ do
   es <- many1 (try nonParen <|> parens tp raw)
   foldlM (\acc x -> return (App acc x)) e es
 
-tp :: GenTokenParser String () Identity
+tp :: GenTokenParser String [Name] Identity
 tp =
   makeTokenParser
     LanguageDef
@@ -214,11 +225,12 @@ definition = do
 
 parse :: String -> Either ParseError [Decl]
 parse =
-  Text.Parsec.parse
+  runParser
     (do
-       decls <- many (-- try matchFunctionDefinition <|>
+       decls <- many (putState [] >> -- try matchFunctionDefinition <|>
                       definition)
        eof
        return decls
     )
+    []
     ""

@@ -12,6 +12,7 @@ import Control.Monad (when)
 data Decl
   = ExprDecl Name (Term Name) (Term Name)
   -- | MatchFunctionDecl Name [([(Name, Term Name)], Term Name, Term Name)] (Term Name)
+  deriving Show
 
 checkDecl :: [(Name, Def Value Value)] -> Decl -> Ques [(Name, Def Value Value)]
 checkDecl env (ExprDecl name expr ty) = do

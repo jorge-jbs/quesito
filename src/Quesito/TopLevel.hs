@@ -7,33 +7,36 @@ import Quesito.TT as TT
 import Quesito.TT.TopLevel
 
 declToLcDecl
-  :: Decl
+  :: [(Ann.Name, Ann.Term Ann.Name)]
+  -> Decl
   -> Ques
        ( LC.Name
        , [(LC.Name, LC.Type LC.Name)]
        , LC.Term LC.Name
        , LC.Type LC.Name
+       , Ann.Term Ann.Name
        )
 -- declToLcDecl (MatchFunctionDecl _ _ _) = undefined
-declToLcDecl (ExprDecl name expr ty) = do
-  ty' <- annotate [] ty
-  (args, body, retTy) <- flatten expr ty' []
-  return (name, args, body, retTy)
+declToLcDecl env (ExprDecl name expr ty) = do
+  ty' <- annotate env [] ty
+  (args, body, retTy, annBody) <- flatten expr ty' []
+  return (name, args, body, retTy, annBody)
   where
     flatten
       :: TT.Term TT.Name
       -> Ann.Term Ann.Name
       -> [(Ann.Name, Ann.Term Ann.Name)]
-      -> Ques ([(LC.Name, LC.Type LC.Name)], LC.Term LC.Name, LC.Type LC.Name)
+      -> Ques ([(LC.Name, LC.Type LC.Name)], LC.Term LC.Name, LC.Type LC.Name, Ann.Term Ann.Name)
     flatten (TT.Loc loc t) ty ctx =
       flatten t ty ctx `locatedAt` loc
     flatten t (Ann.Loc loc ty) ctx =
       flatten t ty ctx `locatedAt` loc
     flatten (TT.Lam argName t) (Ann.Pi _ ty1 ty2) ctx = do
       ty1' <- cnvType ty1
-      (args, body, retTy) <- flatten t ty2 ((argName, ty1) : ctx)
-      return ((argName, ty1') : args, body, retTy)
+      (args, body, retTy, annBody) <- flatten t ty2 ((argName, ty1) : ctx)
+      return ((argName, ty1') : args, body, retTy, annBody)
     flatten body retTy ctx = do
-      body' <- cnvBody =<< annotate ctx body
+      annBody <- annotate env ctx body
+      body' <- cnvBody annBody
       retTy' <- cnvType retTy
-      return ([], body', retTy')
+      return ([], body', retTy', annBody)

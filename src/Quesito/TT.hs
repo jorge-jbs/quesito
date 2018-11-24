@@ -19,10 +19,6 @@ import Data.Foldable (foldl')
 
 type Name = String
 
-instance PPrint Name where
-  pprint n =
-    n
-
 data Term v
   = Bound v
   | Free v

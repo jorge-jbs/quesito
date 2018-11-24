@@ -34,8 +34,10 @@ defCodeGen name args t retTy = do
   return ()
 
 codeGen :: Term LC.Name -> L.IRBuilderT (ModuleBuilderT Ques) L.Operand
-codeGen (Var v ty) =
+codeGen (Bound v ty) =
   return (L.LocalReference (gtypeToLType ty) (mkName v))
+codeGen (Free v ty) =
+  return (L.ConstantOperand (L.GlobalReference (gtypeToLType ty) (mkName v)))
 codeGen (Lit n) =
   return (L.ConstantOperand (L.Int 128 (fromIntegral n)))
 codeGen (App v ty args) = do

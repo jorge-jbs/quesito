@@ -6,24 +6,30 @@ import qualified Quesito.Ann as Ann
 type Name = String
 
 data Term v
-  = Var v GType
+  = Bound v GType
+  | Free v GType
   | Lit Int
   | App v (Type v) [Term v]
   | Ann (Term v) (Type v)
   -- | GType GType
+  deriving Show
 
 data GType
   = BytesType Int
   -- | Type Int
+  deriving Show
 
 data Type v
   = GroundType GType
   | Pi Name GType (Type v)
   -- | TypeVar v
+  deriving Show
 
 cnvBody :: Ann.Term Ann.Name -> Ques (Term Name)
-cnvBody (Ann.Var v ty) =
-  Var v <$> cnvGType ty
+cnvBody (Ann.Bound v ty) =
+  Bound v <$> cnvGType ty
+cnvBody (Ann.Free v ty) =
+  Free v <$> cnvGType ty
 cnvBody (Ann.Type lvl) =
   throwError "WIP" -- return (GType (Type lvl))
 cnvBody (Ann.BytesType n) =
@@ -34,10 +40,11 @@ cnvBody (Ann.Pi _ _ _) =
   throwError "Can't convert Pi type to a Lambda-Calculus expression"
 cnvBody t@(Ann.App _ _) =
   case headAndArgs t of
-    (Ann.Var v ty, args) ->
+    (Ann.Free v ty, args) ->
       App v <$> cnvType ty <*> mapM cnvBody args
-    _ ->
-      throwError "Application to expression instead of var"
+    _ -> do
+      loc <- getLocation
+      throwError ("Application to expression instead of free variable at " ++ pprint loc)
   where
     headAndArgs :: Ann.Term Ann.Name -> (Ann.Term Ann.Name, [Ann.Term Ann.Name])
     headAndArgs =
@@ -45,6 +52,8 @@ cnvBody t@(Ann.App _ _) =
       where
         headAndArgs' args (Ann.App t' arg) =
           headAndArgs' (arg : args) t'
+        headAndArgs' args (Ann.Loc _ t') =
+          headAndArgs' args t'
         headAndArgs' args t' =
           (t', args)
 cnvBody (Ann.Ann t ty) =
@@ -65,8 +74,10 @@ cnvGType _ =
   throwError "Can't convert arbitrary expressions to Lambda-Calculus ground types"
 
 cnvType :: Ann.Term Ann.Name -> Ques (Type Name)
-cnvType (Ann.Var v _) =
+cnvType (Ann.Bound v _) =
   throwError "WIP 5" -- return (TypeVar v)
+cnvType (Ann.Free v _) =
+  throwError "WIP 6" -- return (TypeVar v)
 cnvType (Ann.Type lvl) =
   throwError "WIP 4" -- return (GroundType (Type lvl))
 cnvType (Ann.BytesType n) =

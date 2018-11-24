@@ -6,3 +6,6 @@ fst = \x -> \y -> x;
 
 snd : Bytes 128 -> Bytes 128 -> Bytes 128;
 snd = \x -> \y -> y;
+
+main : Bytes 128;
+main = fst 128 128;

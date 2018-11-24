@@ -8,6 +8,7 @@ import Quesito.TT.TopLevel (Decl, checkDecl)
 import Quesito.TopLevel
 import Quesito.Parse (parse)
 
+import Data.Foldable (foldlM)
 import Data.Text.Lazy (unpack)
 import Data.String (fromString)
 import LLVM.Pretty
@@ -21,7 +22,14 @@ main = do
       = either (error . show) id
       $ parse input
   let (m, w) = runQues $ do
-        decls <- mapM declToLcDecl declarations
+        mapM (tell . (:[]) . show) declarations
+        (decls, _) <- foldlM
+          (\(acc, decls) decl -> do
+              (name, args, body, retTy, annBody) <- declToLcDecl decls decl
+              return ((name, args, body, retTy) : acc, (name, annBody) : decls)
+          )
+          ([], [])
+          declarations
         buildModuleT
           (fromString "main")
           (mapM
