@@ -8,6 +8,7 @@ import Quesito.TT.TopLevel (Decl, checkDecl)
 import Quesito.TopLevel
 import Quesito.Parse (parse)
 
+import Data.Text.Lazy (unpack)
 import Data.String (fromString)
 import LLVM.Pretty
 import LLVM.IRBuilder.Module
@@ -32,7 +33,7 @@ main = do
   putStrLn w
   case m of
     Right mod ->
-      putStrLn $ show $ ppllvm mod
+      putStrLn $ unpack $ ppllvm mod
     Left err ->
       putStrLn ("Error compiling: " ++ err)
   -- let (x, w) = runQues $ head <$> checkEvalProgram declarations []

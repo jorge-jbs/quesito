@@ -30,7 +30,7 @@ defCodeGen name args t retTy = do
         args
     )
     (typeToLType retTy)
-    (const (codeGen t >> return ()))
+    (const (codeGen t >>= L.ret))
   return ()
 
 codeGen :: Term LC.Name -> L.IRBuilderT (ModuleBuilderT Ques) L.Operand
@@ -48,7 +48,7 @@ codeGen (Ann t _) =
 
 gtypeToLType :: GType -> L.Type
 gtypeToLType (BytesType n) =
-  L.IntegerType (fromIntegral n)
+  L.IntegerType (fromIntegral (n*8))
 
 typeToLType :: LC.Type LC.Name -> L.Type
 typeToLType (GroundType ty) =
