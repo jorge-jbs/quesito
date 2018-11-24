@@ -75,7 +75,7 @@ eval env ctx (Bound x) =
           loc <- getLocation
           tell ["env: " ++ show (map fst env)]
           tell ["ctx: " ++ show (map fst ctx)]
-          throwError ("Found free variable at " ++ show loc ++ ": " ++ x)
+          throwError ("Found free variable at " ++ pprint loc ++ ": " ++ x)
 eval _ _ (Free x) =
   return (VFree x)
 eval _ _ (Type lvl) =
@@ -121,9 +121,9 @@ eval env ctx (App e e') = do
               Nothing ->
                 apply (VApp (VBound name) a) as
         Just _ ->
-          throwError ("Variable should have been evaluated at " ++ show loc ++ ": " ++ name)
+          throwError ("Variable should have been evaluated at " ++ pprint loc ++ ": " ++ name)
         Nothing ->
-          throwError ("Free variable found at " ++ show loc ++ ": " ++ name)
+          throwError ("Free variable found at " ++ pprint loc ++ ": " ++ name)
     apply f (a:as) =
       apply (VApp f a) as
     apply f [] =
