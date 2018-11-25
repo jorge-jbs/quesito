@@ -3,6 +3,7 @@
 module Quesito
   ( Ques
   , Location(..)
+  , PPrint(pprint)
   , runQues
   , throwError
   , catchError
@@ -16,15 +17,24 @@ import Control.Monad.Writer (Writer, MonadWriter, runWriter, tell)
 import Control.Monad.State (StateT, MonadState, evalStateT, get, modify)
 import Control.Monad.Except (ExceptT, MonadError, runExceptT, throwError, catchError)
 
+class PPrint a where
+  pprint :: a -> String
+
 data Location
   = Location
       Int  -- ^ line
       Int  -- ^ column
-  deriving Eq
+  deriving (Eq, Show)
 
-instance Show Location where
-  show (Location y x) =
+instance PPrint Location where
+  pprint (Location y x) =
     "line " ++ show y ++ " and column " ++ show x
+
+instance PPrint a => PPrint (Maybe a) where
+  pprint (Just x) =
+    pprint x
+  pprint Nothing =
+    "MISSING"
 
 data QuesState
   = QuesState

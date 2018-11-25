@@ -24,7 +24,7 @@ typeInf env ctx (Bound x) =
           return ty
         Nothing -> do
           loc <- getLocation
-          throwError ("Free variable at " ++ show loc ++ ": " ++ x)
+          throwError ("Free variable at " ++ pprint loc ++ ": " ++ x)
 typeInf env ctx (Free x) =
   typeInf env ctx (Bound x)
 typeInf _ _ (Type i) =
@@ -44,10 +44,10 @@ typeInf env ctx (Pi x e f) = do
           return (VType (max i j))
         _ -> do
           loc <- getLocation
-          throwError ("1: " ++ show loc)
+          throwError ("1: " ++ pprint loc)
     _ -> do
       loc <- getLocation
-      throwError ("2: " ++ show loc)
+      throwError ("2: " ++ pprint loc)
 typeInf env ctx (App e f) = do
   s <- typeInf env ctx e
   case s of
@@ -58,7 +58,7 @@ typeInf env ctx (App e f) = do
     _ -> do
       loc <- getLocation
       qs <- quote s
-      throwError ("Applying to non-function at " ++ show loc ++ ": " ++ show qs)
+      throwError ("Applying to non-function at " ++ pprint loc ++ ": " ++ show qs)
 typeInf env ctx (Ann e ty) = do
   tyTy <- typeInf env ctx ty
   case tyTy of
@@ -79,7 +79,7 @@ typeCheck env ctx (Lam x e) (VPi _ v w) = do
   typeCheck env ((x, v) : ctx) (subst x (Free x) e) w'
 typeCheck _ _ (Lam _ _) _ = do
   loc <- getLocation
-  throwError ("6: " ++ show loc)
+  throwError ("6: " ++ pprint loc)
 typeCheck env ctx t (VType j) = do
   t' <- typeInf env ctx t
   case t' of
@@ -88,12 +88,12 @@ typeCheck env ctx t (VType j) = do
         return ()
       else do
         loc <- getLocation
-        throwError ("Incorrect type universe at " ++ show loc ++ ". Expected level " ++ show j ++ " and got " ++ show i)
+        throwError ("Incorrect type universe at " ++ pprint loc ++ ". Expected level " ++ show j ++ " and got " ++ show i)
 
     v -> do
       loc <- getLocation
       qv <- quote v
-      throwError ("Expected type at " ++ show loc ++ " and got: " ++ show qv)
+      throwError ("Expected type at " ++ pprint loc ++ " and got: " ++ show qv)
 typeCheck env ctx (Loc loc t) ty =
   typeCheck env ctx t ty `locatedAt` loc
 typeCheck env ctx t ty = do
@@ -103,5 +103,5 @@ typeCheck env ctx t ty = do
   loc <- getLocation
   unless
     (deBruijnize qty == deBruijnize qty')
-    (throwError ("Type mismatch at " ++ show loc ++ ". Expected " ++ show qty ++ " and got " ++ show qty'))
+    (throwError ("Type mismatch at " ++ pprint loc ++ ". Expected " ++ show qty ++ " and got " ++ show qty'))
 

@@ -20,7 +20,7 @@ main = do
       case runQues (quote =<< e []) of
         (Right qe, w') -> do
           putStrLn w'
-          putStrLn $ show qe
+          putStrLn $ pprint qe
         (Left err, w') -> do
           putStrLn w'
           putStrLn ("Error: " ++ err)

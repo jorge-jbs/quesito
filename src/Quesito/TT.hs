@@ -17,13 +17,10 @@ import Quesito
 import Prelude hiding (print)
 import Data.Foldable (foldl')
 
-class Printable a where
-  print :: a -> String
-
 type Name = String
 
-instance Printable Name where
-  print n =
+instance PPrint Name where
+  pprint n =
     n
 
 data Term v
@@ -35,6 +32,7 @@ data Term v
   | Ann (Term v) (Term v)
   | Lam Name (Term v)
   | Loc Location (Term v)
+  deriving Show
 
 mapInLoc :: Term v -> (Term v -> Term v) -> Term v
 mapInLoc (Loc loc t) f =
@@ -48,24 +46,24 @@ remLoc (Loc _ t) =
 remLoc t =
   t
 
-instance Printable v => Show (Term v) where
-  show (Bound v) =
-    print v
-  show (Free v) =
-    print v
-  show (Type i) =
+instance PPrint v => PPrint (Term v) where
+  pprint (Bound v) =
+    pprint v
+  pprint (Free v) =
+    pprint v
+  pprint (Type i) =
     "(" ++ "Type " ++ show i ++ ")"
-  show (Pi "" t t') =
-    "(" ++ show t ++ " -> " ++ show t' ++ ")"
-  show (Pi n t t') =
-    "(" ++ "(" ++ n ++ " : "++ show t ++ ") -> " ++ show t' ++ ")"
-  show (App t t') =
-    "(" ++ show t ++ " " ++ show t' ++ ")"
-  show (Ann t t') =
-    "(" ++ show t ++ " " ++ show t' ++ ")"
-  show (Lam n t) =
-    "(" ++ "\\" ++ n ++ " -> " ++ show t ++ ")"
-  show (Loc t _) =
+  pprint (Pi "" t t') =
+    "(" ++ pprint t ++ " -> " ++ pprint t' ++ ")"
+  pprint (Pi n t t') =
+    "(" ++ "(" ++ n ++ " : "++ pprint t ++ ") -> " ++ pprint t' ++ ")"
+  pprint (App t t') =
+    "(" ++ pprint t ++ " " ++ pprint t' ++ ")"
+  pprint (Ann t t') =
+    "(" ++ pprint t ++ " " ++ pprint t' ++ ")"
+  pprint (Lam n t) =
+    "(" ++ "\\" ++ n ++ " -> " ++ pprint t ++ ")"
+  pprint (Loc t _) =
     show t
 
 instance Eq v => Eq (Term v) where
