@@ -63,21 +63,24 @@ eval env ctx (Bound x) =
   case snd <$> find ((==) x . fst) ctx of
     Just v ->
       return v
-    Nothing ->
-      case snd <$> find ((==) x . fst) env of
-        Just (DExpr v _) ->
-          return v
-        Just (DMatchFunction [([], f)] _) ->
-          f []
-        Just (DMatchFunction _ _) ->
-          return (VBound x)
-        Nothing -> do
-          loc <- getLocation
-          tell ["env: " ++ show (map fst env)]
-          tell ["ctx: " ++ show (map fst ctx)]
-          throwError ("Found free variable at " ++ pprint loc ++ ": " ++ x)
-eval _ _ (Free x) =
-  return (VFree x)
+    Nothing -> do
+      loc <- getLocation
+      tell ["env: " ++ show (map fst env)]
+      tell ["ctx: " ++ show (map fst ctx)]
+      throwError ("Found free variable at " ++ pprint loc ++ ": " ++ x)
+eval env ctx (Free x) =
+  case snd <$> find ((==) x . fst) env of
+    Just (DExpr v _) ->
+      return v
+    Just (DMatchFunction [([], f)] _) ->
+      f []
+    Just (DMatchFunction _ _) ->
+      return (VFree x)
+    Nothing -> do
+      loc <- getLocation
+      tell ["env: " ++ show (map fst env)]
+      tell ["ctx: " ++ show (map fst ctx)]
+      throwError ("Found free variable at " ++ pprint loc ++ ": " ++ x)
 eval _ _ (Type lvl) =
   return (VType lvl)
 eval _ _ (BytesType n) =

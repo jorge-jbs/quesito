@@ -39,7 +39,7 @@ codeGen (Bound v ty) =
 codeGen (Free v ty) =
   return (L.ConstantOperand (L.GlobalReference (gtypeToLType ty) (mkName v)))
 codeGen (Lit n bytes') =
-  return (L.ConstantOperand (L.Int (fromIntegral bytes') (fromIntegral n)))
+  return (L.ConstantOperand (L.Int (fromIntegral bytes' * 8) (fromIntegral n)))
 codeGen (App v ty args) = do
   join $ L.call
     (L.ConstantOperand (L.GlobalReference (typeToLType ty) (mkName v)))

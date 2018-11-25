@@ -50,15 +50,13 @@ cnvBody t@(Ann.App _ _) =
     headAndArgs =
       headAndArgs' []
       where
-        headAndArgs' args (Ann.App t' arg) =
+        headAndArgs' args (Ann.App (Ann.Ann t' _) (Ann.Ann arg _)) =
           headAndArgs' (arg : args) t'
         headAndArgs' args (Ann.Loc _ t') =
           headAndArgs' args t'
         headAndArgs' args t' =
           (t', args)
-cnvBody (Ann.Ann t ty) =
-  Ann <$> cnvBody t <*> cnvType ty
-cnvBody (Ann.Lam _ _ _ _) =
+cnvBody (Ann.Lam _ _ _) =
   throwError "Can't convert Lambda expresson to a Lambda-Calculus expression"
 cnvBody (Ann.Loc _ t) =
   cnvBody t
