@@ -57,7 +57,7 @@ typeInfAnn _ _ (BytesType n) =
   return (VType 0, Ann.BytesType n)
 typeInfAnn _ _ (Num n) = do
   loc <- getLocation
-  throwError ("Cannot infer byte size of number " ++ show n ++ ": " ++ show loc)
+  throwError ("Cannot infer byte size of number " ++ show n ++ ": " ++ pprint loc)
 typeInfAnn env ctx (Pi x e f) = do
   (ty, _) <- typeInfAnn env ctx e
   case ty of
@@ -130,9 +130,9 @@ typeCheckAnn _ _ (Num x) (VBytesType n) =
   else do
     loc <- getLocation
     if x < 0 then
-      throwError ("Bytes cannot be negative numbers: " ++ show loc)
+      throwError ("Bytes cannot be negative numbers: " ++ pprint loc)
     else
-      throwError ("Number " ++ show x ++ " is larger than byte size: " ++ show loc)
+      throwError ("Number " ++ show x ++ " is larger than byte size: " ++ pprint loc)
 typeCheckAnn env ctx t (VType j) = do
   (t', annT) <- typeInfAnn env ctx t
   case t' of
