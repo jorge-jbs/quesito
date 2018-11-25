@@ -8,14 +8,12 @@ import Control.Monad (join)
 
 data Def term ty
   = DExpr term ty
-  | DDataType ty
-  | DDataCons ty
   | DMatchFunction [([Pattern Name], [(Name, term)] -> Ques term)] ty
 
 data Pattern name
   = Binding name
   | Inaccessible (Term name)
-  | Constructor name
+  | NumPat Int
   | MatchApp (Pattern name) (Pattern name)
   deriving Show
 
@@ -31,10 +29,10 @@ type Env =
 data Value
   = VLam Name (Value -> Ques Value)
   | VType Int
+  | VBytesType Int
+  | VNum Int
   | VPi Name Value (Value -> Ques Value)
   | VBound Name  -- used for quotation
-  | VDataType Name
-  | VDataCons Name
   | VFree Name
   | VApp Value Value
 
@@ -43,6 +41,10 @@ quote (VLam x f) =
   Lam x <$> (quote =<< f (VBound x))
 quote (VType i) =
   return (Type i)
+quote (VBytesType n) =
+  return (BytesType n)
+quote (VNum n) =
+  return (Num n)
 quote (VPi x v v') = do
   t <- quote v
   t' <- quote =<< v' (VBound x)
@@ -55,10 +57,6 @@ quote (VApp u v) = do
   u' <- quote u
   v' <- quote v
   return (App u' v')
-quote (VDataType n) =
-  return (Bound n)
-quote (VDataCons n) =
-  return (Bound n)
 
 eval :: Env -> VContext -> Term Name -> Ques Value
 eval env ctx (Bound x) =
@@ -69,10 +67,6 @@ eval env ctx (Bound x) =
       case snd <$> find ((==) x . fst) env of
         Just (DExpr v _) ->
           return v
-        Just (DDataType _) ->
-          return (VDataType x)
-        Just (DDataCons _) ->
-          return (VDataCons x)
         Just (DMatchFunction [([], f)] _) ->
           f []
         Just (DMatchFunction _ _) ->
@@ -86,6 +80,10 @@ eval _ _ (Free x) =
   return (VFree x)
 eval _ _ (Type lvl) =
   return (VType lvl)
+eval _ _ (BytesType n) =
+  return (VBytesType n)
+eval _ _ (Num n) =
+  return (VNum n)
 eval env ctx (Pi x e e') =
   VPi x <$> eval env ctx e <*> return (\t -> eval env ((x, t) : ctx) e')
 eval env ctx (App e e') = do
@@ -136,12 +134,12 @@ eval env ctx (App e e') = do
       Just [(n, t)]
     match (Inaccessible _) _ =
       Just []
-    match (Constructor n) (VDataCons n') =
-      if n == n' then
+    match (NumPat n) (VNum n') =
+      if n < n' then
         Just []
       else
         Nothing
-    match (Constructor _) _ =
+    match (NumPat _) _ =
       Nothing
     match (MatchApp p p') (VApp t t') = do
       l <- match p t

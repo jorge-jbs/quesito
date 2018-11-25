@@ -8,20 +8,21 @@ import Control.Monad (when)
 import Data.Foldable (foldlM)
 import Data.Functor.Identity (Identity)
 import Text.Parsec
-  ( SourcePos, (<|>), try, parse, parserFail, eof, alphaNum, letter, oneOf
-  , spaces, char, string, space, getPosition, sourceLine, sourceColumn, sepBy
-  , option
+  ( Parsec, SourcePos, (<|>), try, parserFail, eof, alphaNum, letter , oneOf
+  , spaces, char, getPosition, sourceLine, sourceColumn, sepBy, option
+  , runParser, putState, getState
   )
 import Text.Parsec.Combinator (many1)
 import Text.Parsec.Error (ParseError)
 import Text.Parsec.Expr (buildExpressionParser , Operator(..) , Assoc(..))
 import Text.Parsec.Prim (many)
-import Text.Parsec.String (Parser)
 import Text.Parsec.Token
   ( GenTokenParser(..), GenLanguageDef(..), commentStart, commentEnd
   , commentLine, nestedComments, identStart, identLetter, opStart, opLetter
   , reservedNames, reservedOpNames, caseSensitive, makeTokenParser
   )
+
+type Parser = Parsec String [Name]
 
 raw :: Parser (Term Name)
 raw =
@@ -74,20 +75,31 @@ typeParser :: Parser (Term Name)
 typeParser =
   attachPos
     (try (reserved tp "Type" >> natural tp >>= \i -> return (Type (fromIntegral i)))
-    <|> (reserved tp "Type" >> return (Type 0)))
+    <|> try (reserved tp "Type" >> return (Type 0))
+    <|> (reserved tp "Bytes" >> natural tp >>= \i -> return (BytesType (fromIntegral i))))
 
 lambdaParser :: Parser (Term Name)
 lambdaParser = attachPos $ do
   reservedOp tp "\\"
   x <- identifier tp
   reservedOp tp "->"
+  st <- getState
+  putState (x : st)
   body <- raw
   return (Lam x body)
 
 nonParen :: Parser (Term Name)
-nonParen =
+nonParen = getState >>= \st ->
   attachPos
-    (try (fmap Bound (identifier tp)))
+    (try (do
+      v <- identifier tp
+      if v `elem` st then
+        return (Bound v)
+      else
+        return (Free v)
+    )
+    <|> (Num . fromIntegral <$> natural tp)
+    )
 
 appParser :: Parser (Term Name)
 appParser = attachPos $ do
@@ -95,7 +107,7 @@ appParser = attachPos $ do
   es <- many1 (try nonParen <|> parens tp raw)
   foldlM (\acc x -> return (App acc x)) e es
 
-tp :: GenTokenParser String () Identity
+tp :: GenTokenParser String [Name] Identity
 tp =
   makeTokenParser
     LanguageDef
@@ -107,7 +119,7 @@ tp =
       , identLetter = alphaNum <|> opLetter'
       , opStart = opLetter'
       , opLetter = opLetter'
-      , reservedNames = ["data", "where", "Type", "->"]
+      , reservedNames = ["data", "where", "Type", "Bytes", "->"]
       , reservedOpNames = ["->", ":", "\\", ";", "," , "."]
       , caseSensitive = True
       }
@@ -132,24 +144,6 @@ annotation semicolon = do
   spaces
   when semicolon (char ';' >> return ())
   return (name, ty)
-
-typeDecl :: Parser Decl
-typeDecl = do
-  spaces
-  _ <- string "data"
-  _ <- many1 space
-  (name, ty) <- annotation False
-  spaces
-  _ <- string "where"
-  spaces
-  _ <- char '{'
-  conss <- many $ try $ do
-    spaces
-    (name', ty') <- annotation True
-    return (name', ty')
-  spaces
-  _ <- char '}'
-  return (TypeDecl name ty conss)
 
 implementation :: Parser (Name, Term Name)
 implementation = do
@@ -206,6 +200,7 @@ matchFunctionCaseParser = do
     findName _ =
       Nothing
 
+{-
 matchFunctionDefinition :: Parser Decl
 matchFunctionDefinition = do
   spaces
@@ -214,6 +209,7 @@ matchFunctionDefinition = do
   defs <- matchFunctionParser name
   spaces
   return (MatchFunctionDecl name defs ty)
+-}
 
 definition :: Parser Decl
 definition = do
@@ -229,10 +225,12 @@ definition = do
 
 parse :: String -> Either ParseError [Decl]
 parse =
-  Text.Parsec.parse
+  runParser
     (do
-       decls <- many (try matchFunctionDefinition <|> try definition <|> typeDecl)
+       decls <- many (putState [] >> -- try matchFunctionDefinition <|>
+                      definition)
        eof
        return decls
     )
+    []
     ""
