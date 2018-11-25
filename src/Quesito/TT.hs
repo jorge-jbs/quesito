@@ -44,6 +44,10 @@ remLoc (Loc _ t) =
 remLoc t =
   t
 
+instance PPrint Name where
+  pprint name =
+    name
+
 instance PPrint v => PPrint (Term v) where
   pprint (Bound v) =
     pprint v
@@ -61,8 +65,8 @@ instance PPrint v => PPrint (Term v) where
     "(" ++ pprint t ++ " " ++ pprint t' ++ ")"
   pprint (Lam n t) =
     "(" ++ "\\" ++ n ++ " -> " ++ pprint t ++ ")"
-  pprint (Loc t _) =
-    show t
+  pprint (Loc _ t) =
+    pprint t
 
 instance Eq v => Eq (Term v) where
   Loc _ t == t' =

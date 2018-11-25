@@ -19,24 +19,22 @@ declToLcDecl
 -- declToLcDecl (MatchFunctionDecl _ _ _) = undefined
 declToLcDecl env (ExprDecl name expr ty) = do
   ty' <- annotate env [] ty
-  (args, body, retTy) <- flatten expr ty' []
+  annExpr <- annotate' env [] expr ty
+  (args, body, retTy) <- flatten annExpr ty' []
   return (name, args, body, retTy, ty')
   where
     flatten
-      :: TT.Term TT.Name
+      :: Ann.Term Ann.Name
       -> Ann.Term Ann.Name
       -> [(Ann.Name, Ann.Term Ann.Name)]
       -> Ques ([(LC.Name, LC.Type LC.Name)], LC.Term LC.Name, LC.Type LC.Name)
-    flatten (TT.Loc loc t) ty ctx =
-      flatten t ty ctx `locatedAt` loc
-    flatten t (Ann.Loc loc ty) ctx =
-      flatten t ty ctx `locatedAt` loc
-    flatten (TT.Lam argName t) (Ann.Pi _ ty1 ty2) ctx = do
+    flatten (Ann.Loc loc t) ty' ctx =
+      flatten t ty' ctx `locatedAt` loc
+    flatten (Ann.Lam argName ty1 t ty2) _ ctx = do
       ty1' <- cnvType ty1
       (args, body, retTy) <- flatten t ty2 ((argName, ty1) : ctx)
       return ((argName, ty1') : args, body, retTy)
-    flatten body retTy ctx = do
-      annBody <- annotate env ctx body
-      body' <- cnvBody annBody
+    flatten body retTy _ = do
+      body' <- cnvBody body
       retTy' <- cnvType retTy
       return ([], body', retTy')
