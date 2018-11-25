@@ -25,8 +25,8 @@ main = do
         mapM (tell . (:[]) . show) declarations
         (decls, _) <- foldlM
           (\(acc, decls) decl -> do
-              (name, args, body, retTy, annBody) <- declToLcDecl decls decl
-              return ((name, args, body, retTy) : acc, (name, annBody) : decls)
+              (name, args, body, retTy, ty) <- declToLcDecl decls decl
+              return ((name, args, body, retTy) : acc, (name, ty) : decls)
           )
           ([], [])
           declarations
