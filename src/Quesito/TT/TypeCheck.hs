@@ -29,7 +29,7 @@ typeInf _ _ (BytesType _) =
   return (VType 0)
 typeInf _ _ (Num n) = do
   loc <- getLocation
-  throwError ("Cannot infer byte size of number " ++ show n ++ ": " ++ show loc)
+  throwError ("Cannot infer byte size of number " ++ show n ++ ": " ++ pprint loc)
 typeInf env ctx (Pi x e f) = do
   t <- typeInf env ctx e
   case t of
@@ -87,9 +87,9 @@ typeCheck _ _ (Num x) (VBytesType n) =
   else do
     loc <- getLocation
     if x < 0 then
-      throwError ("Bytes cannot be negative numbers: " ++ show loc)
+      throwError ("Bytes cannot be negative numbers: " ++ pprint loc)
     else
-      throwError ("Number " ++ show x ++ " is larger than byte size: " ++ show loc)
+      throwError ("Number " ++ show x ++ " is larger than byte size: " ++ pprint loc)
 typeCheck env ctx t (VType j) = do
   t' <- typeInf env ctx t
   case t' of

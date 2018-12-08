@@ -8,7 +8,7 @@ type Name = String
 data Term v
   = Bound v GType
   | Free v GType
-  | Lit Int
+  | Lit { num :: Int, bytes :: Int }
   | App v (Type v) [Term v]
   | Ann (Term v) (Type v)
   -- | GType GType
@@ -34,8 +34,8 @@ cnvBody (Ann.Type lvl) =
   throwError "WIP" -- return (GType (Type lvl))
 cnvBody (Ann.BytesType n) =
   throwError "WIP 2" -- return (GType (BytesType n))
-cnvBody (Ann.Num n) =
-  return (Lit n)
+cnvBody (Ann.Num n bytes') =
+  return (Lit n bytes')
 cnvBody (Ann.Pi _ _ _) =
   throwError "Can't convert Pi type to a Lambda-Calculus expression"
 cnvBody t@(Ann.App _ _) =
@@ -50,15 +50,13 @@ cnvBody t@(Ann.App _ _) =
     headAndArgs =
       headAndArgs' []
       where
-        headAndArgs' args (Ann.App t' arg) =
+        headAndArgs' args (Ann.App (Ann.Ann t' _) (Ann.Ann arg _)) =
           headAndArgs' (arg : args) t'
         headAndArgs' args (Ann.Loc _ t') =
           headAndArgs' args t'
         headAndArgs' args t' =
           (t', args)
-cnvBody (Ann.Ann t ty) =
-  Ann <$> cnvBody t <*> cnvType ty
-cnvBody (Ann.Lam _ _) =
+cnvBody (Ann.Lam _ _ _) =
   throwError "Can't convert Lambda expresson to a Lambda-Calculus expression"
 cnvBody (Ann.Loc _ t) =
   cnvBody t
