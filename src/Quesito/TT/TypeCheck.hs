@@ -16,6 +16,10 @@ typeInf env ctx (Bound x) =
       case snd <$> find ((==) x . fst) env of
         Just (DExpr _ ty) ->
           return ty
+        Just (DDataType ty) ->
+          return ty
+        Just (DDataCons ty) ->
+          return ty
         Just (DMatchFunction _ ty) ->
           return ty
         Nothing -> do

@@ -12,6 +12,10 @@ import Control.Monad (when)
 data Decl
   = ExprDecl Name (Term Name) (Term Name)
   -- | MatchFunctionDecl Name [([(Name, Term Name)], Term Name, Term Name)] (Term Name)
+  | TypeDecl
+      Name
+      (Term Name)  -- ^ Type
+      [(Name, Term Name)]  -- ^ Constructors
   deriving Show
 
 checkDecl :: [(Name, Def Value Value)] -> Decl -> Ques [(Name, Def Value Value)]
@@ -81,6 +85,8 @@ checkDecl env (MatchFunctionDecl name equations ty) = do
         return (Binding x)
       | otherwise =
         case find ((==) x . fst) env of
+          Just (_, DDataCons _) ->
+            return (Constructor x)
           Just _ | not normalized ->
             return (Inaccessible (Bound x))
           _ -> do
@@ -126,3 +132,53 @@ checkDecl env (MatchFunctionDecl name equations ty) = do
     evalEquation recur lhs' rhs =
       (lhs', \ctx -> eval ((name, recur):env) ctx rhs)
 -}
+
+checkDecl env (TypeDecl name ty conss) = do
+  tyTy <- typeInf env [] ty
+  case tyTy of
+    VType _ ->
+      case getReturnType ty of
+        Type 0 -> do
+          ty' <- eval env [] ty
+          let typeDef = (name, DDataType ty')
+          conss' <- mapM (uncurry (checkCons typeDef)) conss
+          return (typeDef : conss')
+        _ ->
+          throwError (name ++ " is not a ground type.")
+    _ ->
+      throwError (name ++ "'s type is not of kind Type.")
+  where
+    getReturnType :: Term Name -> Term Name
+    getReturnType (Pi _ _ x) =
+      getReturnType x
+    getReturnType (Loc _ x) =
+      getReturnType x
+    getReturnType x =
+      x
+
+    isConsOf :: Term Name -> Term Name -> Bool
+    isConsOf (App e _) (Pi _ _ t) =
+      isConsOf e t
+    isConsOf (Bound name') (Type 0) | name == name' =
+      True
+    isConsOf (Loc _ e) t =
+      isConsOf e t
+    isConsOf e (Loc _ t) =
+      isConsOf e t
+    isConsOf _ _ =
+      False
+
+    checkCons :: (Name, Def Value Value) -> Name -> Term Name -> Ques (Name, Def Value Value)
+    checkCons typeDef name' consTy = do
+      let env' = typeDef : env
+      tyTy <-
+          typeInf env' [] consTy `catchError`
+            \err -> throwError ("Type error while checking " ++ name' ++ ": " ++ err)
+      when
+        (case tyTy of VType _ -> False; _ -> True)
+        (throwError (name' ++ "'s type is not of kind Type."))
+      when
+        (not (isConsOf (getReturnType consTy) ty))
+        (throwError (name' ++ " is not a constructor for " ++ name ++ "."))
+      consTy' <- eval env' [] consTy
+      return (name', DDataCons consTy')

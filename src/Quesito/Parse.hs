@@ -9,7 +9,7 @@ import Data.Foldable (foldlM)
 import Data.Functor.Identity (Identity)
 import Text.Parsec
   ( Parsec, SourcePos, (<|>), try, parserFail, eof, alphaNum, letter , oneOf
-  , spaces, char, getPosition, sourceLine, sourceColumn, sepBy, option
+  , space, spaces, string, char, getPosition, sourceLine, sourceColumn, sepBy, option
   , runParser, putState, getState
   )
 import Text.Parsec.Combinator (many1)
@@ -145,6 +145,24 @@ annotation semicolon = do
   when semicolon (char ';' >> return ())
   return (name, ty)
 
+typeDecl :: Parser Decl
+typeDecl = do
+  spaces
+  _ <- string "data"
+  _ <- many1 space
+  (name, ty) <- annotation False
+  spaces
+  _ <- string "where"
+  spaces
+  _ <- char '{'
+  conss <- many $ try $ do
+    spaces
+    (name', ty') <- annotation True
+    return (name', ty')
+  spaces
+  _ <- char '}'
+  return (TypeDecl name ty conss)
+
 implementation :: Parser (Name, Term Name)
 implementation = do
   spaces
@@ -227,8 +245,7 @@ parse :: String -> Either ParseError [Decl]
 parse =
   runParser
     (do
-       decls <- many (putState [] >> -- try matchFunctionDefinition <|>
-                      definition)
+       decls <- many (putState [] >> (try definition <|> typeDecl))
        eof
        return decls
     )

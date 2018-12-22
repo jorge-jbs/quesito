@@ -8,12 +8,15 @@ import Control.Monad (join)
 
 data Def term ty
   = DExpr term ty
+  | DDataType ty
+  | DDataCons ty
   | DMatchFunction [([Pattern Name], [(Name, term)] -> Ques term)] ty
 
 data Pattern name
   = Binding name
   | Inaccessible (Term name)
   | NumPat Int
+  | Constructor name
   | MatchApp (Pattern name) (Pattern name)
   deriving Show
 
@@ -33,6 +36,8 @@ data Value
   | VNum Int
   | VPi Name Value (Value -> Ques Value)
   | VBound Name  -- used for quotation
+  | VDataType Name
+  | VDataCons Name
   | VFree Name
   | VApp Value Value
 
@@ -57,6 +62,10 @@ quote (VApp u v) = do
   u' <- quote u
   v' <- quote v
   return (App u' v')
+quote (VDataType n) =
+  return (Bound n)
+quote (VDataCons n) =
+  return (Bound n)
 
 eval :: Env -> VContext -> Term Name -> Ques Value
 eval env ctx (Bound x) =
@@ -72,6 +81,10 @@ eval env ctx (Free x) =
   case snd <$> find ((==) x . fst) env of
     Just (DExpr v _) ->
       return v
+    Just (DDataType _) ->
+      return (VDataType x)
+    Just (DDataCons _) ->
+      return (VDataCons x)
     Just (DMatchFunction [([], f)] _) ->
       f []
     Just (DMatchFunction _ _) ->
@@ -143,6 +156,13 @@ eval env ctx (App e e') = do
       else
         Nothing
     match (NumPat _) _ =
+      Nothing
+    match (Constructor n) (VDataCons n') =
+      if n == n' then
+        Just []
+      else
+        Nothing
+    match (Constructor _) _ =
       Nothing
     match (MatchApp p p') (VApp t t') = do
       l <- match p t
