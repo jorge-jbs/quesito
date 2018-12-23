@@ -10,4 +10,8 @@ data Decl
       , body :: Term Name
       , retTy :: Type Name
       }
+  | TypeDecl
+      { name :: Name
+      , constructors :: [(Name, Type Name)]
+      }
   deriving Show

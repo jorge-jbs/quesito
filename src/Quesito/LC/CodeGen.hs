@@ -2,6 +2,7 @@ module Quesito.LC.CodeGen where
 
 import Quesito
 import Quesito.LC as LC
+import Quesito.LC.TopLevel as LC
 import qualified Quesito.TT.Eval as TT
 
 import Data.String (fromString)
@@ -14,13 +15,8 @@ import LLVM.IRBuilder.Instruction as L
 import LLVM.IRBuilder.Module as L
 import LLVM.IRBuilder.Monad as L
 
-defCodeGen
-  :: LC.Name
-  -> [(LC.Name, LC.Type LC.Name)]  -- ^ Arguments
-  -> LC.Term LC.Name  -- ^ Body
-  -> LC.Type LC.Name  -- ^ Return type
-  -> ModuleBuilderT Ques ()
-defCodeGen name args t retTy = do
+defCodeGen :: Decl -> ModuleBuilderT Ques ()
+defCodeGen (ExprDecl name args t retTy) = do
   _ <- L.function
     (mkName name)
     ( map
@@ -32,6 +28,25 @@ defCodeGen name args t retTy = do
     (typeToLType retTy)
     (const (codeGen t >>= L.ret))
   return ()
+defCodeGen (TypeDecl name cons) = do
+  _ <- L.typedef (mkName name) Nothing
+  flip mapM cons (\(name, consTy) -> do
+      let (args, retTy) = flatten consTy
+      _ <- L.function
+        (mkName name)
+        (map (\arg -> (gtypeToLType arg, L.NoParameterName)) args)
+        (typeToLType retTy)
+        (const (return ()))
+      return ()
+    )
+  return ()
+  where
+    flatten :: LC.Type LC.Name -> ([GType], LC.Type LC.Name)
+    flatten (Pi x arg t) =
+      let (args, retTy) = flatten t
+      in (arg : args, retTy)
+    flatten t =
+      ([], t)
 
 codeGen :: Term LC.Name -> L.IRBuilderT (ModuleBuilderT Ques) L.Operand
 codeGen (Bound v ty) =
@@ -55,6 +70,8 @@ gtypeToLType (BytesType n) =
 typeToLType :: LC.Type LC.Name -> L.Type
 typeToLType (GroundType ty) =
   gtypeToLType ty
+typeToLType (TypeVar x) =
+  NamedTypeReference (mkName x)
 typeToLType ty@(Pi _ _ _) =
   let (args, ret) = flatten ty
   in L.FunctionType ret args False

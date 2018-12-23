@@ -1,6 +1,11 @@
 id : Bytes 1 -> Bytes 1;
 id = \x -> x;
 
+data Bool : Type where {
+  True : Bool;
+  False : Bool;
+}
+
 fst : Bytes 4 -> Bytes 3 -> Bytes 4;
 fst = \x -> \y -> x;
 

@@ -211,3 +211,21 @@ ttDeclToLcDecl env (ExprDecl name expr ty) = do
       body' <- LC.cnvBody body
       retTy' <- LC.cnvType retTy
       return ([], body', retTy')
+ttDeclToLcDecl env (TypeDecl name ty conss) = do
+  (_, _) <- typeInfAnn env [] ty
+  ty' <- eval (discardThird env) [] ty
+  when
+    (case ty' of VType 0 -> False; _ -> True)
+    (throwError "Type definitions should be of ground types.")
+  let env' = (name, DDataType ty', Ann.Type 1) : env
+  conss' <- mapM
+      (\(consName, consTy) -> do
+        tell ["Holi: " ++ show consTy]
+        (_, consTyAnn) <- typeInfAnn env' [] consTy
+        tell ["De camino: " ++ show consTyAnn]
+        consTy' <- LC.cnvType consTyAnn
+        tell ["Terminé"]
+        return (consName, consTy')
+      )
+      conss
+  return (LC.TypeDecl name conss', env)

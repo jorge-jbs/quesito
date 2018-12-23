@@ -22,7 +22,7 @@ data GType
 data Type v
   = GroundType GType
   | Pi Name GType (Type v)
-  -- | TypeVar v
+  | TypeVar v
   deriving Show
 
 cnvBody :: Ann.Term Ann.Name -> Ques (Term Name)
@@ -75,7 +75,7 @@ cnvType :: Ann.Term Ann.Name -> Ques (Type Name)
 cnvType (Ann.Bound v _) =
   throwError "WIP 5" -- return (TypeVar v)
 cnvType (Ann.Free v _) =
-  throwError "WIP 6" -- return (TypeVar v)
+  return (TypeVar v)
 cnvType (Ann.Type lvl) =
   throwError "WIP 4" -- return (GroundType (Type lvl))
 cnvType (Ann.BytesType n) =

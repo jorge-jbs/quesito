@@ -44,6 +44,14 @@ typeInfAnn env ctx (Free x) =
   case find (\(x', _, _) -> x == x') env of
     Just (_, DExpr _ ty, annTy) ->
       return (ty, Ann.Free x annTy)
+    Just (_, DDataType ty, annTy) -> do
+      qty <- quote ty
+      (_, tyAnn) <- typeInfAnn env ctx qty
+      return (ty, Ann.Free x tyAnn)
+    Just (_, DDataCons ty, annTy) -> do
+      qty <- quote ty
+      (_, tyAnn) <- typeInfAnn env ctx qty
+      return (ty, Ann.Free x tyAnn)
     Just (_, DMatchFunction _ ty, annTy) ->
       return (ty, Ann.Free x annTy)
     Nothing -> do

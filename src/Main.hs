@@ -25,19 +25,14 @@ main = do
         mapM (tell . (:[]) . show) declarations
         (decls, _) <- foldlM
           (\(acc, env) decl -> do
-              (LC.ExprDecl name args body retTy, env') <- ttDeclToLcDecl env decl
-              return ((name, args, body, retTy) : acc, env')
+              (decl, env') <- ttDeclToLcDecl env decl
+              return (decl : acc, env')
           )
           ([], [])
           declarations
         buildModuleT
           (fromString "main")
-          (mapM
-            (\(name, args, body, retTy) ->
-              defCodeGen name args body retTy
-            )
-            decls
-          )
+          (mapM defCodeGen decls)
   putStrLn w
   case m of
     Right mod ->
