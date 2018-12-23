@@ -1,4 +1,4 @@
-module Quesito.TT.CodeGen where
+module Quesito.LC.CodeGen where
 
 import Quesito
 import Quesito.LC as LC

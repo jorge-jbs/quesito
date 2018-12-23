@@ -1,11 +1,11 @@
 module Main where
 
 import Quesito
+import Quesito.LC.CodeGen
+import Quesito.LC.TopLevel as LC
 import Quesito.TT (Name)
-import Quesito.TT.CodeGen
 import Quesito.TT.Eval (Value, Def(..), quote)
-import Quesito.TT.TopLevel (Decl, checkDecl)
-import Quesito.TopLevel
+import Quesito.TT.TopLevel as TT (Decl, checkDecl, ttDeclToLcDecl)
 import Quesito.Parse (parse)
 
 import Data.Foldable (foldlM)
@@ -25,7 +25,7 @@ main = do
         mapM (tell . (:[]) . show) declarations
         (decls, _) <- foldlM
           (\(acc, env) decl -> do
-              (name, args, body, retTy, env') <- declToLcDecl env decl
+              (LC.ExprDecl name args body retTy, env') <- ttDeclToLcDecl env decl
               return ((name, args, body, retTy) : acc, env')
           )
           ([], [])
@@ -61,7 +61,7 @@ main = do
   --   Left err ->
   --     putStrLn ("Type checking failed: " ++ err)
 
-checkEvalProgram :: [Decl] -> [(Name, Def Value Value)] -> Ques [(Name, Def Value Value)]
+checkEvalProgram :: [TT.Decl] -> [(Name, Def Value Value)] -> Ques [(Name, Def Value Value)]
 checkEvalProgram [] evaledDefs =
   return evaledDefs
 checkEvalProgram (decl : decls) evaledDefs = do

@@ -22,14 +22,14 @@ executable quesito
     Quesito,
     Quesito.Ann,
     Quesito.LC,
+    Quesito.LC.CodeGen,
+    Quesito.LC.TopLevel,
     Quesito.Parse,
     Quesito.TT,
-    Quesito.TT.CodeGen,
     Quesito.TT.Eval,
     Quesito.TT.TopLevel,
     Quesito.TT.TypeAnn,
-    Quesito.TT.TypeCheck,
-    Quesito.TopLevel
+    Quesito.TT.TypeCheck
 
   other-extensions:    GeneralizedNewtypeDeriving, TypeSynonymInstances, FlexibleInstances
   build-depends:

@@ -2,8 +2,12 @@ module Quesito.TT.TopLevel where
 
 import Quesito
 import Quesito.TT
-import Quesito.TT.Eval
-import Quesito.TT.TypeCheck
+import Quesito.TT.Eval hiding (Env)
+import Quesito.TT.TypeCheck hiding (Env)
+import Quesito.TT.TypeAnn
+import qualified Quesito.Ann as Ann
+import qualified Quesito.LC as LC
+import qualified Quesito.LC.TopLevel as LC
 
 import Data.Foldable (foldlM)
 import Data.List (find)
@@ -182,3 +186,28 @@ checkDecl env (TypeDecl name ty conss) = do
         (throwError (name' ++ " is not a constructor for " ++ name ++ "."))
       consTy' <- eval env' [] consTy
       return (name', DDataCons consTy')
+
+ttDeclToLcDecl :: Env -> Decl -> Ques (LC.Decl, Env)
+ttDeclToLcDecl env (ExprDecl name expr ty) = do
+  (_, annTy) <- typeInfAnn env [] ty
+  expr' <- eval (discardThird env) [] expr
+  ty' <- eval (discardThird env) [] ty
+  (annExpr, _) <- typeCheckAnn env [] expr ty'
+  (args, body, retTy) <- flatten annExpr annTy []
+  return (LC.ExprDecl name args body retTy, (name, DExpr expr' ty', annTy) : env)
+  where
+    flatten
+      :: Ann.Term Ann.Name
+      -> Ann.Term Ann.Name
+      -> [(Ann.Name, Ann.Term Ann.Name)]
+      -> Ques ([(LC.Name, LC.Type LC.Name)], LC.Term LC.Name, LC.Type LC.Name)
+    flatten (Ann.Loc loc t) ty' ctx =
+      flatten t ty' ctx `locatedAt` loc
+    flatten (Ann.Lam argName ty1 (Ann.Ann t ty2)) _ ctx = do
+      ty1' <- LC.cnvType ty1
+      (args, body, retTy) <- flatten t ty2 ((argName, ty1) : ctx)
+      return ((argName, ty1') : args, body, retTy)
+    flatten body retTy _ = do
+      body' <- LC.cnvBody body
+      retTy' <- LC.cnvType retTy
+      return ([], body', retTy')
