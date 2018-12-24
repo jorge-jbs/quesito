@@ -15,7 +15,7 @@ import LLVM.IRBuilder.Instruction as L
 import LLVM.IRBuilder.Module as L
 import LLVM.IRBuilder.Monad as L
 
-defCodeGen :: Decl -> ModuleBuilderT Ques ()
+defCodeGen :: Decl -> ModuleBuilder ()
 defCodeGen (ExprDecl name args t retTy) = do
   _ <- L.function
     (mkName name)
@@ -48,7 +48,7 @@ defCodeGen (TypeDecl name cons) = do
     flatten t =
       ([], t)
 
-codeGen :: Term LC.Name -> L.IRBuilderT (ModuleBuilderT Ques) L.Operand
+codeGen :: Term LC.Name -> L.IRBuilderT ModuleBuilder L.Operand
 codeGen (Bound v ty) =
   return (L.LocalReference (gtypeToLType ty) (mkName v))
 codeGen (Free v ty) =

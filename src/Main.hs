@@ -30,9 +30,7 @@ main = do
           )
           ([], [])
           declarations
-        buildModuleT
-          (fromString "main")
-          (mapM defCodeGen decls)
+        return (buildModule (fromString "main") (mapM defCodeGen decls))
   putStrLn w
   case m of
     Right mod ->
