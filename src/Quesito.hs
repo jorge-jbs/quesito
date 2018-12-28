@@ -46,7 +46,7 @@ newtype Ques a = Ques { unQues :: (StateT QuesState (ExceptT String (Writer [Str
 
 runQues :: Ques a -> (Either String a, String)
 runQues =
-  mapSnd (concat . map (\x -> "LOG: " ++ x ++ "\n")) . runWriter . runExceptT . flip evalStateT (QuesState Nothing) . unQues
+  mapSnd (concat . map (\x -> "; LOG: " ++ x ++ "\n")) . runWriter . runExceptT . flip evalStateT (QuesState Nothing) . unQues
   where
     mapSnd :: (b -> c) -> (a, b) -> (a, c)
     mapSnd f (x, y) = (x, f y)

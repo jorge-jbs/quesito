@@ -30,10 +30,11 @@ main = do
           )
           ([], [])
           declarations
-        return (buildModule (fromString "main") (mapM defCodeGen decls))
+        return (buildModuleT (fromString "main") (mapM defCodeGen decls))
   putStrLn w
   case m of
-    Right mod ->
+    Right mod' -> do
+      mod <- mod'
       putStrLn $ unpack $ ppllvm mod
     Left err ->
       putStrLn ("Error compiling: " ++ err)

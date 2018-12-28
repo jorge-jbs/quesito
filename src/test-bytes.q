@@ -2,7 +2,7 @@ id : Bytes 1 -> Bytes 1;
 id = \x -> x;
 
 data Bool : Type where {
-  True : Bool;
+  True : Bytes 4 -> Bool;
   False : Bool;
 }
 
@@ -14,3 +14,6 @@ snd = \x -> \y -> y;
 
 main : Bytes 4;
 main = fst 126 128;
+
+main2 : Bool;
+main2 = True 3;

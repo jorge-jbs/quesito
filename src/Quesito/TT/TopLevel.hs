@@ -225,7 +225,13 @@ ttDeclToLcDecl env (TypeDecl name ty conss) = do
         tell ["De camino: " ++ show consTyAnn]
         consTy' <- LC.cnvType consTyAnn
         tell ["Terminé"]
-        return (consName, consTy')
+        return (consName, consTy', consTyAnn)
       )
       conss
-  return (LC.TypeDecl name conss', env)
+  conss'' <- mapM
+    (\((consName, consTy), (_, _, consTyAnn)) -> do
+      consTy' <- eval (discardThird env') [] consTy
+      return (consName, DDataCons consTy', consTyAnn)
+    )
+    (zip conss conss')
+  return (LC.TypeDecl name (discardThird conss'), conss'' ++ env')

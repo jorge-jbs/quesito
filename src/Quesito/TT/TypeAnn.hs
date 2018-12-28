@@ -33,12 +33,14 @@ typeInfAnn
        ( Value
        , Ann.Term Ann.Name  -- ^ Anntated input term
        )
-typeInfAnn _ ctx (Bound x) =
+typeInfAnn env ctx (Bound x) =
   case find (\(x', _, _) -> x == x') ctx of
     Just (_, ty, annTy) ->
       return (ty, Ann.Bound x annTy)
     Nothing -> do
       loc <- getLocation
+      tell [show $ map (\(v, _, _) -> v) env]
+      tell [show $ map (\(v, _, _) -> v) ctx]
       throwError ("Bound variable not found at " ++ pprint loc ++ ": " ++ x)
 typeInfAnn env ctx (Free x) =
   case find (\(x', _, _) -> x == x') env of

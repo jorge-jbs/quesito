@@ -63,9 +63,9 @@ quote (VApp u v) = do
   v' <- quote v
   return (App u' v')
 quote (VDataType n) =
-  return (Bound n)
+  return (Free n)
 quote (VDataCons n) =
-  return (Bound n)
+  return (Free n)
 
 eval :: Env -> VContext -> Term Name -> Ques Value
 eval env ctx (Bound x) =
