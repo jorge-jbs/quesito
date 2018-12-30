@@ -2,8 +2,12 @@ module Quesito.TT.TopLevel where
 
 import Quesito
 import Quesito.TT
-import Quesito.TT.Eval
-import Quesito.TT.TypeCheck
+import Quesito.TT.Eval hiding (Env)
+import Quesito.TT.TypeCheck hiding (Env)
+import Quesito.TT.TypeAnn
+import qualified Quesito.Ann as Ann
+import qualified Quesito.LC as LC
+import qualified Quesito.LC.TopLevel as LC
 
 import Data.Foldable (foldlM)
 import Data.List (find)
@@ -12,6 +16,10 @@ import Control.Monad (when)
 data Decl
   = ExprDecl Name (Term Name) (Term Name)
   -- | MatchFunctionDecl Name [([(Name, Term Name)], Term Name, Term Name)] (Term Name)
+  | TypeDecl
+      Name
+      (Term Name)  -- ^ Type
+      [(Name, Term Name)]  -- ^ Constructors
   deriving Show
 
 checkDecl :: [(Name, Def Value Value)] -> Decl -> Ques [(Name, Def Value Value)]
@@ -81,6 +89,8 @@ checkDecl env (MatchFunctionDecl name equations ty) = do
         return (Binding x)
       | otherwise =
         case find ((==) x . fst) env of
+          Just (_, DDataCons _) ->
+            return (Constructor x)
           Just _ | not normalized ->
             return (Inaccessible (Bound x))
           _ -> do
@@ -126,3 +136,102 @@ checkDecl env (MatchFunctionDecl name equations ty) = do
     evalEquation recur lhs' rhs =
       (lhs', \ctx -> eval ((name, recur):env) ctx rhs)
 -}
+
+checkDecl env (TypeDecl name ty conss) = do
+  tyTy <- typeInf env [] ty
+  case tyTy of
+    VType _ ->
+      case getReturnType ty of
+        Type 0 -> do
+          ty' <- eval env [] ty
+          let typeDef = (name, DDataType ty')
+          conss' <- mapM (uncurry (checkCons typeDef)) conss
+          return (typeDef : conss')
+        _ ->
+          throwError (name ++ " is not a ground type.")
+    _ ->
+      throwError (name ++ "'s type is not of kind Type.")
+  where
+    getReturnType :: Term Name -> Term Name
+    getReturnType (Pi _ _ x) =
+      getReturnType x
+    getReturnType (Loc _ x) =
+      getReturnType x
+    getReturnType x =
+      x
+
+    isConsOf :: Term Name -> Term Name -> Bool
+    isConsOf (App e _) (Pi _ _ t) =
+      isConsOf e t
+    isConsOf (Bound name') (Type 0) | name == name' =
+      True
+    isConsOf (Loc _ e) t =
+      isConsOf e t
+    isConsOf e (Loc _ t) =
+      isConsOf e t
+    isConsOf _ _ =
+      False
+
+    checkCons :: (Name, Def Value Value) -> Name -> Term Name -> Ques (Name, Def Value Value)
+    checkCons typeDef name' consTy = do
+      let env' = typeDef : env
+      tyTy <-
+          typeInf env' [] consTy `catchError`
+            \err -> throwError ("Type error while checking " ++ name' ++ ": " ++ err)
+      when
+        (case tyTy of VType _ -> False; _ -> True)
+        (throwError (name' ++ "'s type is not of kind Type."))
+      when
+        (not (isConsOf (getReturnType consTy) ty))
+        (throwError (name' ++ " is not a constructor for " ++ name ++ "."))
+      consTy' <- eval env' [] consTy
+      return (name', DDataCons consTy')
+
+ttDeclToLcDecl :: Env -> Decl -> Ques (LC.Decl, Env)
+ttDeclToLcDecl env (ExprDecl name expr ty) = do
+  (_, annTy) <- typeInfAnn env [] ty
+  expr' <- eval (discardThird env) [] expr
+  ty' <- eval (discardThird env) [] ty
+  (annExpr, _) <- typeCheckAnn env [] expr ty'
+  (args, body, retTy) <- flatten annExpr annTy []
+  return (LC.ExprDecl name args body retTy, (name, DExpr expr' ty', annTy) : env)
+  where
+    flatten
+      :: Ann.Term Ann.Name
+      -> Ann.Term Ann.Name
+      -> [(Ann.Name, Ann.Term Ann.Name)]
+      -> Ques ([(LC.Name, LC.Type LC.Name)], LC.Term LC.Name, LC.Type LC.Name)
+    flatten (Ann.Loc loc t) ty' ctx =
+      flatten t ty' ctx `locatedAt` loc
+    flatten (Ann.Lam argName ty1 (Ann.Ann t ty2)) _ ctx = do
+      ty1' <- LC.cnvType ty1
+      (args, body, retTy) <- flatten t ty2 ((argName, ty1) : ctx)
+      return ((argName, ty1') : args, body, retTy)
+    flatten body retTy _ = do
+      body' <- LC.cnvBody body
+      retTy' <- LC.cnvType retTy
+      return ([], body', retTy')
+ttDeclToLcDecl env (TypeDecl name ty conss) = do
+  (_, _) <- typeInfAnn env [] ty
+  ty' <- eval (discardThird env) [] ty
+  when
+    (case ty' of VType 0 -> False; _ -> True)
+    (throwError "Type definitions should be of ground types.")
+  let env' = (name, DDataType ty', Ann.Type 1) : env
+  conss' <- mapM
+      (\(consName, consTy) -> do
+        tell ["Holi: " ++ show consTy]
+        (_, consTyAnn) <- typeInfAnn env' [] consTy
+        tell ["De camino: " ++ show consTyAnn]
+        consTy' <- LC.cnvType consTyAnn
+        tell ["Terminé"]
+        return (consName, consTy', consTyAnn)
+      )
+      conss
+  conss'' <- mapM
+    (\((consName, consTy), (_, _, consTyAnn)) -> do
+      consTy' <- eval (discardThird env') [] consTy
+      return (consName, DDataCons consTy', consTyAnn)
+    )
+    (zip conss conss')
+  return (LC.TypeDecl name (discardThird conss'), conss'' ++ env')

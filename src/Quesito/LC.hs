@@ -6,23 +6,23 @@ import qualified Quesito.Ann as Ann
 type Name = String
 
 data Term v
-  = Bound v GType
-  | Free v GType
+  = Bound v (GType v)
+  | Free v (GType v)
   | Lit { num :: Int, bytes :: Int }
   | App v (Type v) [Term v]
   | Ann (Term v) (Type v)
   -- | GType GType
   deriving Show
 
-data GType
+data GType v
   = BytesType Int
+  | TypeVar v
   -- | Type Int
   deriving Show
 
 data Type v
-  = GroundType GType
-  | Pi Name GType (Type v)
-  -- | TypeVar v
+  = GroundType (GType v)
+  | Pi Name (GType v) (Type v)
   deriving Show
 
 cnvBody :: Ann.Term Ann.Name -> Ques (Term Name)
@@ -61,7 +61,9 @@ cnvBody (Ann.Lam _ _ _) =
 cnvBody (Ann.Loc _ t) =
   cnvBody t
 
-cnvGType :: Ann.Term Ann.Name -> Ques GType
+cnvGType :: Ann.Term Ann.Name -> Ques (GType Name)
+cnvGType (Ann.Free v _) =
+  return (TypeVar v)
 cnvGType (Ann.Type lvl) =
   throwError "WIP 3" -- return (Type lvl)
 cnvGType (Ann.BytesType n) =
@@ -75,7 +77,7 @@ cnvType :: Ann.Term Ann.Name -> Ques (Type Name)
 cnvType (Ann.Bound v _) =
   throwError "WIP 5" -- return (TypeVar v)
 cnvType (Ann.Free v _) =
-  throwError "WIP 6" -- return (TypeVar v)
+  return (GroundType (TypeVar v))
 cnvType (Ann.Type lvl) =
   throwError "WIP 4" -- return (GroundType (Type lvl))
 cnvType (Ann.BytesType n) =
