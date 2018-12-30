@@ -16,4 +16,4 @@ main : Bytes 4;
 main = fst 126 128;
 
 main2 : Bool;
-main2 = True 3;
+main2 = False;

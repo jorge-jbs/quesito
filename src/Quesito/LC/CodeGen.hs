@@ -97,7 +97,7 @@ codeGen :: LC.Term LC.Name -> L.IRBuilderT (ModuleBuilderT IO) L.Operand
 codeGen (Bound v ty) =
   return (L.LocalReference (gtypeToLType ty) (mkName v))
 codeGen (Free v ty) =
-  return (L.ConstantOperand (L.GlobalReference (gtypeToLType ty) (mkName v)))
+  load (L.ConstantOperand (L.GlobalReference (PointerType (gtypeToLType ty) (AddrSpace 0)) (mkName v))) 0
 codeGen (Lit n bytes') =
   return (L.ConstantOperand (L.Int (fromIntegral bytes' * 8) (fromIntegral n)))
 codeGen (App v ty args) = do
