@@ -1,6 +1,5 @@
 module Quesito.LC.TopLevel where
 
-import Quesito
 import Quesito.LC
 
 data Decl

@@ -53,6 +53,10 @@ instance PPrint v => PPrint (Term v) where
     pprint v
   pprint (Free v) =
     pprint v
+  pprint (BytesType n) =
+    "(" ++ "Bytes " ++ show n ++ ")"
+  pprint (Num x) =
+    show x
   pprint (Type i) =
     "(" ++ "Type " ++ show i ++ ")"
   pprint (Pi "" t t') =

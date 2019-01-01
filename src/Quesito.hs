@@ -41,7 +41,7 @@ data QuesState
       { location :: Maybe Location
       }
 
-newtype Ques a = Ques { unQues :: (StateT QuesState (ExceptT String (Writer [String])))  a }
+newtype Ques a = Ques { unQues :: StateT QuesState (ExceptT String (Writer [String])) a }
   deriving (Functor, Applicative, Monad, MonadError String, MonadState QuesState, MonadWriter [String])
 
 runQues :: Ques a -> (Either String a, String)

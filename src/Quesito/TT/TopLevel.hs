@@ -3,14 +3,12 @@ module Quesito.TT.TopLevel where
 import Quesito
 import Quesito.TT
 import Quesito.TT.Eval hiding (Env)
-import Quesito.TT.TypeCheck hiding (Env)
+import Quesito.TT.TypeCheck
 import Quesito.TT.TypeAnn
 import qualified Quesito.Ann as Ann
 import qualified Quesito.LC as LC
 import qualified Quesito.LC.TopLevel as LC
 
-import Data.Foldable (foldlM)
-import Data.List (find)
 import Control.Monad (when)
 
 data Decl

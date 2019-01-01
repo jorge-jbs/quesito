@@ -10,14 +10,11 @@ data Term v
   | Free v (GType v)
   | Lit { num :: Int, bytes :: Int }
   | App v (Type v) [Term v]
-  | Ann (Term v) (Type v)
-  -- | GType GType
   deriving Show
 
 data GType v
   = BytesType Int
   | TypeVar v
-  -- | Type Int
   deriving Show
 
 data Type v
@@ -30,9 +27,9 @@ cnvBody (Ann.Bound v ty) =
   Bound v <$> cnvGType ty
 cnvBody (Ann.Free v ty) =
   Free v <$> cnvGType ty
-cnvBody (Ann.Type lvl) =
+cnvBody (Ann.Type _) =
   throwError "WIP" -- return (GType (Type lvl))
-cnvBody (Ann.BytesType n) =
+cnvBody (Ann.BytesType _) =
   throwError "WIP 2" -- return (GType (BytesType n))
 cnvBody (Ann.Num n bytes') =
   return (Lit n bytes')
@@ -64,7 +61,7 @@ cnvBody (Ann.Loc _ t) =
 cnvGType :: Ann.Term Ann.Name -> Ques (GType Name)
 cnvGType (Ann.Free v _) =
   return (TypeVar v)
-cnvGType (Ann.Type lvl) =
+cnvGType (Ann.Type _) =
   throwError "WIP 3" -- return (Type lvl)
 cnvGType (Ann.BytesType n) =
   return (BytesType n)
@@ -74,11 +71,11 @@ cnvGType _ =
   throwError "Can't convert arbitrary expressions to Lambda-Calculus ground types"
 
 cnvType :: Ann.Term Ann.Name -> Ques (Type Name)
-cnvType (Ann.Bound v _) =
+cnvType (Ann.Bound _ _) =
   throwError "WIP 5" -- return (TypeVar v)
 cnvType (Ann.Free v _) =
   return (GroundType (TypeVar v))
-cnvType (Ann.Type lvl) =
+cnvType (Ann.Type _) =
   throwError "WIP 4" -- return (GroundType (Type lvl))
 cnvType (Ann.BytesType n) =
   return (GroundType (BytesType n))

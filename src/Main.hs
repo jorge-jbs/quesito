@@ -2,9 +2,8 @@ module Main where
 
 import Quesito
 import Quesito.LC.CodeGen
-import Quesito.LC.TopLevel as LC
 import Quesito.TT (Name)
-import Quesito.TT.Eval (Value, Def(..), quote)
+import Quesito.TT.Eval (Value, Def(..))
 import Quesito.TT.TopLevel as TT (Decl, checkDecl, ttDeclToLcDecl)
 import Quesito.Parse (parse)
 
@@ -22,11 +21,11 @@ main = do
       = either (error . show) id
       $ parse input
   let (m, w) = runQues $ do
-        mapM (tell . (:[]) . show) declarations
+        mapM_ (tell . (:[]) . show) declarations
         (decls, _) <- foldlM
           (\(acc, env) decl -> do
-              (decl, env') <- ttDeclToLcDecl env decl
-              return (decl : acc, env')
+              (decl', env') <- ttDeclToLcDecl env decl
+              return (decl' : acc, env')
           )
           ([], [])
           declarations
