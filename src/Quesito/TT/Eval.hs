@@ -35,15 +35,15 @@ data Value
   | VBytesType Int
   | VNum Int
   | VPi Name Value (Value -> Ques Value)
-  | VBound Name  -- used for quotation
   | VDataType Name
   | VDataCons Name
   | VFree Name
+  | VGlobal Name
   | VApp Value Value
 
 quote :: Value -> Ques (Term Name)
 quote (VLam x f) =
-  Lam x <$> (quote =<< f (VBound x))
+  Lam x <$> (quote =<< f (VFree x))
 quote (VType i) =
   return (Type i)
 quote (VBytesType n) =
@@ -52,32 +52,29 @@ quote (VNum n) =
   return (Num n)
 quote (VPi x v v') = do
   t <- quote v
-  t' <- quote =<< v' (VBound x)
+  t' <- quote =<< v' (VFree x)
   return (Pi x t t')
-quote (VBound x) =
-  return (Bound x)
 quote (VFree x) =
-  return (Free x)
+  return (Local x)
+quote (VGlobal x) =
+  return (Global x)
 quote (VApp u v) = do
   u' <- quote u
   v' <- quote v
   return (App u' v')
 quote (VDataType n) =
-  return (Free n)
+  return (Global n)
 quote (VDataCons n) =
-  return (Free n)
+  return (Global n)
 
 eval :: Env -> VContext -> Term Name -> Ques Value
-eval env ctx (Bound x) =
+eval _ ctx (Local x) =
   case snd <$> find ((==) x . fst) ctx of
     Just v ->
       return v
-    Nothing -> do
-      loc <- getLocation
-      tell ["env: " ++ show (map fst env)]
-      tell ["ctx: " ++ show (map fst ctx)]
-      throwError ("Found free variable at " ++ pprint loc ++ ": " ++ x)
-eval env ctx (Free x) =
+    Nothing ->
+     return (VFree x)
+eval env ctx (Global x) =
   case snd <$> find ((==) x . fst) env of
     Just (DExpr v _) ->
       return v
@@ -88,12 +85,12 @@ eval env ctx (Free x) =
     Just (DMatchFunction [([], f)] _) ->
       f []
     Just (DMatchFunction _ _) ->
-      return (VFree x)
+      return (VGlobal x)
     Nothing -> do
       loc <- getLocation
       tell ["env: " ++ show (map fst env)]
       tell ["ctx: " ++ show (map fst ctx)]
-      throwError ("Found free variable at " ++ pprint loc ++ ": " ++ x)
+      throwError ("Unknown global variable at " ++ pprint loc ++ ": " ++ x)
 eval _ _ (Type lvl) =
   return (VType lvl)
 eval _ _ (BytesType n) =
@@ -121,7 +118,7 @@ eval env ctx (App e e') = do
     apply (VLam _ f) (a:as) = do
       x <- f a
       apply x as
-    apply (VBound name) args@(a:as) = do
+    apply (VGlobal name) args@(a:as) = do
       loc <- getLocation
       case snd <$> find ((==) name . fst) env of
         Just (DMatchFunction equations _) ->
@@ -135,11 +132,11 @@ eval env ctx (App e e') = do
               Just (s, t) ->
                 t s
               Nothing ->
-                apply (VApp (VBound name) a) as
+                apply (VApp (VGlobal name) a) as
         Just _ ->
           throwError ("Variable should have been evaluated at " ++ pprint loc ++ ": " ++ name)
         Nothing ->
-          throwError ("Free variable found at " ++ pprint loc ++ ": " ++ name)
+          throwError ("Unknown global variable at " ++ pprint loc ++ ": " ++ name)
     apply f (a:as) =
       apply (VApp f a) as
     apply f [] =

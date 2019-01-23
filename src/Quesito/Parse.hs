@@ -2,7 +2,7 @@ module Quesito.Parse (Quesito.Parse.parse) where
 
 import Quesito
 import Quesito.TT (Term(..), mapInLoc, remLoc, Name)
-import Quesito.TT.TopLevel (Decl(..))
+import Quesito.TT.TopLevel (Decl(..), getNames)
 
 import Control.Monad (when)
 import Data.Foldable (foldlM)
@@ -10,7 +10,7 @@ import Data.Functor.Identity (Identity)
 import Text.Parsec
   ( Parsec, SourcePos, (<|>), try, parserFail, eof, alphaNum, letter , oneOf
   , space, spaces, string, char, getPosition, sourceLine, sourceColumn, sepBy, option
-  , runParser, putState, getState
+  , runParser, putState, getState, optionMaybe
   )
 import Text.Parsec.Combinator (many1)
 import Text.Parsec.Error (ParseError)
@@ -23,6 +23,14 @@ import Text.Parsec.Token
   )
 
 type Parser = Parsec String [Name]
+
+withEnv :: Parser a -> [Name] -> Parser a
+withEnv m name = do
+  env <- getState
+  putState (name ++ env)
+  x <- m
+  putState env
+  return x
 
 raw :: Parser (Term Name)
 raw =
@@ -40,7 +48,7 @@ raw =
                         case a' of
                           Ann v ty ->
                             case remLoc v of
-                              Bound u ->
+                              Local u ->
                                 Pi u ty b
                               _ ->
                                 Pi "" a b
@@ -83,20 +91,18 @@ lambdaParser = attachPos $ do
   reservedOp tp "\\"
   x <- identifier tp
   reservedOp tp "->"
-  st <- getState
-  putState (x : st)
   body <- raw
   return (Lam x body)
 
 nonParen :: Parser (Term Name)
-nonParen = getState >>= \st ->
+nonParen = getState >>= \env ->
   attachPos
     (try (do
       v <- identifier tp
-      if v `elem` st then
-        return (Bound v)
+      if v `elem` env then
+        return (Global v)
       else
-        return (Free v)
+        return (Local v)
     )
     <|> (Num . fromIntegral <$> natural tp)
     )
@@ -157,7 +163,7 @@ typeDecl = do
   _ <- char '{'
   conss <- many $ try $ do
     spaces
-    (name', ty') <- annotation True
+    (name', ty') <- annotation True `withEnv` [name]
     return (name', ty')
   spaces
   _ <- char '}'
@@ -211,7 +217,7 @@ patternMatchingCaseParser = do
     findName :: Term Name -> Maybe Name
     findName (App e _) =
       findName e
-    findName (Free x) =
+    findName (Local x) =
       Just x
     findName (Loc _ e) =
       findName e
@@ -239,13 +245,15 @@ definition = do
   else
     parserFail ("Expecting implementation for \"" ++ name ++ "\" but found for \"" ++ show name ++ "\".")
 
+parseDeclarations :: Parser [Decl]
+parseDeclarations = do
+  maybeDecl <- optionMaybe (try definition <|> try patternMatchingDefinition <|> typeDecl)
+  case maybeDecl of
+    Just decl ->
+      (decl :) <$> parseDeclarations `withEnv` getNames decl
+    Nothing ->
+      eof >> return []
+
 parse :: String -> Either ParseError [Decl]
 parse =
-  runParser
-    (do
-       decls <- many (putState [] >> (try definition <|> try patternMatchingDefinition <|> typeDecl))
-       eof
-       return decls
-    )
-    []
-    ""
+  runParser parseDeclarations [] ""

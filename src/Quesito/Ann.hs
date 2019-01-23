@@ -6,8 +6,8 @@ import qualified Quesito.TT as TT
 type Name = TT.Name
 
 data Term v
-  = Bound v (Term v)
-  | Free v (Term v)
+  = Local v (Term v)
+  | Global Name (Term v)
   | Type Int
   | BytesType Int
   | Num { num :: Int, bytes :: Int }

@@ -8,7 +8,7 @@ import Data.List (find)
 import Control.Monad (unless)
 
 typeInf :: Env -> TContext -> Term Name -> Ques Value
-typeInf env ctx (Bound x) =
+typeInf env ctx (Local x) =
   case snd <$> find ((==) x . fst) ctx of
     Just v ->
       return v
@@ -24,9 +24,9 @@ typeInf env ctx (Bound x) =
           return ty
         Nothing -> do
           loc <- getLocation
-          throwError ("Free variable at " ++ pprint loc ++ ": " ++ x)
-typeInf env ctx (Free x) =
-  typeInf env ctx (Bound x)
+          throwError ("Global variable at " ++ pprint loc ++ ": " ++ x)
+typeInf env ctx (Global x) =
+  typeInf env ctx (Local x)
 typeInf _ _ (Type i) =
   return (VType (i + 1))
 typeInf _ _ (BytesType _) =
@@ -43,7 +43,7 @@ typeInf env ctx (Pi x e f) = do
         typeInf
           env
           ((x, e') : ctx)
-          (subst x (Free x) f)
+          (subst x (Global x) f)
       case t' of
         VType j ->
           return (VType (max i j))
@@ -80,8 +80,8 @@ typeInf env ctx (Loc loc t) =
 
 typeCheck :: Env -> TContext -> Term Name -> Value -> Ques ()
 typeCheck env ctx (Lam x e) (VPi _ v w) = do
-  w' <- w (VFree x)
-  typeCheck env ((x, v) : ctx) (subst x (Free x) e) w'
+  w' <- w (VGlobal x)
+  typeCheck env ((x, v) : ctx) (subst x (Global x) e) w'
 typeCheck _ _ (Lam _ _) _ = do
   loc <- getLocation
   throwError ("6: " ++ pprint loc)

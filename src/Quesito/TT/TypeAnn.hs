@@ -33,34 +33,34 @@ typeInfAnn
        ( Value
        , Ann.Term Ann.Name  -- ^ Anntated input term
        )
-typeInfAnn env ctx (Bound x) =
+typeInfAnn env ctx (Local x) =
   case find (\(x', _, _) -> x == x') ctx of
     Just (_, ty, annTy) ->
-      return (ty, Ann.Bound x annTy)
+      return (ty, Ann.Local x annTy)
     Nothing -> do
       loc <- getLocation
       tell [show $ map (\(v, _, _) -> v) env]
       tell [show $ map (\(v, _, _) -> v) ctx]
-      throwError ("Bound variable not found at " ++ pprint loc ++ ": " ++ x)
-typeInfAnn env ctx (Free x) =
+      throwError ("Local variable not found at " ++ pprint loc ++ ": " ++ x)
+typeInfAnn env ctx (Global x) =
   case find (\(x', _, _) -> x == x') env of
     Just (_, DExpr _ ty, annTy) ->
-      return (ty, Ann.Free x annTy)
+      return (ty, Ann.Global x annTy)
     Just (_, DDataType ty, _) -> do
       qty <- quote ty
       (_, tyAnn) <- typeInfAnn env ctx qty
-      return (ty, Ann.Free x tyAnn)
+      return (ty, Ann.Global x tyAnn)
     Just (_, DDataCons ty, _) -> do
       qty <- quote ty
       (_, tyAnn) <- typeInfAnn env ctx qty
-      return (ty, Ann.Free x tyAnn)
+      return (ty, Ann.Global x tyAnn)
     Just (_, DMatchFunction _ ty, annTy) ->
-      return (ty, Ann.Free x annTy)
+      return (ty, Ann.Global x annTy)
     Nothing -> do
       loc <- getLocation
       tell [show $ map (\(v, _, _) -> v) env]
       tell [show $ map (\(v, _, _) -> v) ctx]
-      throwError ("Free variable not found at " ++ pprint loc ++ ": " ++ x)
+      throwError ("Global variable not found at " ++ pprint loc ++ ": " ++ x)
 typeInfAnn _ _ (Type i) =
   return (VType (i + 1), Ann.Type i)
 typeInfAnn _ _ (BytesType n) =
@@ -78,7 +78,7 @@ typeInfAnn env ctx (Pi x e f) = do
         typeInfAnn
           env
           ((x, e', annE) : ctx)
-          (subst x (Free x) f)
+          (subst x (Global x) f)
       case t' of
         VType j ->
           return (VType (max i j), Ann.Pi x annE annF)
@@ -127,9 +127,9 @@ typeCheckAnn
        )
 typeCheckAnn env ctx (Lam x e) (VPi x' v w) = do
   tell ["typeInfAnn Lam: " ++ show e]
-  w' <- w (VBound x)
+  w' <- w (VFree x)
   (_, annV) <- typeInfAnn env ctx =<< quote v
-  (annE, annW') <- typeCheckAnn env ((x, v, annV) : ctx) (subst x (Bound x) e) w'
+  (annE, annW') <- typeCheckAnn env ((x, v, annV) : ctx) (subst x (Local x) e) w'
   return (Ann.Lam x annV (Ann.Ann annE annW'), Ann.Pi x' annV annW')
 typeCheckAnn _ _ (Lam _ _) _ = do
   loc <- getLocation

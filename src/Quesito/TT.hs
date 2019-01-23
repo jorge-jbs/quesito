@@ -8,7 +8,6 @@ module Quesito.TT
   , remLoc
   , deBruijnize
   , subst
-  , freeVars
   )
   where
 
@@ -20,15 +19,15 @@ import Data.Foldable (foldl')
 type Name = String
 
 data Term v
-  = Bound v
-  | Free v
+  = Local v
+  | Global Name
   | Type Int
   | BytesType Int
   | Num Int
-  | Pi Name (Term v) (Term v)
+  | Pi v (Term v) (Term v)
   | App (Term v) (Term v)
   | Ann (Term v) (Term v)
-  | Lam Name (Term v)
+  | Lam v (Term v)
   | Loc Location (Term v)
   deriving Show
 
@@ -49,9 +48,9 @@ instance PPrint Name where
     name
 
 instance PPrint v => PPrint (Term v) where
-  pprint (Bound v) =
+  pprint (Local v) =
     pprint v
-  pprint (Free v) =
+  pprint (Global v) =
     pprint v
   pprint (BytesType n) =
     "(" ++ "Bytes " ++ show n ++ ")"
@@ -59,16 +58,17 @@ instance PPrint v => PPrint (Term v) where
     show x
   pprint (Type i) =
     "(" ++ "Type " ++ show i ++ ")"
-  pprint (Pi "" t t') =
-    "(" ++ pprint t ++ " -> " ++ pprint t' ++ ")"
-  pprint (Pi n t t') =
-    "(" ++ "(" ++ n ++ " : "++ pprint t ++ ") -> " ++ pprint t' ++ ")"
+  pprint (Pi n t t')
+    | length (pprint n) == 0 =
+      "(" ++ pprint t ++ " -> " ++ pprint t' ++ ")"
+    | otherwise =
+      "(" ++ "(" ++ pprint n ++ " : "++ pprint t ++ ") -> " ++ pprint t' ++ ")"
   pprint (App t t') =
     "(" ++ pprint t ++ " " ++ pprint t' ++ ")"
   pprint (Ann t t') =
     "(" ++ pprint t ++ " " ++ pprint t' ++ ")"
   pprint (Lam n t) =
-    "(" ++ "\\" ++ n ++ " -> " ++ pprint t ++ ")"
+    "(" ++ "\\" ++ pprint n ++ " -> " ++ pprint t ++ ")"
   pprint (Loc _ t) =
     pprint t
 
@@ -77,9 +77,9 @@ instance Eq v => Eq (Term v) where
     t == t'
   t == Loc _ t' =
     t == t'
-  Bound v == Bound w =
+  Local v == Local w =
     v == w
-  Free v == Free w =
+  Global v == Global w =
     v == w
   Type i == Type j =
     i == j
@@ -104,18 +104,18 @@ deBruijnize =
   deBruijnize' []
   where
     deBruijnize' :: [Name] -> Term Name -> Term DeBruijnVar
-    deBruijnize' vars (Bound v) =
+    deBruijnize' vars (Local v) =
       case takeWhile (\v' -> v /= v') vars of
         [] ->
-          Bound (DBFree v)
+          Local (DBFree v)
         xs ->
-          Bound (Index (length xs))
-    deBruijnize' _ (Free v) =
-      Free (DBFree v)
+          Local (Index (length xs))
+    deBruijnize' _ (Global v) =
+      Global v
     deBruijnize' vars (Pi n t t') =
-      Pi "" (deBruijnize' vars t) (deBruijnize' (n : vars) t')
+      Pi (Index 0) (deBruijnize' vars t) (deBruijnize' (n : vars) t')
     deBruijnize' vars (Lam n t) =
-      Lam "" (deBruijnize' (n : vars) t)
+      Lam (Index 0) (deBruijnize' (n : vars) t)
     deBruijnize' _ (Type i) =
       Type i
     deBruijnize' _ (BytesType n) =
@@ -129,14 +129,14 @@ deBruijnize =
     deBruijnize' vars (Loc loc t) =
       Loc loc (deBruijnize' vars t)
 
-subst :: Name -> Term Name -> Term Name -> Term Name
-subst name term (Bound name') =
+subst :: Eq v => v -> Term v -> Term v -> Term v
+subst name term (Local name') =
   if name == name' then
     term
   else
-    Bound name'
-subst _ _ (Free name') =
-  Free name'
+    Local name'
+subst _ _ (Global name') =
+  Global name'
 subst _ _ (Type level) =
   Type level
 subst _ _ (BytesType n) =
@@ -159,7 +159,3 @@ subst name term (Lam name' t) =
     Lam name' (subst name term t)
 subst name term (Loc loc t) =
   Loc loc (subst name term t)
-
-freeVars :: [Name] -> Term Name -> Term Name
-freeVars vars term =
-  foldl' (\term' v -> subst v (Free v) term') term vars

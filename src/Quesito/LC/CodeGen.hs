@@ -148,9 +148,9 @@ defCodeGen (TypeDecl name cons) = do
       L.insertValue x (L.LocalReference arg (L.UnName (fromIntegral $ toInteger n))) [n]
 
 codeGen :: LC.Term LC.Name -> L.IRBuilderT (L.ModuleBuilderT IO) L.Operand
-codeGen (Bound v ty) =
+codeGen (Local v ty) =
   return (L.LocalReference (gtypeToLType ty) (L.mkName v))
-codeGen (Free v ty) =
+codeGen (Global v ty) =
   L.load (L.ConstantOperand (L.GlobalReference (L.PointerType (gtypeToLType ty) (L.AddrSpace 0)) (L.mkName v))) 0
 codeGen (Lit n bytes') =
   return (L.ConstantOperand (L.Int (fromIntegral bytes' * 8) (fromIntegral n)))
