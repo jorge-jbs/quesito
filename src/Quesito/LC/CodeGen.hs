@@ -1,16 +1,20 @@
+{-# LANGUAGE RecursiveDo #-}
+
 module Quesito.LC.CodeGen where
 
 import Quesito.LC as LC
 import Quesito.LC.TopLevel as LC
 
 import Data.String (fromString)
-import Control.Monad (forM_)
+import Data.Foldable (foldlM)
+import Control.Monad (forM_, void)
 import Control.Monad.IO.Class (liftIO)
 import LLVM ()
 import qualified LLVM.AST as L hiding (function)
 import qualified LLVM.AST.AddrSpace as L
 import qualified LLVM.AST.Constant as L
 import qualified LLVM.AST.DataLayout as L (defaultDataLayout, Endianness(LittleEndian))
+import qualified LLVM.AST.IntegerPredicate as L
 import qualified LLVM.AST.Type as L (Type(StructureType))
 import qualified LLVM.Internal.Coding as L (encodeM)
 import qualified LLVM.Internal.Context as L (withContext)
@@ -42,6 +46,59 @@ defCodeGen (ExprDecl name args t retTy) = do
     (typeToLType retTy)
     (const (codeGen t >>= L.ret))
   return ()
+defCodeGen (PatternMatchingDecl name equations args retTy) = do
+  let argsTypes = map (\ty -> (typeToLType ty, L.NoParameterName)) args
+  _ <- L.function
+    (L.mkName name)
+    argsTypes
+    (typeToLType retTy)
+    (const (mdo
+      checks <- mapM (genEquationIf . (\(_, x, _) -> x)) equations
+      genIfs labels checks
+      labels <- mapM (\(x, y, z) -> genBody x y z) equations
+      return ()
+    ))
+  return ()
+  where
+    genIfs :: [L.Name] -> [L.Operand] -> L.IRBuilderT (L.ModuleBuilderT IO) ()
+    genIfs x y =
+      void $ genIfs' x y
+      where
+        genIfs' :: [L.Name] -> [L.Operand] -> L.IRBuilderT (L.ModuleBuilderT IO) L.Name
+        genIfs' [] [] = do
+          n <- L.block
+          L.unreachable
+          return n
+        genIfs' (lb:lbs) (ch:chs) = mdo
+          n <- L.block
+          L.condBr ch lb lb'
+          lb' <- genIfs' lbs chs
+          return n
+
+    genEquationIf :: [Pattern Name] -> L.IRBuilderT (L.ModuleBuilderT IO) L.Operand
+    genEquationIf ps = do
+      checks <- mapM
+        (uncurry checkArg)
+        (zip
+          ps
+          (map
+            (\(i, ty) -> L.LocalReference ty (L.UnName i))
+            (zip [0..] (map typeToLType args))
+          )
+        )
+      foldlM L.and (L.ConstantOperand (L.Int 1 1)) checks
+
+    checkArg :: Pattern Name -> L.Operand -> L.IRBuilderT (L.ModuleBuilderT IO) L.Operand
+    checkArg (Binding _) op = do
+      return (L.ConstantOperand (L.Int 1 1))
+    checkArg (NumPat n b) op = do
+      L.icmp L.EQ (L.ConstantOperand (L.Int (2^b) (fromIntegral n))) op
+    checkArg (Constructor _ _) op = do
+      undefined
+
+    genBody :: [(Name, Type Name)] -> [Pattern Name] -> Term Name -> L.IRBuilderT (L.ModuleBuilderT IO) L.Name
+    genBody = undefined
+
 defCodeGen (TypeDecl name cons) = do
   let flattened = map (flatten . snd) cons
   let consLTypes = map consLType (map fst flattened)

@@ -1,5 +1,8 @@
 module Quesito.TT.TopLevel where
 
+import Data.Foldable (foldlM)
+import Data.List (find)
+
 import Quesito
 import Quesito.TT
 import Quesito.TT.Eval hiding (Env)
@@ -13,7 +16,7 @@ import Control.Monad (when)
 
 data Decl
   = ExprDecl Name (Term Name) (Term Name)
-  -- | MatchFunctionDecl Name [([(Name, Term Name)], Term Name, Term Name)] (Term Name)
+  | PatternMatchingDecl Name [([(Name, Term Name)], Term Name, Term Name)] (Term Name)
   | TypeDecl
       Name
       (Term Name)  -- ^ Type
@@ -209,6 +212,119 @@ ttDeclToLcDecl env (ExprDecl name expr ty) = do
       body' <- LC.cnvBody body
       retTy' <- LC.cnvType retTy
       return ([], body', retTy')
+--{-
+ttDeclToLcDecl env (PatternMatchingDecl name equations ty) = do
+-- checkDecl (discardThird env) (MatchFunctionDecl name equations ty) = do
+  tell ["Checking pattern matching function declaration " ++ name]
+
+  (_, annTy) <- typeInfAnn env [] ty
+  (args, retTy) <- flattenTy annTy
+
+  typeCheck (discardThird env) [] ty (VType 1000)
+  ty' <- eval (discardThird env) [] ty
+  checkedVars <- mapM (\(vars, _, _) -> checkVars vars) equations
+  mapM_ (\(vars', (_, rhs, lhs)) -> checkEquation vars' rhs lhs ty') (zip checkedVars equations)
+  lhss' <- mapM (\(vars', lhs) -> mapM (rawToMatch (map fst vars') True) (tail $ flattenApp lhs)) (zip checkedVars (map (\(_, x, _) -> x) equations))
+  let evaledEquations = map (uncurry $ evalEquation (DMatchFunction evaledEquations ty')) (zip lhss' (map (\(_, _, x) -> x) equations))
+  --return [(name, DMatchFunction evaledEquations ty')]
+  return (LC.PatternMatchingDecl name undefined args retTy, (name, DMatchFunction evaledEquations ty', annTy) : env)
+  where
+    flattenTy
+      :: Ann.Term Ann.Name
+      -> Ques ([LC.Type LC.Name], LC.Type LC.Name)
+    flattenTy =
+      flatten
+      where
+        flatten (Ann.Loc loc t) =
+          flatten t
+        flatten (Ann.Pi _ arg args) = do
+          arg' <- LC.cnvType arg
+          (args', retTy') <- flatten args
+          return (arg' : args', retTy')
+        flatten t = do
+          t' <- LC.cnvType t
+          return ([], t')
+
+    checkVars :: [(Name, Term Name)] -> Ques [(Name, Value)]
+    checkVars vars =
+      foldlM
+        (\vars' (name', ty') -> do
+          let freedTy' = freeVars (map fst vars') ty'
+          tyTy' <- typeInf (discardThird env) vars' freedTy'
+          when
+            (case tyTy' of VType _ -> False; _ -> True)
+            (throwError (name' ++ " variable at function declaration " ++ name ++ " is not of kind Type."))
+          freedTy'' <- eval (discardThird env) [] freedTy'
+          return ((name', freedTy'') : vars')
+        )
+        []
+        vars
+
+    flattenApp :: Term Name -> [Term Name]
+    flattenApp =
+      flattenApp' []
+      where
+        flattenApp' :: [Term Name] -> Term Name -> [Term Name]
+        flattenApp' as (App f a) =
+          flattenApp' (a:as) f
+        flattenApp' as (Loc _ a) =
+          flattenApp' as a
+        flattenApp' as f =
+          f:as
+
+    rawToMatch :: [Name] -> Bool -> Term Name -> Ques (Pattern Name)
+    rawToMatch vars normalized (Bound x)
+      | elem x vars =
+        return (Binding x)
+      | otherwise =
+        case find ((==) x . fst) (discardThird env) of
+          Just (_, DDataCons _) ->
+            return (Constructor x)
+          Just _ | not normalized ->
+            return (Inaccessible (Bound x))
+          _ -> do
+            loc <- getLocation
+            throwError ("Free variable at " ++ pprint loc ++ ".")
+    rawToMatch vars normalized (Free x) =
+      rawToMatch vars normalized (Bound x)
+    rawToMatch vars _ (App l r) = do
+      l' <- rawToMatch vars True l
+      r' <- rawToMatch vars False r
+      return (MatchApp l' r')
+    rawToMatch _ _ (Num x) = do
+      return (NumPat x)
+    rawToMatch _ _ (Type _) = do
+      loc <- getLocation
+      throwError ("Can't pattern match on type universes (at " ++ pprint loc ++ ")")
+    rawToMatch _ _ (BytesType _) = do
+      loc <- getLocation
+      throwError ("Can't pattern match on bytes types (at " ++ pprint loc ++ ")")
+    rawToMatch _ _ (Pi _ _ _) = do
+      loc <- getLocation
+      throwError ("Can't pattern match on function spaces (at " ++ pprint loc ++ ")")
+    rawToMatch _ _ (Ann _ _) = do
+      loc <- getLocation
+      throwError ("Can't pattern match on type annotations (at " ++ pprint loc ++ ")")
+    rawToMatch _ _ (Lam _ _) = do
+      loc <- getLocation
+      throwError ("Can't pattern match on lambda expressions (at " ++ pprint loc ++ ")")
+    rawToMatch vars normalized (Loc loc t) =
+      rawToMatch vars normalized t `locatedAt` loc
+
+    checkEquation :: [(Name, Value)] -> Term Name -> Term Name -> Value -> Ques ()
+    checkEquation vars lhs rhs ty' = do
+      let freedLhs = freeVars (name:map fst vars) lhs
+      let freedRhs = freeVars (name:map fst vars) rhs
+      tell ["Checking lhs of one of the equations of " ++ name]
+      lhsTy <- typeInf (discardThird env) ((name, ty') : vars) freedLhs
+      tell ["Checking rhs of one of the equations of " ++ name ++ "; ctx: " ++ (show $ map fst ((name, ty') : vars))]
+      typeCheck (discardThird env) ((name, ty') : vars) freedRhs lhsTy
+      tell ["Successful"]
+
+    evalEquation :: Def Value Value -> [Pattern Name] -> Term Name -> ([Pattern Name], [(Name, Value)] -> Ques Value)
+    evalEquation recur lhs' rhs =
+      (lhs', \ctx -> eval ((name, recur) : (discardThird env)) ctx rhs)
+---}
 ttDeclToLcDecl env (TypeDecl name ty conss) = do
   (_, _) <- typeInfAnn env [] ty
   ty' <- eval (discardThird env) [] ty

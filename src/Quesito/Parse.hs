@@ -174,15 +174,15 @@ implementation = do
   _ <- char ';'
   return (name, body)
 
-matchFunctionParser :: Name -> Parser [([(Name, Term Name)], Term Name, Term Name)]
-matchFunctionParser name = do
-  defs <- many1 (try matchFunctionCaseParser)
+patternMatchingParser :: Name -> Parser [([(Name, Term Name)], Term Name, Term Name)]
+patternMatchingParser name = do
+  defs <- many1 (try patternMatchingCaseParser)
   when (any (\(name', _, _, _) -> name /= name') defs) (parserFail ("definition of " ++ name))
   spaces
   return (map (\(_, y, z, w) -> (y, z, w)) defs)
 
-matchFunctionCaseParser :: Parser (Name, [(Name, Term Name)], Term Name, Term Name)
-matchFunctionCaseParser = do
+patternMatchingCaseParser :: Parser (Name, [(Name, Term Name)], Term Name, Term Name)
+patternMatchingCaseParser = do
   vars <- option [] $ do
     spaces
     vars <- try (annotation False) `sepBy` try (spaces >> char ',' >> spaces)
@@ -211,23 +211,21 @@ matchFunctionCaseParser = do
     findName :: Term Name -> Maybe Name
     findName (App e _) =
       findName e
-    findName (Bound x) =
+    findName (Free x) =
       Just x
     findName (Loc _ e) =
       findName e
     findName _ =
       Nothing
 
-{-
-matchFunctionDefinition :: Parser Decl
-matchFunctionDefinition = do
+patternMatchingDefinition :: Parser Decl
+patternMatchingDefinition = do
   spaces
   (name, ty) <- annotation True
   spaces
-  defs <- matchFunctionParser name
+  defs <- patternMatchingParser name
   spaces
-  return (MatchFunctionDecl name defs ty)
--}
+  return (PatternMatchingDecl name defs ty)
 
 definition :: Parser Decl
 definition = do
@@ -245,7 +243,7 @@ parse :: String -> Either ParseError [Decl]
 parse =
   runParser
     (do
-       decls <- many (putState [] >> (try definition <|> typeDecl))
+       decls <- many (putState [] >> (try definition <|> try patternMatchingDefinition <|> typeDecl))
        eof
        return decls
     )
