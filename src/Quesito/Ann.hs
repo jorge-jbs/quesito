@@ -11,9 +11,9 @@ data Term v
   | Type Int
   | BytesType Int
   | Num { num :: Int, bytes :: Int }
-  | Pi Name (Term v) (Term v)
+  | Pi v (Term v) (Term v)
   | App (Ann Term v) (Ann Term v)
-  | Lam TT.Name (Term v) (Ann Term v)
+  | Lam v (Term v) (Ann Term v)
   | Loc Location (Term v)
   deriving Show
 

@@ -231,10 +231,10 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty) = do
   (annTy, _) <- typeCheckAnn env [] ty (VType 1000)
   ty' <- eval (discardThird env) [] ty
   checkedVars <- mapM (\(vars, _, _) -> checkVars vars) equations
-  mapM_ (\(vars', (_, rhs, lhs)) -> checkEquation vars' rhs lhs ty' annTy) (zip checkedVars equations)
+  equations' <- mapM (\(vars', (_, lhs, rhs)) -> checkEquation vars' lhs rhs ty' annTy) (zip checkedVars equations)
   lhss' <- mapM (\(vars', lhs) -> mapM (rawToMatch (map fst (discardThird vars')) True) (tail $ flattenApp lhs)) (zip checkedVars (map (\(_, x, _) -> x) equations))
   let evaledEquations = map (uncurry $ evalEquation (DMatchFunction evaledEquations ty')) (zip lhss' (map (\(_, _, x) -> x) equations))
-  return (LC.PatternMatchingDecl name undefined args retTy, (name, DMatchFunction evaledEquations ty', annTy) : env)
+  return (LC.PatternMatchingDecl name equations' args retTy, (name, DMatchFunction evaledEquations ty', annTy) : env)
   where
     flattenTy
       :: Ann.Term Ann.Name
@@ -279,6 +279,18 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty) = do
         flattenApp' as f =
           f:as
 
+    flattenApp' :: Ann.Term Name -> [Ann.Term Name]
+    flattenApp' =
+      flattenApp'' []
+      where
+        flattenApp'' :: [Ann.Term Name] -> Ann.Term Name -> [Ann.Term Name]
+        flattenApp'' as (Ann.App (Ann.Ann f _) (Ann.Ann a _)) =
+          flattenApp'' (a:as) f
+        flattenApp'' as (Ann.Loc _ a) =
+          flattenApp'' as a
+        flattenApp'' as f =
+          f:as
+
     rawToMatch :: [Name] -> Bool -> Term Name -> Ques (Pattern Name)
     rawToMatch vars normalized (Local x)
       | elem x vars =
@@ -318,13 +330,52 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty) = do
     rawToMatch vars normalized (Loc loc t) =
       rawToMatch vars normalized t `locatedAt` loc
 
-    checkEquation :: [(Name, Value, Ann.Term Ann.Name)] -> Term Name -> Term Name -> Value -> Ann.Term Ann.Name -> Ques ()
+    termToPattern :: [Name] -> Ann.Term Name -> Ques (LC.Pattern Name)
+    termToPattern vars (Ann.Local x _)
+      | elem x vars =
+        return (LC.Binding x)
+      | otherwise = do
+        loc <- getLocation
+        throwError ("Free variable at " ++ pprint loc ++ ".")
+    termToPattern vars (Ann.Global x _) =
+      return (LC.Constructor x [])
+    termToPattern vars (Ann.App _ r) = do
+      undefined
+    termToPattern _ (Ann.Num x b) = do
+      return (LC.NumPat x b)
+    termToPattern _ (Ann.Type _) = do
+      loc <- getLocation
+      throwError ("Can't pattern match on type universes (at " ++ pprint loc ++ ")")
+    termToPattern _ (Ann.BytesType _) = do
+      loc <- getLocation
+      throwError ("Can't pattern match on bytes types (at " ++ pprint loc ++ ")")
+    termToPattern _ (Ann.Pi _ _ _) = do
+      loc <- getLocation
+      throwError ("Can't pattern match on function spaces (at " ++ pprint loc ++ ")")
+    termToPattern _ (Ann.Lam _ _ _) = do
+      loc <- getLocation
+      throwError ("Can't pattern match on lambda expressions (at " ++ pprint loc ++ ")")
+    termToPattern vars (Ann.Loc loc t) =
+      termToPattern vars t `locatedAt` loc
+
+    checkEquation
+      :: [(Name, Value, Ann.Term Ann.Name)]
+      -> Term Name
+      -> Term Name
+      -> Value
+      -> Ann.Term Ann.Name
+      -> Ques ([(Name, LC.Type Name)], [LC.Pattern Name], LC.Term Name)
     checkEquation vars lhs rhs ty' annTy' = do
+      tell ["Checking vars of " ++ name]
+      vars' <- mapM (\(name, _, annVarTy) -> (,) name <$> LC.cnvType annVarTy) vars
       tell ["Checking lhs of one of the equations of " ++ name ++ "; ctx: " ++ (show $ map fst ((name, ty') : discardThird vars))]
-      (lhsTy, _) <- typeInfAnn env ((name, ty', annTy') : vars) lhs
+      (lhsTy, lhsAnn) <- typeInfAnn env ((name, ty', annTy') : vars) lhs
+      ps <- mapM (termToPattern (map (\(x, _, _) -> x) vars)) (tail (flattenApp' lhsAnn))
       tell ["Checking rhs of one of the equations of " ++ name ++ "; ctx: " ++ (show $ map fst ((name, ty') : discardThird vars))]
       (rhsAnn, _) <- typeCheckAnn env ((name, ty', annTy') : vars) rhs lhsTy
+      rhsLc <- LC.cnvBody rhsAnn
       tell ["Successful"]
+      return (vars', ps, rhsLc)
 
     evalEquation :: Def Value Value -> [Pattern Name] -> Term Name -> ([Pattern Name], [(Name, Value)] -> Ques Value)
     evalEquation recur lhs' rhs =
