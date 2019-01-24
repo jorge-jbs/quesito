@@ -7,6 +7,7 @@ import Quesito.LC.TopLevel as LC
 
 import Data.String (fromString)
 import Data.Foldable (foldlM)
+import Data.List (find)
 import Control.Monad (forM_, void)
 import Control.Monad.IO.Class (liftIO)
 import LLVM ()
@@ -44,7 +45,7 @@ defCodeGen (ExprDecl name args t retTy) = do
         args
     )
     (typeToLType retTy)
-    (const (codeGen t >>= L.ret))
+    (const (codeGen [] t >>= L.ret))
   return ()
 defCodeGen (PatternMatchingDecl name equations args retTy) = do
   let argsTypes = map (\ty -> (typeToLType ty, L.NoParameterName)) args
@@ -67,7 +68,7 @@ defCodeGen (PatternMatchingDecl name equations args retTy) = do
     genEquation vars patterns body lb = mdo
       n <- L.block
       b <- genEquationIf patterns
-      L.condBr b lb lb'
+      L.condBr b lb' lb
       lb' <- genBody vars patterns body
       return n
 
@@ -88,13 +89,28 @@ defCodeGen (PatternMatchingDecl name equations args retTy) = do
     checkArg (Binding _) op = do
       return (L.ConstantOperand (L.Int 1 1))
     checkArg (NumPat n b) op = do
-      L.icmp L.EQ (L.ConstantOperand (L.Int (2^b) (fromIntegral n))) op
+      L.icmp L.EQ (L.ConstantOperand (L.Int (fromIntegral (b*8)) (fromIntegral n))) op
     checkArg (Constructor _ _) op = do
       undefined
 
+    bindArg :: Pattern Name -> L.Operand -> L.IRBuilderT (L.ModuleBuilderT IO) [(Name, L.Operand)]
+    bindArg (Binding x) op = do
+      return [(x, op)]
+    bindArg (NumPat _ _) _ = do
+      return []
+    bindArg (Constructor _ _) _ = do
+      undefined
+
     genBody :: [(Name, Type Name)] -> [Pattern Name] -> Term Name -> L.IRBuilderT (L.ModuleBuilderT IO) L.Name
-    genBody _ _ t =
-      L.block <* (L.ret =<< codeGen t)
+    genBody _ patterns t = do
+      n <- L.block
+      boundArgs <- foldl (++) [] <$> (mapM (uncurry bindArg) (zip patterns
+        (map
+          (\(i, ty) -> L.LocalReference ty (L.UnName i))
+          (zip [0..] (map typeToLType args))
+        )))
+      L.ret =<< codeGen boundArgs t
+      return n
 
 defCodeGen (TypeDecl name cons) = do
   let flattened = map (flatten . snd) cons
@@ -144,17 +160,21 @@ defCodeGen (TypeDecl name cons) = do
       x <- constructor (n+1) args ty
       L.insertValue x (L.LocalReference arg (L.UnName (fromIntegral $ toInteger n))) [n]
 
-codeGen :: LC.Term LC.Name -> L.IRBuilderT (L.ModuleBuilderT IO) L.Operand
-codeGen (Local v ty) =
-  return (L.LocalReference (gtypeToLType ty) (L.mkName v))
-codeGen (Global v ty) =
+codeGen :: [(Name, L.Operand)] -> LC.Term LC.Name -> L.IRBuilderT (L.ModuleBuilderT IO) L.Operand
+codeGen env (Local v ty) =
+  case snd <$> find ((==) v . fst) env of
+    Just op ->
+      return op
+    Nothing ->
+      return (L.LocalReference (gtypeToLType ty) (L.mkName v))
+codeGen env (Global v ty) =
   L.load (L.ConstantOperand (L.GlobalReference (L.PointerType (gtypeToLType ty) (L.AddrSpace 0)) (L.mkName v))) 0
-codeGen (Lit n bytes') =
+codeGen env (Lit n bytes') =
   return (L.ConstantOperand (L.Int (fromIntegral bytes' * 8) (fromIntegral n)))
-codeGen (App v ty args) = do
+codeGen env (App v ty args) = do
   L.call
     (L.ConstantOperand (L.GlobalReference (typeToLType ty) (L.mkName v)))
-    =<< mapM (fmap (flip (,) []) . codeGen) args
+    =<< mapM (fmap (flip (,) []) . codeGen env) args
 
 gtypeToLType :: GType LC.Name -> L.Type
 gtypeToLType (BytesType n) =

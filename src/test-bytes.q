@@ -9,8 +9,10 @@ data Bool : Type where {
 fst : Bytes 4 -> Bytes 3 -> Bytes 4;
 fst = \x -> \y -> x;
 
-hue : Bytes 4 -> Bytes 4;
-x : Bytes 4 . hue x = x;
+hue : Bytes 4 -> Bytes 4 -> Bytes 4;
+hue 8 3 = 2;
+x : Bytes 4 . hue x 3 = x;
+x : Bytes 4 , y : Bytes 4 . hue x y = y;
 
 snd : Bytes 128 -> Bytes 128 -> Bytes 128;
 snd = \x -> \y -> y;
