@@ -86,11 +86,11 @@ defCodeGen (PatternMatchingDecl name equations args retTy) = do
       foldlM L.and (L.ConstantOperand (L.Int 1 1)) checks
 
     checkArg :: Pattern Name -> L.Operand -> L.IRBuilderT (L.ModuleBuilderT IO) L.Operand
-    checkArg (Binding _) op = do
+    checkArg (Binding _) _ = do
       return (L.ConstantOperand (L.Int 1 1))
     checkArg (NumPat n b) op = do
       L.icmp L.EQ (L.ConstantOperand (L.Int (fromIntegral (b*8)) (fromIntegral n))) op
-    checkArg (Constructor _ _) op = do
+    checkArg (Constructor _ _) _ = do
       undefined
 
     bindArg :: Pattern Name -> L.Operand -> L.IRBuilderT (L.ModuleBuilderT IO) [(Name, L.Operand)]
@@ -167,9 +167,9 @@ codeGen env (Local v ty) =
       return op
     Nothing ->
       return (L.LocalReference (gtypeToLType ty) (L.mkName v))
-codeGen env (Global v ty) =
+codeGen _ (Global v ty) =
   L.load (L.ConstantOperand (L.GlobalReference (L.PointerType (gtypeToLType ty) (L.AddrSpace 0)) (L.mkName v))) 0
-codeGen env (Lit n bytes') =
+codeGen _ (Lit n bytes') =
   return (L.ConstantOperand (L.Int (fromIntegral bytes' * 8) (fromIntegral n)))
 codeGen env (App v ty args) = do
   L.call
