@@ -176,7 +176,7 @@ implementation = do
   spaces
   _ <- char '='
   spaces
-  body <- raw
+  body <- raw `withEnv` [name]
   _ <- char ';'
   return (name, body)
 
@@ -217,7 +217,7 @@ patternMatchingCaseParser = do
     findName :: Term Name -> Maybe Name
     findName (App e _) =
       findName e
-    findName (Local x) =
+    findName (Global x) =
       Just x
     findName (Loc _ e) =
       findName e
@@ -229,7 +229,7 @@ patternMatchingDefinition = do
   spaces
   (name, ty) <- annotation True
   spaces
-  defs <- patternMatchingParser name
+  defs <- patternMatchingParser name `withEnv` [name]
   spaces
   return (PatternMatchingDecl name defs ty)
 

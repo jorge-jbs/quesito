@@ -43,7 +43,7 @@ typeInf env ctx (Pi x e f) = do
         typeInf
           env
           ((x, e') : ctx)
-          (subst x (Global x) f)
+          f
       case t' of
         VType j ->
           return (VType (max i j))
@@ -81,7 +81,7 @@ typeInf env ctx (Loc loc t) =
 typeCheck :: Env -> TContext -> Term Name -> Value -> Ques ()
 typeCheck env ctx (Lam x e) (VPi _ v w) = do
   w' <- w (VGlobal x)
-  typeCheck env ((x, v) : ctx) (subst x (Global x) e) w'
+  typeCheck env ((x, v) : ctx) e w'
 typeCheck _ _ (Lam _ _) _ = do
   loc <- getLocation
   throwError ("6: " ++ pprint loc)

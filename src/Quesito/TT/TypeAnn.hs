@@ -78,7 +78,7 @@ typeInfAnn env ctx (Pi x e f) = do
         typeInfAnn
           env
           ((x, e', annE) : ctx)
-          (subst x (Global x) f)
+          f
       case t' of
         VType j ->
           return (VType (max i j), Ann.Pi x annE annF)
@@ -129,7 +129,7 @@ typeCheckAnn env ctx (Lam x e) (VPi x' v w) = do
   tell ["typeInfAnn Lam: " ++ show e]
   w' <- w (VFree x)
   (_, annV) <- typeInfAnn env ctx =<< quote v
-  (annE, annW') <- typeCheckAnn env ((x, v, annV) : ctx) (subst x (Local x) e) w'
+  (annE, annW') <- typeCheckAnn env ((x, v, annV) : ctx) e w'
   return (Ann.Lam x annV (Ann.Ann annE annW'), Ann.Pi x' annV annW')
 typeCheckAnn _ _ (Lam _ _) _ = do
   loc <- getLocation

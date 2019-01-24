@@ -41,7 +41,7 @@ checkDecl env (ExprDecl name expr ty) = do
   case tyTy of
     VType _ -> do
       ty' <- eval env [] ty
-      typeCheck ((name, DExpr undefined ty') : env) [] (subst name (Global name) expr) ty'
+      typeCheck ((name, DExpr undefined ty') : env) [] (substLocal name (Global name) expr) ty'
       expr' <- evalRecursive ty'
       return [(name, DExpr expr' ty')]
     _ ->
@@ -369,10 +369,10 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty) = do
       tell ["Checking vars of " ++ name]
       vars' <- mapM (\(name, _, annVarTy) -> (,) name <$> LC.cnvType annVarTy) vars
       tell ["Checking lhs of one of the equations of " ++ name ++ "; ctx: " ++ (show $ map fst ((name, ty') : discardThird vars))]
-      (lhsTy, lhsAnn) <- typeInfAnn env ((name, ty', annTy') : vars) lhs
+      (lhsTy, lhsAnn) <- typeInfAnn env ((name, ty', annTy') : vars) (substGlobal name (Local name) lhs)
       ps <- mapM (termToPattern (map (\(x, _, _) -> x) vars)) (tail (flattenApp' lhsAnn))
       tell ["Checking rhs of one of the equations of " ++ name ++ "; ctx: " ++ (show $ map fst ((name, ty') : discardThird vars))]
-      (rhsAnn, _) <- typeCheckAnn env ((name, ty', annTy') : vars) rhs lhsTy
+      rhsAnn <- Ann.substLocal name (Ann.Global name annTy') . fst <$> typeCheckAnn env ((name, ty', annTy') : vars) (substGlobal name (Local name) rhs) lhsTy
       rhsLc <- LC.cnvBody rhsAnn
       tell ["Successful"]
       return (vars', ps, rhsLc)
