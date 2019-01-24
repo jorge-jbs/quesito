@@ -52,28 +52,24 @@ defCodeGen (PatternMatchingDecl name equations args retTy) = do
     (L.mkName name)
     argsTypes
     (typeToLType retTy)
-    (const (mdo
-      checks <- mapM (genEquationIf . (\(_, x, _) -> x)) equations
-      genIfs labels checks
-      labels <- mapM (\(x, y, z) -> genBody x y z) equations
-      return ()
-    ))
+    (const . void $ genEquations equations)
   return ()
   where
-    genIfs :: [L.Name] -> [L.Operand] -> L.IRBuilderT (L.ModuleBuilderT IO) ()
-    genIfs x y =
-      void $ genIfs' x y
-      where
-        genIfs' :: [L.Name] -> [L.Operand] -> L.IRBuilderT (L.ModuleBuilderT IO) L.Name
-        genIfs' [] [] = do
-          n <- L.block
-          L.unreachable
-          return n
-        genIfs' (lb:lbs) (ch:chs) = mdo
-          n <- L.block
-          L.condBr ch lb lb'
-          lb' <- genIfs' lbs chs
-          return n
+    genEquations :: [([(Name, Type Name)], [Pattern Name], Term Name)] -> L.IRBuilderT (L.ModuleBuilderT IO) L.Name
+    genEquations [] =
+      L.block <* L.unreachable
+    genEquations ((vars, patterns, body):es) = mdo
+      lb <- genEquation vars patterns body lb'
+      lb' <- genEquations es
+      return lb
+
+    genEquation :: [(Name, Type Name)] -> [Pattern Name] -> Term Name -> L.Name -> L.IRBuilderT (L.ModuleBuilderT IO) L.Name
+    genEquation vars patterns body lb = mdo
+      n <- L.block
+      b <- genEquationIf patterns
+      L.condBr b lb lb'
+      lb' <- genBody vars patterns body
+      return n
 
     genEquationIf :: [Pattern Name] -> L.IRBuilderT (L.ModuleBuilderT IO) L.Operand
     genEquationIf ps = do
@@ -97,7 +93,8 @@ defCodeGen (PatternMatchingDecl name equations args retTy) = do
       undefined
 
     genBody :: [(Name, Type Name)] -> [Pattern Name] -> Term Name -> L.IRBuilderT (L.ModuleBuilderT IO) L.Name
-    genBody = undefined
+    genBody _ _ t =
+      L.block <* (L.ret =<< codeGen t)
 
 defCodeGen (TypeDecl name cons) = do
   let flattened = map (flatten . snd) cons
