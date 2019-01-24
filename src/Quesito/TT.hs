@@ -7,15 +7,12 @@ module Quesito.TT
   , mapInLoc
   , remLoc
   , deBruijnize
-  , substLocal
-  , substGlobal
   )
   where
 
 import Quesito
 
 import Prelude hiding (print)
-import Data.Foldable (foldl')
 
 type Name = String
 
@@ -129,59 +126,3 @@ deBruijnize =
       Ann (deBruijnize' vars t) (deBruijnize' vars t')
     deBruijnize' vars (Loc loc t) =
       Loc loc (deBruijnize' vars t)
-
-substLocal :: Eq v => v -> Term v -> Term v -> Term v
-substLocal name term (Local name') =
-  if name == name' then
-    term
-  else
-    Local name'
-substLocal _ _ (Global name') =
-  Global name'
-substLocal _ _ (Type level) =
-  Type level
-substLocal _ _ (BytesType n) =
-  BytesType n
-substLocal _ _ (Num n) =
-  Num n
-substLocal name term (Pi name' t t') =
-  if name == name' then
-    Pi name' t t'
-  else
-    Pi name' (substLocal name term t) (substLocal name term t')
-substLocal name term (App t t') =
-  App (substLocal name term t) (substLocal name term t')
-substLocal name term (Ann t t') =
-  Ann (substLocal name term t) (substLocal name term t')
-substLocal name term (Lam name' t) =
-  if name == name' then
-    Lam name' t
-  else
-    Lam name' (substLocal name term t)
-substLocal name term (Loc loc t) =
-  Loc loc (substLocal name term t)
-
-substGlobal :: Name -> Term v -> Term v -> Term v
-substGlobal name term (Global name') =
-  if name == name' then
-    term
-  else
-    Global name'
-substGlobal _ _ (Local name') =
-  Local name'
-substGlobal _ _ (Type level) =
-  Type level
-substGlobal _ _ (BytesType n) =
-  BytesType n
-substGlobal _ _ (Num n) =
-  Num n
-substGlobal name term (Pi name' t t') =
-  Pi name' (substGlobal name term t) (substGlobal name term t')
-substGlobal name term (App t t') =
-  App (substGlobal name term t) (substGlobal name term t')
-substGlobal name term (Ann t t') =
-  Ann (substGlobal name term t) (substGlobal name term t')
-substGlobal name term (Lam name' t) =
-  Lam name' (substGlobal name term t)
-substGlobal name term (Loc loc t) =
-  Loc loc (substGlobal name term t)

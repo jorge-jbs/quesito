@@ -54,21 +54,30 @@ ttDeclToLcDecl env (ExprDecl name expr ty) = do
       body' <- LC.cnvBody body
       retTy' <- LC.cnvType retTy
       return ([], body', retTy')
---{-
 ttDeclToLcDecl env (PatternMatchingDecl name equations ty) = do
--- checkDecl (discardThird env) (MatchFunctionDecl name equations ty) = do
   tell ["Checking pattern matching function declaration " ++ name]
-
-  (_, annTy) <- typeInfAnn env [] ty
+  (tyTy, annTy) <- typeInfAnn env [] ty
+  when
+    (case tyTy of VType _ -> False; _ -> True)
+    (throwError (name ++ "'s type is not of kind type."))
   (args, retTy) <- flattenTy annTy
-
-  (annTy, _) <- typeCheckAnn env [] ty (VType 1000)
   ty' <- eval (discardThird env) [] ty
   checkedVars <- mapM (\(vars, _, _) -> checkVars vars) equations
-  equations' <- mapM (\(vars', (_, lhs, rhs)) -> checkEquation vars' lhs rhs ty' annTy) (zip checkedVars equations)
-  lhss' <- mapM (\(vars', lhs) -> mapM (rawToMatch (map fst (discardThird vars')) True) (tail $ flattenApp lhs)) (zip checkedVars (map (\(_, x, _) -> x) equations))
-  let evaledEquations = map (uncurry $ evalEquation (DMatchFunction evaledEquations ty')) (zip lhss' (map (\(_, _, x) -> x) equations))
-  return (LC.PatternMatchingDecl name equations' args retTy, (name, DMatchFunction evaledEquations ty', annTy) : env)
+  lhss' <- mapM
+    (\(vars', (_, lhs, _)) ->
+      mapM (rawToMatch (map fst $ discardThird vars') True) (tail $ flattenApp lhs)
+    )
+    (zip checkedVars equations)
+  let evaledEquations =
+        map
+          (uncurry (evalEquation (DMatchFunction evaledEquations ty')))
+          (zip lhss' (map (\(_, _, x) -> x) equations))
+      env' =
+        (name, DMatchFunction evaledEquations ty', annTy) : env
+  equations' <- mapM
+    (\(vars', (_, lhs, rhs)) -> checkEquation env' vars' lhs rhs ty')
+    (zip checkedVars equations)
+  return (LC.PatternMatchingDecl name equations' args retTy, env')
   where
     flattenTy
       :: Ann.Term Ann.Name
@@ -90,7 +99,6 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty) = do
     checkVars vars =
       foldlM
         (\vars' (name', ty') -> do
-          --let freedTy' = freeVars (map fst vars') ty'
           (tyTy', annTy') <- typeInfAnn env vars' ty'
           when
             (case tyTy' of VType _ -> False; _ -> True)
@@ -193,20 +201,20 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty) = do
       termToPattern vars t `locatedAt` loc
 
     checkEquation
-      :: [(Name, Value, Ann.Term Ann.Name)]
+      :: Env
+      -> [(Name, Value, Ann.Term Ann.Name)]
       -> Term Name
       -> Term Name
       -> Value
-      -> Ann.Term Ann.Name
       -> Ques ([(Name, LC.Type Name)], [LC.Pattern Name], LC.Term Name)
-    checkEquation vars lhs rhs ty' annTy' = do
+    checkEquation env vars lhs rhs ty' = do
       tell ["Checking vars of " ++ name]
       vars' <- mapM (\(name, _, annVarTy) -> (,) name <$> LC.cnvType annVarTy) vars
       tell ["Checking lhs of one of the equations of " ++ name ++ "; ctx: " ++ (show $ map fst ((name, ty') : discardThird vars))]
-      (lhsTy, lhsAnn) <- typeInfAnn env ((name, ty', annTy') : vars) (substGlobal name (Local name) lhs)
+      (lhsTy, lhsAnn) <- typeInfAnn env vars lhs
       ps <- mapM (termToPattern (map (\(x, _, _) -> x) vars)) (tail (flattenApp' lhsAnn))
       tell ["Checking rhs of one of the equations of " ++ name ++ "; ctx: " ++ (show $ map fst ((name, ty') : discardThird vars))]
-      rhsAnn <- Ann.substLocal name (Ann.Global name annTy') . fst <$> typeCheckAnn env ((name, ty', annTy') : vars) (substGlobal name (Local name) rhs) lhsTy
+      (rhsAnn, _) <- typeCheckAnn env vars rhs lhsTy
       rhsLc <- LC.cnvBody rhsAnn
       tell ["Successful"]
       return (vars', ps, rhsLc)
@@ -214,7 +222,6 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty) = do
     evalEquation :: Def Value Value -> [Pattern Name] -> Term Name -> ([Pattern Name], [(Name, Value)] -> Ques Value)
     evalEquation recur lhs' rhs =
       (lhs', \ctx -> eval ((name, recur) : (discardThird env)) ctx rhs)
----}
 ttDeclToLcDecl env (TypeDecl name ty conss) = do
   (_, _) <- typeInfAnn env [] ty
   ty' <- eval (discardThird env) [] ty
