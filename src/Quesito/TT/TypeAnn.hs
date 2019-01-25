@@ -62,6 +62,10 @@ typeInfAnn _ _ (BytesType n) =
 typeInfAnn _ _ (Num n) = do
   loc <- getLocation
   throwError ("Cannot infer byte size of number " ++ show n ++ ": " ++ pprint loc)
+typeInfAnn _ _ (BinOp op) =
+  return (VPi "" (VBytesType 4) (\_ -> return (VPi "" (VBytesType 4) (const (return (VBytesType 4))))), Ann.BinOp op)
+typeInfAnn _ _ (UnOp op) =
+  return (VPi "" (VBytesType 4) (const (return (VBytesType 4))), Ann.UnOp op)
 typeInfAnn env ctx (Pi x e f) = do
   (ty, _) <- typeInfAnn env ctx e
   case ty of

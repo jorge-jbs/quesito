@@ -21,6 +21,12 @@ x : Bytes 4 , y : Bytes 4 .
 stupid x y = stupid y x;
 
 
+fib : Bytes 4 -> Bytes 4;
+fib 0 = 0;
+fib 1 = 1;
+n : Bytes 4 .
+fib n = add (fib (sub n 1)) (fib (sub n 2));
+
 main : Bytes 4;
 main = stupid 3 4;
 

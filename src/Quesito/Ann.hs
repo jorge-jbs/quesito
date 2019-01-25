@@ -1,6 +1,7 @@
 module Quesito.Ann where
 
 import Quesito
+import Quesito.TT (BinOp(..), UnOp(..))
 import qualified Quesito.TT as TT
 
 type Name = TT.Name
@@ -10,6 +11,8 @@ data Term v
   | Global Name (Term v)
   | Type Int
   | BytesType Int
+  | BinOp BinOp
+  | UnOp UnOp
   | Num { num :: Int, bytes :: Int }
   | Pi v (Term v) (Term v)
   | App (Ann Term v) (Ann Term v)

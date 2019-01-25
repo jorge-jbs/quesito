@@ -41,6 +41,8 @@ data Value
   | VFree Name
   | VGlobal Name
   | VApp Value Value
+  | VBinOp BinOp
+  | VUnOp UnOp
 
 quote :: Value -> Ques (Term Name)
 quote (VLam x f) =
@@ -51,6 +53,10 @@ quote (VBytesType n) =
   return (BytesType n)
 quote (VNum n) =
   return (Num n)
+quote (VBinOp op) =
+  return (BinOp op)
+quote (VUnOp op) =
+  return (UnOp op)
 quote (VPi x v v') = do
   t <- quote v
   t' <- quote =<< v' (VFree x)
@@ -98,9 +104,14 @@ eval _ _ (BytesType n) =
   return (VBytesType n)
 eval _ _ (Num n) =
   return (VNum n)
+eval _ _ (BinOp op) =
+  return (VBinOp op)
+eval _ _ (UnOp op) =
+  return (VUnOp op)
 eval env ctx (Pi x e e') =
   VPi x <$> eval env ctx e <*> return (\t -> eval env ((x, t) : ctx) e')
 eval env ctx (App e e') = do
+  tell ["typeInfAnn App: " ++ pprint e ++ "; " ++ pprint e']
   v <- eval env ctx e
   v' <- eval env ctx e'
   uncurry apply (flattenVApp (VApp v v'))
@@ -119,6 +130,19 @@ eval env ctx (App e e') = do
     apply (VLam _ f) (a:as) = do
       x <- f a
       apply x as
+    apply (VBinOp Add) [VNum x, VNum y] = do
+      return (VNum (x + y))
+    apply (VBinOp Sub) [VNum x, VNum y] = do
+      return (VNum (x - y))
+      {-
+    apply op@(VBinOp _) (a:[])= do
+      return (VApp op a)
+    apply op@(VBinOp _) (a:[])= do
+      return (VApp op a)
+    apply (VBinOp op) args = do
+      args' <- mapM quote args
+      throwError ("Operation not supported: " ++ show op ++ "; " ++ show args')
+      -}
     apply (VGlobal name) args@(a:as) = do
       loc <- getLocation
       case Map.lookup name env of

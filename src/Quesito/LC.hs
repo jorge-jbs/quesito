@@ -2,6 +2,7 @@ module Quesito.LC where
 
 import Quesito
 import qualified Quesito.Ann as Ann
+import Quesito.TT (BinOp(..), UnOp(..))
 
 type Name = String
 
@@ -10,6 +11,8 @@ data Term v
   | Global Name (GType v)
   | Lit { num :: Int, bytes :: Int }
   | App v (Type v) [Term v]
+  | BinOp BinOp (Term v) (Term v)
+  | UnOp UnOp (Term v)
   deriving Show
 
 data GType v
@@ -41,7 +44,7 @@ cnvBody t@(Ann.App _ _) =
       App v <$> cnvType ty <*> mapM cnvBody args
     _ -> do
       loc <- getLocation
-      throwError ("Application to expression instead of free variable at " ++ pprint loc)
+      throwError ("Application to expression instead of global variable at " ++ pprint loc)
   where
     headAndArgs :: Ann.Term Ann.Name -> (Ann.Term Ann.Name, [Ann.Term Ann.Name])
     headAndArgs =

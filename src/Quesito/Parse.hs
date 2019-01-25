@@ -1,7 +1,7 @@
 module Quesito.Parse (Quesito.Parse.parse) where
 
 import Quesito
-import Quesito.TT (Term(..), mapInLoc, remLoc, Name)
+import Quesito.TT (Term(..), mapInLoc, remLoc, Name, BinOp(..), UnOp(..))
 import Quesito.TT.TopLevel (Decl(..), getNames)
 
 import Control.Monad (when)
@@ -97,7 +97,18 @@ lambdaParser = attachPos $ do
 nonParen :: Parser (Term Name)
 nonParen = getState >>= \env ->
   attachPos
-    (try (do
+    (   try (reserved tp "add" >> return (BinOp Add))
+    <|> try (reserved tp "sub" >> return (BinOp Sub))
+    <|> try (reserved tp "mul" >> return (BinOp Mul))
+    <|> try (reserved tp "udiv" >> return (BinOp UDiv))
+    <|> try (reserved tp "sdiv" >> return (BinOp SDiv))
+    <|> try (reserved tp "and" >> return (BinOp And))
+    <|> try (reserved tp "or" >> return (BinOp Or))
+    <|> try (reserved tp "xor" >> return (BinOp Xor))
+    <|> try (reserved tp "shr" >> return (BinOp Shr))
+    <|> try (reserved tp "shl" >> return (BinOp Shl))
+    <|> try (reserved tp "not" >> return (UnOp Not))
+    <|> try (do
       v <- identifier tp
       if v `elem` env then
         return (Global v)
@@ -125,7 +136,11 @@ tp =
       , identLetter = alphaNum <|> opLetter'
       , opStart = opLetter'
       , opLetter = opLetter'
-      , reservedNames = ["data", "where", "Type", "Bytes", "->"]
+      , reservedNames =
+          [ "data", "where", "Type", "Bytes", "->"
+          , "add", "sub", "mul", "udiv", "sdiv", "and", "or", "xor", "shr", "shl"
+          , "not"
+          ]
       , reservedOpNames = ["->", ":", "\\", ";", "," , "."]
       , caseSensitive = True
       }

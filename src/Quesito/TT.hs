@@ -7,6 +7,8 @@ module Quesito.TT
   , mapInLoc
   , remLoc
   , deBruijnize
+  , BinOp(..)
+  , UnOp(..)
   )
   where
 
@@ -22,11 +24,19 @@ data Term v
   | Type Int
   | BytesType Int
   | Num Int
+  | BinOp BinOp
+  | UnOp UnOp
   | Pi v (Term v) (Term v)
   | App (Term v) (Term v)
   | Ann (Term v) (Term v)
   | Lam v (Term v)
   | Loc Location (Term v)
+  deriving Show
+
+data BinOp = Add | Sub | Mul | UDiv | SDiv | And | Or | Xor | Shr | Shl
+  deriving Show
+
+data UnOp = Not
   deriving Show
 
 mapInLoc :: Term v -> (Term v -> Term v) -> Term v
@@ -54,6 +64,8 @@ instance PPrint v => PPrint (Term v) where
     "(" ++ "Bytes " ++ show n ++ ")"
   pprint (Num x) =
     show x
+  pprint (BinOp _) =
+    "hue"
   pprint (Type i) =
     "(" ++ "Type " ++ show i ++ ")"
   pprint (Pi n t t')
