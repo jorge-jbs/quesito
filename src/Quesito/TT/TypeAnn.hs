@@ -6,6 +6,7 @@ import Quesito.TT.Eval hiding (Env, TContext)
 import qualified Quesito.Ann as Ann
 
 import Data.List (find)
+import qualified Data.Map as Map
 import Control.Monad (unless)
 
 type TContext =
@@ -16,14 +17,7 @@ type TContext =
   ]
 
 type Env =
-  [ ( Name
-    , Def Value Value
-    , Ann.Term Ann.Name
-    )
-  ]
-
-discardThird :: [(a, b, c)] -> [(a, b)]
-discardThird = map (\(x, y, _) -> (x, y))
+  Map.Map Name (Def Value Value, Ann.Term Ann.Name)
 
 typeInfAnn
   :: Env
@@ -39,26 +33,26 @@ typeInfAnn env ctx (Local x) =
       return (ty, Ann.Local x annTy)
     Nothing -> do
       loc <- getLocation
-      tell [show $ map (\(v, _, _) -> v) env]
+      tell [show $ Map.keys env]
       tell [show $ map (\(v, _, _) -> v) ctx]
       throwError ("Local variable not found at " ++ pprint loc ++ ": " ++ x)
 typeInfAnn env ctx (Global x) =
-  case find (\(x', _, _) -> x == x') env of
-    Just (_, DExpr _ ty, annTy) ->
+  case Map.lookup x env of
+    Just (DExpr _ ty, annTy) ->
       return (ty, Ann.Global x annTy)
-    Just (_, DDataType ty, _) -> do
+    Just (DDataType ty, _) -> do
       qty <- quote ty
       (_, tyAnn) <- typeInfAnn env ctx qty
       return (ty, Ann.Global x tyAnn)
-    Just (_, DDataCons ty, _) -> do
+    Just (DDataCons ty, _) -> do
       qty <- quote ty
       (_, tyAnn) <- typeInfAnn env ctx qty
       return (ty, Ann.Global x tyAnn)
-    Just (_, DMatchFunction _ ty, annTy) ->
+    Just (DMatchFunction _ ty, annTy) ->
       return (ty, Ann.Global x annTy)
     Nothing -> do
       loc <- getLocation
-      tell [show $ map (\(v, _, _) -> v) env]
+      tell [show $ Map.keys env]
       tell [show $ map (\(v, _, _) -> v) ctx]
       throwError ("Global variable not found at " ++ pprint loc ++ ": " ++ x)
 typeInfAnn _ _ (Type i) =
@@ -72,7 +66,7 @@ typeInfAnn env ctx (Pi x e f) = do
   (ty, _) <- typeInfAnn env ctx e
   case ty of
     VType i -> do
-      e' <- eval (discardThird env) [] e
+      e' <- eval (Map.map fst env) [] e
       annE <- snd <$> typeInfAnn env ctx e
       (t', annF) <-
         typeInfAnn
@@ -94,7 +88,7 @@ typeInfAnn env ctx (App e f) = do
   case s of
     VPi _ t t' -> do
       (annF, annT) <- typeCheckAnn env ctx f t
-      f' <- eval (discardThird env) [] f
+      f' <- eval (Map.map fst env) [] f
       x <- t' f'
       return (x, Ann.App (Ann.Ann annE annS) (Ann.Ann annF annT))
     _ -> do
@@ -105,7 +99,7 @@ typeInfAnn env ctx (Ann e ty) = do
   (tyTy, _) <- typeInfAnn env ctx ty
   case tyTy of
     VType _ -> do
-      ty' <- eval (discardThird env) [] ty
+      ty' <- eval (Map.map fst env) [] ty
       (annE, _) <- typeCheckAnn env ctx e ty'
       return (ty', annE)
     _ ->

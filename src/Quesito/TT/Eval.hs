@@ -4,6 +4,7 @@ import Quesito
 import Quesito.TT
 
 import Data.List (find)
+import qualified Data.Map as Map
 import Control.Monad (join)
 
 data Def term ty
@@ -27,7 +28,7 @@ type VContext =
   TContext
 
 type Env =
-  [(Name, Def Value Value)]
+  Map.Map Name (Def Value Value)
 
 data Value
   = VLam Name (Value -> Ques Value)
@@ -69,13 +70,13 @@ quote (VDataCons n) =
 
 eval :: Env -> VContext -> Term Name -> Ques Value
 eval _ ctx (Local x) =
-  case snd <$> find ((==) x . fst) ctx of
+  case lookup x ctx of
     Just v ->
       return v
     Nothing ->
      return (VFree x)
 eval env ctx (Global x) =
-  case snd <$> find ((==) x . fst) env of
+  case Map.lookup x env of
     Just (DExpr v _) ->
       return v
     Just (DDataType _) ->
@@ -88,7 +89,7 @@ eval env ctx (Global x) =
       return (VGlobal x)
     Nothing -> do
       loc <- getLocation
-      tell ["env: " ++ show (map fst env)]
+      tell ["env: " ++ show (Map.keys env)]
       tell ["ctx: " ++ show (map fst ctx)]
       throwError ("Unknown global variable at " ++ pprint loc ++ ": " ++ x)
 eval _ _ (Type lvl) =
@@ -120,7 +121,7 @@ eval env ctx (App e e') = do
       apply x as
     apply (VGlobal name) args@(a:as) = do
       loc <- getLocation
-      case snd <$> find ((==) name . fst) env of
+      case Map.lookup name env of
         Just (DMatchFunction equations _) ->
           let
             matchedEq

@@ -2,6 +2,7 @@ module Quesito.TT.TopLevel where
 
 import Data.Foldable (foldlM)
 import Data.List (find)
+import qualified Data.Map as Map
 
 import Quesito
 import Quesito.TT
@@ -33,11 +34,11 @@ getNames (TypeDecl name _ conss) =
 ttDeclToLcDecl :: Env -> Decl -> Ques (LC.Decl, Env)
 ttDeclToLcDecl env (ExprDecl name expr ty) = do
   (_, annTy) <- typeInfAnn env [] ty
-  expr' <- eval (discardThird env) [] expr
-  ty' <- eval (discardThird env) [] ty
+  expr' <- eval (Map.map fst env) [] expr
+  ty' <- eval (Map.map fst env) [] ty
   (annExpr, _) <- typeCheckAnn env [] expr ty'
   (args, body, retTy) <- flatten annExpr annTy []
-  return (LC.ExprDecl name args body retTy, (name, DExpr expr' ty', annTy) : env)
+  return (LC.ExprDecl name args body retTy, Map.insert name (DExpr expr' ty', annTy) env)
   where
     flatten
       :: Ann.Term Ann.Name
@@ -61,11 +62,11 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty) = do
     (case tyTy of VType _ -> False; _ -> True)
     (throwError (name ++ "'s type is not of kind type."))
   (args, retTy) <- flattenTy annTy
-  ty' <- eval (discardThird env) [] ty
+  ty' <- eval (Map.map fst env) [] ty
   checkedVars <- mapM (\(vars, _, _) -> checkVars vars) equations
   lhss' <- mapM
     (\(vars', (_, lhs, _)) ->
-      mapM (rawToMatch (map fst $ discardThird vars') True) (tail $ flattenApp lhs)
+      mapM (rawToMatch (map (\(x, _, _) -> x) vars') True) (tail $ flattenApp lhs)
     )
     (zip checkedVars equations)
   let evaledEquations =
@@ -73,7 +74,7 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty) = do
           (uncurry (evalEquation (DMatchFunction evaledEquations ty')))
           (zip lhss' (map (\(_, _, x) -> x) equations))
       env' =
-        (name, DMatchFunction evaledEquations ty', annTy) : env
+        Map.insert name (DMatchFunction evaledEquations ty', annTy)  env
   equations' <- mapM
     (\(vars', (_, lhs, rhs)) -> checkEquation env' vars' lhs rhs ty')
     (zip checkedVars equations)
@@ -103,7 +104,7 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty) = do
           when
             (case tyTy' of VType _ -> False; _ -> True)
             (throwError (name' ++ " variable at function declaration " ++ name ++ " is not of kind Type."))
-          ty'' <- eval (discardThird env) [] ty'
+          ty'' <- eval (Map.map fst env) [] ty'
           return ((name', ty'', annTy') : vars')
         )
         []
@@ -138,8 +139,8 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty) = do
       | elem x vars =
         return (Binding x)
       | otherwise =
-        case find ((==) x . fst) (discardThird env) of
-          Just (_, DDataCons _) ->
+        case Map.lookup x env of
+          Just (DDataCons _, _) ->
             return (Constructor x)
           Just _ | not normalized ->
             return (Inaccessible (Local x))
@@ -210,10 +211,10 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty) = do
     checkEquation env vars lhs rhs ty' = do
       tell ["Checking vars of " ++ name]
       vars' <- mapM (\(name, _, annVarTy) -> (,) name <$> LC.cnvType annVarTy) vars
-      tell ["Checking lhs of one of the equations of " ++ name ++ "; ctx: " ++ (show $ map fst ((name, ty') : discardThird vars))]
+      tell ["Checking lhs of one of the equations of " ++ name ++ "; ctx: " ++ (show $ name : map (\(name', _, _) -> name') vars)]
       (lhsTy, lhsAnn) <- typeInfAnn env vars lhs
       ps <- mapM (termToPattern (map (\(x, _, _) -> x) vars)) (tail (flattenApp' lhsAnn))
-      tell ["Checking rhs of one of the equations of " ++ name ++ "; ctx: " ++ (show $ map fst ((name, ty') : discardThird vars))]
+      tell ["Checking rhs of one of the equations of " ++ name ++ "; ctx: " ++ (show $ name : map (\(name', _, _) -> name') vars)]
       (rhsAnn, _) <- typeCheckAnn env vars rhs lhsTy
       rhsLc <- LC.cnvBody rhsAnn
       tell ["Successful"]
@@ -221,14 +222,14 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty) = do
 
     evalEquation :: Def Value Value -> [Pattern Name] -> Term Name -> ([Pattern Name], [(Name, Value)] -> Ques Value)
     evalEquation recur lhs' rhs =
-      (lhs', \ctx -> eval ((name, recur) : (discardThird env)) ctx rhs)
+      (lhs', \ctx -> eval (Map.insert name recur (Map.map fst env)) ctx rhs)
 ttDeclToLcDecl env (TypeDecl name ty conss) = do
   (_, _) <- typeInfAnn env [] ty
-  ty' <- eval (discardThird env) [] ty
+  ty' <- eval (Map.map fst env) [] ty
   when
     (case ty' of VType 0 -> False; _ -> True)
     (throwError "Type definitions should be of ground types.")
-  let env' = (name, DDataType ty', Ann.Type 1) : env
+  let env' = Map.insert name (DDataType ty', Ann.Type 1) env
   conss' <- mapM
       (\(consName, consTy) -> do
         tell ["Holi: " ++ show consTy]
@@ -239,10 +240,10 @@ ttDeclToLcDecl env (TypeDecl name ty conss) = do
         return (consName, consTy', consTyAnn)
       )
       conss
-  conss'' <- mapM
+  conss'' <- Map.fromList <$> mapM
     (\((consName, consTy), (_, _, consTyAnn)) -> do
-      consTy' <- eval (discardThird env') [] consTy
-      return (consName, DDataCons consTy', consTyAnn)
+      consTy' <- eval (Map.map fst env') [] consTy
+      return (consName, (DDataCons consTy', consTyAnn))
     )
     (zip conss conss')
-  return (LC.TypeDecl name (discardThird conss'), conss'' ++ env')
+  return (LC.TypeDecl name (map (\(x, y, _) -> (x, y)) conss'), Map.union conss'' env')

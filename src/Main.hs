@@ -6,8 +6,9 @@ import Quesito.TT.TopLevel(ttDeclToLcDecl)
 import Quesito.Parse (parse)
 
 import Data.Foldable (foldlM)
-import Data.Text.Lazy (unpack)
+import qualified Data.Map as Map
 import Data.String (fromString)
+import Data.Text.Lazy (unpack)
 import LLVM.Pretty
 import LLVM.IRBuilder.Module
 
@@ -25,7 +26,7 @@ main = do
               (decl', env') <- ttDeclToLcDecl env decl
               return (decl' : decls, env')
           )
-          ([], [])
+          ([], Map.empty)
           declarations
         return (buildModuleT (fromString "main") (mapM defCodeGen decls))
   putStrLn w
