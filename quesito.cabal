@@ -28,8 +28,7 @@ executable quesito
     Quesito.TT,
     Quesito.TT.Eval,
     Quesito.TT.TopLevel,
-    Quesito.TT.TypeAnn,
-    Quesito.TT.TypeCheck
+    Quesito.TT.TypeAnn
 
   other-extensions:    GeneralizedNewtypeDeriving, TypeSynonymInstances, FlexibleInstances
   build-depends:
