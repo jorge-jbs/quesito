@@ -64,6 +64,10 @@ instance PPrint v => PPrint (Term v) where
     "(" ++ "Bytes " ++ show n ++ ")"
   pprint (Num x) =
     show x
+  pprint (BinOp Add) =
+    "add"
+  pprint (BinOp Sub) =
+    "sub"
   pprint (BinOp _) =
     "hue"
   pprint (Type i) =

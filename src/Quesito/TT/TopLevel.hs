@@ -216,6 +216,7 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty) = do
       ps <- mapM (termToPattern (map (\(x, _, _) -> x) vars)) (tail (flattenApp' lhsAnn))
       tell ["Checking rhs of one of the equations of " ++ name ++ "; ctx: " ++ (show $ name : map (\(name', _, _) -> name') vars)]
       (rhsAnn, _) <- typeCheckAnn env vars rhs lhsTy
+      tell ["Converting rhs to LC"]
       rhsLc <- LC.cnvBody rhsAnn
       tell ["Successful"]
       return (vars', ps, rhsLc)

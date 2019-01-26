@@ -36,43 +36,47 @@ data Value
   | VBytesType Int
   | VNum Int
   | VPi Name Value (Value -> Ques Value)
-  | VDataType Name
-  | VDataCons Name
-  | VFree Name
-  | VGlobal Name
-  | VApp Value Value
-  | VBinOp BinOp
-  | VUnOp UnOp
+  | VNormal Normal
+
+data Normal
+  = NFree Name
+  | NGlobal Name
+  | NDataType Name
+  | NDataCons Name
+  | NBinOp BinOp
+  | NUnOp UnOp
+  | NApp Normal Value
 
 quote :: Value -> Ques (Term Name)
 quote (VLam x f) =
-  Lam x <$> (quote =<< f (VFree x))
+  Lam x <$> (quote =<< f (VNormal (NFree x)))
 quote (VType i) =
   return (Type i)
 quote (VBytesType n) =
   return (BytesType n)
 quote (VNum n) =
   return (Num n)
-quote (VBinOp op) =
-  return (BinOp op)
-quote (VUnOp op) =
-  return (UnOp op)
 quote (VPi x v v') = do
   t <- quote v
-  t' <- quote =<< v' (VFree x)
+  t' <- quote =<< v' (VNormal (NFree x))
   return (Pi x t t')
-quote (VFree x) =
-  return (Local x)
-quote (VGlobal x) =
-  return (Global x)
-quote (VApp u v) = do
-  u' <- quote u
-  v' <- quote v
-  return (App u' v')
-quote (VDataType n) =
-  return (Global n)
-quote (VDataCons n) =
-  return (Global n)
+quote (VNormal n) =
+  quoteNormal n
+  where
+    quoteNormal (NFree n) =
+      return (Local n)
+    quoteNormal (NGlobal n) =
+      return (Global n)
+    quoteNormal (NDataType n) =
+      return (Global n)
+    quoteNormal (NDataCons n) =
+      return (Global n)
+    quoteNormal (NBinOp op) =
+      return (BinOp op)
+    quoteNormal (NUnOp op) =
+      return (UnOp op)
+    quoteNormal (NApp n v) =
+      App <$> quoteNormal n <*> quote v
 
 eval :: Env -> VContext -> Term Name -> Ques Value
 eval _ ctx (Local x) =
@@ -80,19 +84,19 @@ eval _ ctx (Local x) =
     Just v ->
       return v
     Nothing ->
-     return (VFree x)
+     return (VNormal (NFree x))
 eval env ctx (Global x) =
   case Map.lookup x env of
     Just (DExpr v _) ->
       return v
     Just (DDataType _) ->
-      return (VDataType x)
+      return (VNormal (NDataType x))
     Just (DDataCons _) ->
-      return (VDataCons x)
+      return (VNormal (NDataCons x))
     Just (DMatchFunction [([], f)] _) ->
       f []
     Just (DMatchFunction _ _) ->
-      return (VGlobal x)
+      return (VNormal (NGlobal x))
     Nothing -> do
       loc <- getLocation
       tell ["env: " ++ show (Map.keys env)]
@@ -105,45 +109,36 @@ eval _ _ (BytesType n) =
 eval _ _ (Num n) =
   return (VNum n)
 eval _ _ (BinOp op) =
-  return (VBinOp op)
+  return (VNormal (NBinOp op))
 eval _ _ (UnOp op) =
-  return (VUnOp op)
+  return (VNormal (NUnOp op))
 eval env ctx (Pi x e e') =
   VPi x <$> eval env ctx e <*> return (\t -> eval env ((x, t) : ctx) e')
 eval env ctx (App e e') = do
-  tell ["typeInfAnn App: " ++ pprint e ++ "; " ++ pprint e']
   v <- eval env ctx e
   v' <- eval env ctx e'
-  uncurry apply (flattenVApp (VApp v v'))
+  case v of
+    VLam _ f ->
+      f v'
+    VNormal n ->
+      uncurry apply (flattenNormal (NApp n v'))
   where
-    flattenVApp :: Value -> (Value, [Value])
-    flattenVApp =
-      flattenVApp' []
+    flattenNormal :: Normal -> (Normal, [Value])
+    flattenNormal =
+      flattenNormal' []
       where
-        flattenVApp' :: [Value] -> Value -> (Value, [Value])
-        flattenVApp' as (VApp f a) =
-          flattenVApp' (a:as) f
-        flattenVApp' as f =
+        flattenNormal' :: [Value] -> Normal -> (Normal, [Value])
+        flattenNormal' as (NApp f a) =
+          flattenNormal' (a:as) f
+        flattenNormal' as f =
           (f, as)
 
-    apply :: Value -> [Value] -> Ques Value
-    apply (VLam _ f) (a:as) = do
-      x <- f a
-      apply x as
-    apply (VBinOp Add) [VNum x, VNum y] = do
+    apply :: Normal -> [Value] -> Ques Value
+    apply (NBinOp Add) [VNum x, VNum y] = do
       return (VNum (x + y))
-    apply (VBinOp Sub) [VNum x, VNum y] = do
+    apply (NBinOp Sub) [VNum x, VNum y] = do
       return (VNum (x - y))
-      {-
-    apply op@(VBinOp _) (a:[])= do
-      return (VApp op a)
-    apply op@(VBinOp _) (a:[])= do
-      return (VApp op a)
-    apply (VBinOp op) args = do
-      args' <- mapM quote args
-      throwError ("Operation not supported: " ++ show op ++ "; " ++ show args')
-      -}
-    apply (VGlobal name) args@(a:as) = do
+    apply (NGlobal name) args@(a:as) = do
       loc <- getLocation
       case Map.lookup name env of
         Just (DMatchFunction equations _) ->
@@ -157,15 +152,15 @@ eval env ctx (App e e') = do
               Just (s, t) ->
                 t s
               Nothing ->
-                apply (VApp (VGlobal name) a) as
+                apply (NApp (NGlobal name) a) as
         Just _ ->
           throwError ("Variable should have been evaluated at " ++ pprint loc ++ ": " ++ name)
         Nothing ->
           throwError ("Unknown global variable at " ++ pprint loc ++ ": " ++ name)
     apply f (a:as) =
-      apply (VApp f a) as
+      apply (NApp f a) as
     apply f [] =
-      return f
+      return (VNormal f)
 
     match :: Pattern Name -> Value -> Maybe [(Name, Value)]
     match (Binding n) t =
@@ -179,15 +174,15 @@ eval env ctx (App e e') = do
         Nothing
     match (NumPat _) _ =
       Nothing
-    match (Constructor n) (VDataCons n') =
+    match (Constructor n) (VNormal (NDataCons n')) =
       if n == n' then
         Just []
       else
         Nothing
     match (Constructor _) _ =
       Nothing
-    match (MatchApp p p') (VApp t t') = do
-      l <- match p t
+    match (MatchApp p p') (VNormal (NApp t t')) = do
+      l <- match p (VNormal t)
       l' <- match p' t'
       return (l ++ l')
     match (MatchApp _ _) _ =

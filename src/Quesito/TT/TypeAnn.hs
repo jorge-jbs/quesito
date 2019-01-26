@@ -125,7 +125,7 @@ typeCheckAnn
        )
 typeCheckAnn env ctx (Lam x e) (VPi x' v w) = do
   tell ["typeInfAnn Lam: " ++ show e]
-  w' <- w (VFree x)
+  w' <- w (VNormal (NFree x))
   (_, annV) <- typeInfAnn env ctx =<< quote v
   (annE, annW') <- typeCheckAnn env ((x, v, annV) : ctx) e w'
   return (Ann.Lam x annV (Ann.Ann annE annW'), Ann.Pi x' annV annW')
