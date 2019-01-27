@@ -48,7 +48,7 @@ typeInfAnn env ctx (Global x) =
       qty <- quote ty
       (_, tyAnn) <- typeInfAnn env ctx qty
       return (ty, Ann.Global x tyAnn)
-    Just (DMatchFunction _ ty, annTy) ->
+    Just (DMatchFunction _ ty _, annTy) ->
       return (ty, Ann.Global x annTy)
     Nothing -> do
       loc <- getLocation
@@ -133,14 +133,14 @@ typeCheckAnn _ _ (Lam _ _) _ = do
   loc <- getLocation
   throwError ("6: " ++ pprint loc)
 typeCheckAnn _ _ (Num x) (VBytesType n) =
-  if x >= 0 && x < (2^(n*8)) then
+  if x >= 0 && fromIntegral x < (2^(n*8)) then
     return (Ann.Num x n, Ann.BytesType n)
   else do
     loc <- getLocation
     if x < 0 then
       throwError ("Bytes cannot be negative numbers: " ++ pprint loc)
     else
-      throwError ("Number " ++ show x ++ " is larger than byte size: " ++ pprint loc)
+      throwError ("Number " ++ show x ++ " is larger than byte size (" ++ show n ++ "): " ++ pprint loc)
 typeCheckAnn env ctx t (VType j) = do
   (t', annT) <- typeInfAnn env ctx t
   case t' of

@@ -1,8 +1,7 @@
 module Quesito.LC.TopLevel where
 
 import Quesito.LC
-
-import Data.List (groupBy)
+import Quesito.TT.Eval (Flags)
 
 data Pattern name
   = Binding name
@@ -11,17 +10,12 @@ data Pattern name
   deriving Show
 
 data Decl
-  = ExprDecl
-      { name :: Name
-      , args :: [(Name, Type Name)]
-      , body :: Term Name
-      , retTy :: Type Name
-      }
-  | PatternMatchingDecl
+  = PatternMatchingDecl
       { name :: Name
       , equations :: [([(Name, Type Name)], [Pattern Name], Term Name)]
       , args_ :: [Type Name]
       , retTy :: Type Name
+      , flags :: Flags
       }
   | TypeDecl
       { name :: Name

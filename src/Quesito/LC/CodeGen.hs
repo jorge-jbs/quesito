@@ -4,6 +4,7 @@ module Quesito.LC.CodeGen where
 
 import Quesito.LC as LC
 import Quesito.LC.TopLevel as LC
+import qualified Quesito.TT as TT
 
 import Data.String (fromString)
 import Data.Foldable (foldlM)
@@ -35,19 +36,7 @@ sizeOf ty = L.withContext $ \ctx -> L.runEncodeAST ctx $ do
     (\dl -> L.getTypeAllocSize dl ty'))
 
 defCodeGen :: Decl -> L.ModuleBuilderT IO ()
-defCodeGen (ExprDecl name args t retTy) = do
-  _ <- L.function
-    (L.mkName name)
-    ( map
-        (\(argName, ty) ->
-          (typeToLType ty, L.ParameterName (fromString argName))
-        )
-        args
-    )
-    (typeToLType retTy)
-    (const (codeGen [] t >>= L.ret))
-  return ()
-defCodeGen (PatternMatchingDecl name equations args retTy) = do
+defCodeGen (PatternMatchingDecl name equations args retTy _) = do
   let argsTypes = map (\ty -> (typeToLType ty, L.NoParameterName)) args
   _ <- L.function
     (L.mkName name)
@@ -175,6 +164,17 @@ codeGen env (App v ty args) = do
   L.call
     (L.ConstantOperand (L.GlobalReference (typeToLType ty) (L.mkName v)))
     =<< mapM (fmap (flip (,) []) . codeGen env) args
+codeGen env (BinOp op a b) =
+  let instr =
+        case op of
+          TT.Add -> L.add
+          TT.Sub -> L.sub
+  in do
+    a' <- codeGen env a
+    b' <- codeGen env b
+    instr a' b'
+codeGen env (UnOp TT.Not op) =
+  undefined
 
 gtypeToLType :: GType LC.Name -> L.Type
 gtypeToLType (BytesType n) =

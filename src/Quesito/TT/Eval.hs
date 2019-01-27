@@ -7,11 +7,17 @@ import Data.List (find)
 import qualified Data.Map as Map
 import Control.Monad (join)
 
+data Flags =
+  Flags
+    { total :: Bool
+    }
+  deriving Show
+
 data Def term ty
   = DExpr term ty
   | DDataType ty
   | DDataCons ty
-  | DMatchFunction [([Pattern Name], [(Name, term)] -> Ques term)] ty
+  | DMatchFunction [([Pattern Name], [(Name, term)] -> Ques term)] ty Flags
 
 data Pattern name
   = Binding name
@@ -93,9 +99,9 @@ eval env ctx (Global x) =
       return (VNormal (NDataType x))
     Just (DDataCons _) ->
       return (VNormal (NDataCons x))
-    Just (DMatchFunction [([], f)] _) ->
+    Just (DMatchFunction [([], f)] _ _) ->
       f []
-    Just (DMatchFunction _ _) ->
+    Just (DMatchFunction _ _ _) ->
       return (VNormal (NGlobal x))
     Nothing -> do
       loc <- getLocation
@@ -141,18 +147,21 @@ eval env ctx (App e e') = do
     apply (NGlobal name) args@(a:as) = do
       loc <- getLocation
       case Map.lookup name env of
-        Just (DMatchFunction equations _) ->
-          let
-            matchedEq
-              = join
-              $ find (\x -> case x of Just _ -> True; _ -> False)
-              $ map (\(p, body) -> do s <- matchEquation p args; return (s, body)) equations
-          in
-            case matchedEq of
-              Just (s, t) ->
-                t s
-              Nothing ->
-                apply (NApp (NGlobal name) a) as
+        Just (DMatchFunction equations _ (Flags total)) ->
+          if total then
+            let
+              matchedEq
+                = join
+                $ find (\x -> case x of Just _ -> True; _ -> False)
+                $ map (\(p, body) -> do s <- matchEquation p args; return (s, body)) equations
+            in
+              case matchedEq of
+                Just (s, t) ->
+                  t s
+                Nothing ->
+                  apply (NApp (NGlobal name) a) as
+          else do
+            apply (NApp (NGlobal name) a) as
         Just _ ->
           throwError ("Variable should have been evaluated at " ++ pprint loc ++ ": " ++ name)
         Nothing ->

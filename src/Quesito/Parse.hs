@@ -3,10 +3,12 @@ module Quesito.Parse (Quesito.Parse.parse) where
 import Quesito
 import Quesito.TT (Term(..), mapInLoc, remLoc, Name, BinOp(..), UnOp(..))
 import Quesito.TT.TopLevel (Decl(..), getNames)
+import Quesito.TT.Eval (Flags(..))
 
 import Control.Monad (when)
 import Data.Foldable (foldlM)
 import Data.Functor.Identity (Identity)
+import Data.Maybe (isJust)
 import Text.Parsec
   ( Parsec, SourcePos, (<|>), try, parserFail, eof, alphaNum, letter , oneOf
   , space, spaces, string, char, getPosition, sourceLine, sourceColumn, sepBy, option
@@ -184,17 +186,6 @@ typeDecl = do
   _ <- char '}'
   return (TypeDecl name ty conss)
 
-implementation :: Parser (Name, Term Name)
-implementation = do
-  spaces
-  name <- identifier'
-  spaces
-  _ <- char '='
-  spaces
-  body <- raw `withEnv` [name]
-  _ <- char ';'
-  return (name, body)
-
 patternMatchingParser :: Name -> Parser [([(Name, Term Name)], Term Name, Term Name)]
 patternMatchingParser name = do
   defs <- many1 (try patternMatchingCaseParser)
@@ -242,27 +233,17 @@ patternMatchingCaseParser = do
 patternMatchingDefinition :: Parser Decl
 patternMatchingDefinition = do
   spaces
+  total <- isJust <$> optionMaybe (string "#total")
+  spaces
   (name, ty) <- annotation True
   spaces
   defs <- patternMatchingParser name `withEnv` [name]
   spaces
-  return (PatternMatchingDecl name defs ty)
-
-definition :: Parser Decl
-definition = do
-  spaces
-  (name, ty) <- annotation True
-  spaces
-  (name', body) <- implementation
-  spaces
-  if name == name' then
-    return (ExprDecl name body ty)
-  else
-    parserFail ("Expecting implementation for \"" ++ name ++ "\" but found for \"" ++ show name ++ "\".")
+  return (PatternMatchingDecl name defs ty (Flags total))
 
 parseDeclarations :: Parser [Decl]
 parseDeclarations = do
-  maybeDecl <- optionMaybe (try definition <|> try patternMatchingDefinition <|> typeDecl)
+  maybeDecl <- optionMaybe (try patternMatchingDefinition <|> typeDecl)
   case maybeDecl of
     Just decl ->
       (decl :) <$> parseDeclarations `withEnv` getNames decl

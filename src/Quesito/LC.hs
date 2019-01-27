@@ -42,6 +42,10 @@ cnvBody t@(Ann.App _ _) =
   case headAndArgs t of
     (Ann.Global v ty, args) ->
       App v <$> cnvType ty <*> mapM cnvBody args
+    (Ann.BinOp op, [a, b]) ->
+      BinOp op <$> cnvBody a <*> cnvBody b
+    (Ann.UnOp op, [a]) ->
+      UnOp op <$> cnvBody a
     _ -> do
       loc <- getLocation
       throwError ("Application to expression instead of global variable at " ++ pprint loc)
@@ -57,7 +61,11 @@ cnvBody t@(Ann.App _ _) =
         headAndArgs' args t' =
           (t', args)
 cnvBody (Ann.Lam _ _ _) =
-  throwError "Can't convert Lambda expresson to a Lambda-Calculus expression"
+  throwError "Can't convert Lambda expression to a Lambda-Calculus expression"
+cnvBody (Ann.BinOp _) =
+  throwError "Can't convert binary operation  to a Lambda-Calculus expression"
+cnvBody (Ann.UnOp _) =
+  throwError "Can't convert operation to a Lambda-Calculus expression"
 cnvBody (Ann.Loc _ t) =
   cnvBody t
 

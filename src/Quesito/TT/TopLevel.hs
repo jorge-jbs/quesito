@@ -15,8 +15,7 @@ import qualified Quesito.LC.TopLevel as LC
 import Control.Monad (when)
 
 data Decl
-  = ExprDecl Name (Term Name) (Term Name)
-  | PatternMatchingDecl Name [([(Name, Term Name)], Term Name, Term Name)] (Term Name)
+  = PatternMatchingDecl Name [([(Name, Term Name)], Term Name, Term Name)] (Term Name) Flags
   | TypeDecl
       Name
       (Term Name)  -- ^ Type
@@ -24,38 +23,13 @@ data Decl
   deriving Show
 
 getNames :: Decl -> [Name]
-getNames (ExprDecl name _ _) =
-  [name]
-getNames (PatternMatchingDecl name _ _) =
+getNames (PatternMatchingDecl name _ _ _) =
   [name]
 getNames (TypeDecl name _ conss) =
   name : map fst conss
 
 ttDeclToLcDecl :: Env -> Decl -> Ques (LC.Decl, Env)
-ttDeclToLcDecl env (ExprDecl name expr ty) = do
-  (_, annTy) <- typeInfAnn env [] ty
-  expr' <- eval (Map.map fst env) [] expr
-  ty' <- eval (Map.map fst env) [] ty
-  (annExpr, _) <- typeCheckAnn env [] expr ty'
-  (args, body, retTy) <- flatten annExpr annTy []
-  return (LC.ExprDecl name args body retTy, Map.insert name (DExpr expr' ty', annTy) env)
-  where
-    flatten
-      :: Ann.Term Ann.Name
-      -> Ann.Term Ann.Name
-      -> [(Ann.Name, Ann.Term Ann.Name)]
-      -> Ques ([(LC.Name, LC.Type LC.Name)], LC.Term LC.Name, LC.Type LC.Name)
-    flatten (Ann.Loc loc t) ty' ctx =
-      flatten t ty' ctx `locatedAt` loc
-    flatten (Ann.Lam argName ty1 (Ann.Ann t ty2)) _ ctx = do
-      ty1' <- LC.cnvType ty1
-      (args, body, retTy) <- flatten t ty2 ((argName, ty1) : ctx)
-      return ((argName, ty1') : args, body, retTy)
-    flatten body retTy _ = do
-      body' <- LC.cnvBody body
-      retTy' <- LC.cnvType retTy
-      return ([], body', retTy')
-ttDeclToLcDecl env (PatternMatchingDecl name equations ty) = do
+ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = do
   tell ["Checking pattern matching function declaration " ++ name]
   (tyTy, annTy) <- typeInfAnn env [] ty
   when
@@ -71,14 +45,14 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty) = do
     (zip checkedVars equations)
   let evaledEquations =
         map
-          (uncurry (evalEquation (DMatchFunction evaledEquations ty')))
+          (uncurry (evalEquation (DMatchFunction evaledEquations ty' flags)))
           (zip lhss' (map (\(_, _, x) -> x) equations))
       env' =
-        Map.insert name (DMatchFunction evaledEquations ty', annTy)  env
+        Map.insert name (DMatchFunction evaledEquations ty' flags, annTy)  env
   equations' <- mapM
     (\(vars', (_, lhs, rhs)) -> checkEquation env' vars' lhs rhs ty')
     (zip checkedVars equations)
-  return (LC.PatternMatchingDecl name equations' args retTy, env')
+  return (LC.PatternMatchingDecl name equations' args retTy flags, env')
   where
     flattenTy
       :: Ann.Term Ann.Name
