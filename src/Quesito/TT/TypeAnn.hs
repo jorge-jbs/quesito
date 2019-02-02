@@ -52,8 +52,8 @@ typeInfAnn env ctx (Global x) =
       return (ty, Ann.Global x annTy)
     Nothing -> do
       loc <- getLocation
-      tell [show $ Map.keys env]
-      tell [show $ map (\(v, _, _) -> v) ctx]
+      tell ["env: " ++ show (Map.keys env)]
+      tell ["ctx: " ++ show (map (\(v, _, _) -> v) ctx)]
       throwError ("Global variable not found at " ++ pprint loc ++ ": " ++ x)
 typeInfAnn _ _ (Type i) =
   return (VType (i + 1), Ann.Type i)

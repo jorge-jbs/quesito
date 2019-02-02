@@ -15,7 +15,7 @@ import qualified Quesito.LC.TopLevel as LC
 import Control.Monad (when)
 
 data Decl
-  = PatternMatchingDecl Name [([(Name, Term Name)], Term Name, Term Name)] (Term Name) Flags
+  = PatternMatchingDecl Name [(Term Name, Term Name)] (Term Name) Flags
   | TypeDecl
       Name
       (Term Name)  -- ^ Type
@@ -29,7 +29,7 @@ getNames (TypeDecl name _ conss) =
   name : map fst conss
 
 ttDeclToLcDecl :: Env -> Decl -> Ques (LC.Decl, Env)
-ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = do
+ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = mdo
   tell ["Checking pattern matching function declaration " ++ name]
   (tyTy, annTy) <- typeInfAnn env [] ty
   when
@@ -37,21 +37,23 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = do
     (throwError (name ++ "'s type is not of kind type."))
   (args, retTy) <- flattenTy annTy
   ty' <- eval (Map.map fst env) [] ty
-  checkedVars <- mapM (\(vars, _, _) -> checkVars vars) equations
+  lhssAnn <- mapM (typeInfAnn env []) (map fst equations)
+  --lhssAnn <- mapM (\(vars', lhs) -> typeInfAnn env' vars' lhs) (zip checkedVars (map fst equations))
+  checkedVars <- mapM (findVars . snd) lhssAnn
   lhss' <- mapM
-    (\(vars', (_, lhs, _)) ->
+    (\(vars', (lhs, _)) ->
       mapM (rawToMatch (map (\(x, _, _) -> x) vars') True) (tail $ flattenApp lhs)
     )
     (zip checkedVars equations)
   let evaledEquations =
         map
           (uncurry (evalEquation (DMatchFunction evaledEquations ty' flags)))
-          (zip lhss' (map (\(_, _, x) -> x) equations))
+          (zip lhss' (map snd equations))
       env' =
         Map.insert name (DMatchFunction evaledEquations ty' flags, annTy)  env
   equations' <- mapM
-    (\(vars', (_, lhs, rhs)) -> checkEquation env' vars' lhs rhs ty')
-    (zip checkedVars equations)
+    (\(vars', (lhsTy, lhsAnn), (_, rhs)) -> checkEquation env' vars' lhsTy lhsAnn rhs ty')
+    (zip3 checkedVars lhssAnn equations)
   return (LC.PatternMatchingDecl name equations' args retTy flags, env')
   where
     flattenTy
@@ -70,19 +72,14 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = do
           t' <- LC.cnvType t
           return ([], t')
 
-    checkVars :: [(Name, Term Name)] -> Ques [(Name, Value, Ann.Term Ann.Name)]
-    checkVars vars =
-      foldlM
-        (\vars' (name', ty') -> do
-          (tyTy', annTy') <- typeInfAnn env vars' ty'
-          when
-            (case tyTy' of VType _ -> False; _ -> True)
-            (throwError (name' ++ " variable at function declaration " ++ name ++ " is not of kind Type."))
-          ty'' <- eval (Map.map fst env) [] ty'
-          return ((name', ty'', annTy') : vars')
-        )
-        []
-        vars
+    findVars :: Ann.Term Name -> Ques [(Name, Value, Ann.Term Name)]
+    findVars (Ann.Local v ty) = do
+      ty' <- eval (Map.map fst env) [] (Ann.downgrade ty)
+      return [(v, ty', ty)]
+    findVars (Ann.App (Ann.Ann s _) (Ann.Ann t _)) =
+      (++) <$> findVars s <*> findVars t
+    findVars _ =
+      return []
 
     flattenApp :: Term Name -> [Term Name]
     flattenApp =
@@ -178,15 +175,15 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = do
     checkEquation
       :: Env
       -> [(Name, Value, Ann.Term Ann.Name)]
-      -> Term Name
+      -> Value
+      -> Ann.Term Ann.Name
       -> Term Name
       -> Value
       -> Ques ([(Name, LC.Type Name)], [LC.Pattern Name], LC.Term Name)
-    checkEquation env vars lhs rhs ty' = do
+    checkEquation env vars lhsTy lhsAnn rhs ty' = do
       tell ["Checking vars of " ++ name]
       vars' <- mapM (\(name, _, annVarTy) -> (,) name <$> LC.cnvType annVarTy) vars
       tell ["Checking lhs of one of the equations of " ++ name ++ "; ctx: " ++ (show $ name : map (\(name', _, _) -> name') vars)]
-      (lhsTy, lhsAnn) <- typeInfAnn env vars lhs
       ps <- mapM (termToPattern (map (\(x, _, _) -> x) vars)) (tail (flattenApp' lhsAnn))
       tell ["Checking rhs of one of the equations of " ++ name ++ "; ctx: " ++ (show $ name : map (\(name', _, _) -> name') vars)]
       (rhsAnn, _) <- typeCheckAnn env vars rhs lhsTy

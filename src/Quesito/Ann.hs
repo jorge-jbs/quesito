@@ -23,6 +23,30 @@ data Term v
 data Ann term v = Ann (term v) (term v)
   deriving Show
 
+downgrade :: Term v -> TT.Term v
+downgrade (Local v _) =
+  TT.Local v
+downgrade (Global v _) =
+  TT.Global v
+downgrade (Type n) =
+  TT.Type n
+downgrade (BytesType n) =
+  TT.BytesType n
+downgrade (BinOp op) =
+  TT.BinOp op
+downgrade (UnOp op) =
+  TT.UnOp op
+downgrade (Num n _) =
+  TT.Num n
+downgrade (Pi v s t) =
+  TT.Pi v (downgrade s) (downgrade t)
+downgrade (App (Ann s _) (Ann t _)) =
+  TT.App (downgrade s) (downgrade t)
+downgrade (Lam v _ (Ann t _)) =
+  TT.Lam v (downgrade t)
+downgrade (Loc loc t) =
+  TT.Loc loc (downgrade t)
+
 substLocal :: Eq v => v -> Term v -> Term v -> Term v
 substLocal name term (Local name' ty) =
   if name == name' then
