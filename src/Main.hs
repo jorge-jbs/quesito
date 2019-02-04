@@ -3,7 +3,7 @@ module Main where
 import Quesito
 import Quesito.LC.CodeGen
 import Quesito.TT.TopLevel (ttDeclToLcDecl)
-import Quesito.Syntax (name, convertDef)
+import Quesito.Syntax (getNames, convertDef)
 import Quesito.Syntax.Parse (parse)
 
 import Data.Foldable (foldlM)
@@ -21,7 +21,7 @@ main = do
       = either (error . show) id
       $ parse input
   let (m, w) = runQues $ do
-        declarations <- snd <$> foldlM (\(env, decls) def -> do decl <- convertDef env def; return (name def:env, decls ++ [decl])) ([], []) definitions
+        declarations <- snd <$> foldlM (\(env, decls) def -> do decl <- convertDef env def; return (getNames def ++ env, decls ++ [decl])) ([], []) definitions
         mapM_ (tell . (:[]) . show) declarations
         (decls, _) <- foldlM
           (\(decls, env) decl -> do

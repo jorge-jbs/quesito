@@ -29,7 +29,7 @@ getNames (TypeDecl name _ conss) =
   name : map fst conss
 
 ttDeclToLcDecl :: Env -> Decl -> Ques (LC.Decl, Env)
-ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = mdo
+ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = do
   tell ["Checking pattern matching function declaration " ++ name]
   (tyTy, annTy) <- typeInfAnn env [] ty
   when
@@ -37,9 +37,14 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = mdo
     (throwError (name ++ "'s type is not of kind type."))
   (args, retTy) <- flattenTy annTy
   ty' <- eval (Map.map fst env) [] ty
-  lhssAnn <- mapM (typeInfAnn env []) (map fst equations)
-  --lhssAnn <- mapM (\(vars', lhs) -> typeInfAnn env' vars' lhs) (zip checkedVars (map fst equations))
-  checkedVars <- mapM (findVars . snd) lhssAnn
+  checkedVars <- do
+    m <- sequence <$> mapM (\t -> inferVars (Map.insert name (DMatchFunction Nothing ty' flags, annTy) env) t Nothing) (map fst equations)
+    case m of
+      Just l -> return (map snd l)
+      Nothing -> throwError "Bad pattern"
+  lhssAnn <- mapM (uncurry (typeInfAnn (Map.insert name (DMatchFunction Nothing ty' flags, annTy) env))) (zip checkedVars (map fst equations))
+  --lhssAnn <- mapM (typeInfAnn env [(name, ty', annTy)] . Ann.substGlobal name (Local name annTy)) (map fst equations)
+  --lhssAnn <- mapM (uncurry (typeInfAnn env')) (zip checkedVars (map fst equations))
   lhss' <- mapM
     (\(vars', (lhs, _)) ->
       mapM (rawToMatch (map (\(x, _, _) -> x) vars') True) (tail $ flattenApp lhs)
@@ -47,10 +52,10 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = mdo
     (zip checkedVars equations)
   let evaledEquations =
         map
-          (uncurry (evalEquation (DMatchFunction evaledEquations ty' flags)))
+          (uncurry (evalEquation (DMatchFunction (Just evaledEquations) ty' flags)))
           (zip lhss' (map snd equations))
       env' =
-        Map.insert name (DMatchFunction evaledEquations ty' flags, annTy)  env
+        Map.insert name (DMatchFunction (Just evaledEquations) ty' flags, annTy) env
   equations' <- mapM
     (\(vars', (lhsTy, lhsAnn), (_, rhs)) -> checkEquation env' vars' lhsTy lhsAnn rhs ty')
     (zip3 checkedVars lhssAnn equations)

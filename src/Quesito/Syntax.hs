@@ -1,6 +1,7 @@
 module Quesito.Syntax
   ( Term(..)
   , Definition(..)
+  , getNames
   , convertDef
   )
   where
@@ -33,6 +34,12 @@ data Definition
       , constructors :: [(String, Term)]
       }
   deriving Show
+
+getNames :: Definition -> [String]
+getNames (PatternMatchingDef name _ _ _) =
+  [name]
+getNames (TypeDef name _ conss) =
+  name : map fst conss
 
 convert :: [String] -> Term -> Ques (TT.Term TT.Name)
 convert env (Var v)
@@ -98,8 +105,8 @@ convertDef env (PatternMatchingDef name equations ty flags) = do
       return (lhs', rhs')
 convertDef env (TypeDef name ty constructors) = do
   ty' <- convert env ty
-  constructors' <- flip mapM constructors (\(name, t) -> do
+  constructors' <- flip mapM constructors (\(name', t) -> do
       t' <- convert (name:env) t
-      return (name, t')
+      return (name', t')
     )
   return (TT.TypeDecl name ty' constructors')

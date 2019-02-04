@@ -19,6 +19,45 @@ type TContext =
 type Env =
   Map.Map Name (Def Value Value, Ann.Term Ann.Name)
 
+inferVars :: Env -> Term Name -> Maybe (Ann.Term Name) -> Ques (Maybe (Ann.Term Name, [(Name, Value, Ann.Term Name)]))
+inferVars env t@(Global x) _ =
+  case Map.lookup x env of
+    Just (_, annTy) ->
+      return (Just (annTy, []))
+    Nothing -> do
+      tell [show $ Map.keys env]
+      tell ["HUFDSHFDA " ++ show t]
+      return Nothing
+inferVars env (Local v) (Just ty) = do
+  ty' <- eval (Map.map fst env) [] (Ann.downgrade ty)
+  return (Just (ty, [(v, ty', ty)]))
+inferVars env (App s t) _ = do
+  m <- inferVars env s Nothing
+  case m of
+    Just (sTy, ls) ->
+      case sTy of
+        Ann.Pi _ ty1 ty2 -> do
+          m <- inferVars env t (Just ty1)
+          case m of
+            Just (tTy, lt) ->
+              return (Just (ty2, ls ++ lt))
+            Nothing -> do
+              tell ["HUFDSHFDA " ++ show (App s t)]
+              return Nothing
+        _ -> do
+          tell ["HUFDSHFDA " ++ show (App s t)]
+          return Nothing
+    _ -> do
+      tell ["HUFDSHFDA " ++ show (App s t)]
+      return Nothing
+inferVars env (Loc loc t) m =
+  inferVars env t m `locatedAt` loc
+inferVars env (Num _) _ =
+  return (Just (undefined, []))
+inferVars env t _ = do
+  tell ["HUFDSHFDA " ++ show t]
+  return Nothing
+
 typeInfAnn
   :: Env
   -> TContext
@@ -38,8 +77,6 @@ typeInfAnn env ctx (Local x) =
       throwError ("Local variable not found at " ++ pprint loc ++ ": " ++ x)
 typeInfAnn env ctx (Global x) =
   case Map.lookup x env of
-    Just (DExpr _ ty, annTy) ->
-      return (ty, Ann.Global x annTy)
     Just (DDataType ty, _) -> do
       qty <- quote ty
       (_, tyAnn) <- typeInfAnn env ctx qty

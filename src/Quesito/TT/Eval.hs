@@ -14,10 +14,9 @@ data Flags =
   deriving Show
 
 data Def term ty
-  = DExpr term ty
-  | DDataType ty
+  = DDataType ty
   | DDataCons ty
-  | DMatchFunction [([Pattern Name], [(Name, term)] -> Ques term)] ty Flags
+  | DMatchFunction (Maybe [([Pattern Name], [(Name, term)] -> Ques term)]) ty Flags
 
 data Pattern name
   = Binding name
@@ -93,13 +92,11 @@ eval _ ctx (Local x) =
      return (VNormal (NFree x))
 eval env ctx (Global x) =
   case Map.lookup x env of
-    Just (DExpr v _) ->
-      return v
     Just (DDataType _) ->
       return (VNormal (NDataType x))
     Just (DDataCons _) ->
       return (VNormal (NDataCons x))
-    Just (DMatchFunction [([], f)] _ _) ->
+    Just (DMatchFunction (Just [([], f)]) _ _) ->
       f []
     Just (DMatchFunction _ _ _) ->
       return (VNormal (NGlobal x))
@@ -147,7 +144,7 @@ eval env ctx (App e e') = do
     apply (NGlobal name) args@(a:as) = do
       loc <- getLocation
       case Map.lookup name env of
-        Just (DMatchFunction equations _ (Flags total)) ->
+        Just (DMatchFunction (Just equations) _ (Flags total)) ->
           if total then
             let
               matchedEq
@@ -162,6 +159,8 @@ eval env ctx (App e e') = do
                   apply (NApp (NGlobal name) a) as
           else do
             apply (NApp (NGlobal name) a) as
+        Just (DMatchFunction Nothing _ (Flags total)) ->
+          apply (NApp (NGlobal name) a) as
         Just _ ->
           throwError ("Variable should have been evaluated at " ++ pprint loc ++ ": " ++ name)
         Nothing ->
