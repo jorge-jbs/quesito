@@ -20,14 +20,14 @@ import Control.Monad (unless)
 import Data.Default
 
 type TContext =
-  [ ( Name  -- ^ var
+  [ ( String -- ^ var
     , Value  -- ^ type
-    , Ann.Term Ann.Name  -- ^ annotated type
+    , Ann.Term  -- ^ annotated type
     )
   ]
 
 type Env =
-  Map.Map Name (Def Value Value, Ann.Term Ann.Name)
+  Map.Map String (Def Value Value, Ann.Term)
 
 data Options
   = Options
@@ -43,10 +43,10 @@ instance Default Options where
 typeInfAnn
   :: Env
   -> TContext
-  -> Term Name
+  -> Term
   -> Ques
        ( Value
-       , Ann.Term Ann.Name  -- ^ Anntated input term
+       , Ann.Term  -- ^ Anntated input term
        )
 typeInfAnn = typeInfAnn' def
 
@@ -55,10 +55,10 @@ typeInfAnn'
   :: Options
   -> Env
   -> TContext
-  -> Term Name
+  -> Term
   -> Ques
        ( Value
-       , Ann.Term Ann.Name  -- ^ Anntated input term
+       , Ann.Term  -- ^ Anntated input term
        )
 typeInfAnn' opts env ctx (Local x) =
   case find (\(x', _, _) -> x == x') ctx of
@@ -125,7 +125,7 @@ typeInfAnn' opts env ctx (App e f) = do
       (annF, annT) <- typeCheckAnn' opts env ctx f t
       f' <- eval (Map.map fst env) [] f
       x <- t' f'
-      return (x, Ann.App (Ann.Ann annE annS) (Ann.Ann annF annT))
+      return (x, Ann.App annE annS annF annT)
     _ -> do
       loc <- getLocation
       qs <- quote s
@@ -148,11 +148,11 @@ typeInfAnn' opts env ctx (Loc loc t) = do
 typeCheckAnn
   :: Env
   -> TContext
-  -> Term Name  -- ^ expr
+  -> Term  -- ^ expr
   -> Value  -- ^ type
   -> Ques
-       ( Ann.Term Ann.Name  -- ^ annotated expr
-       , Ann.Term Ann.Name  -- ^ annotated type
+       ( Ann.Term  -- ^ annotated expr
+       , Ann.Term  -- ^ annotated type
        )
 typeCheckAnn = typeCheckAnn' def
 
@@ -160,11 +160,11 @@ typeCheckAnn'
   :: Options
   -> Env
   -> TContext
-  -> Term Name  -- ^ expr
+  -> Term  -- ^ expr
   -> Value  -- ^ type
   -> Ques
-       ( Ann.Term Ann.Name  -- ^ annotated expr
-       , Ann.Term Ann.Name  -- ^ annotated type
+       ( Ann.Term  -- ^ annotated expr
+       , Ann.Term  -- ^ annotated type
        )
 typeCheckAnn' opts env ctx t@(Local v) ty | inferVars opts = do
   (_, annTy) <- typeInfAnn' opts env ctx =<< quote ty
@@ -174,7 +174,7 @@ typeCheckAnn' opts env ctx (Lam x e) (VPi x' v w) = do
   w' <- w (VNormal (NFree x))
   (_, annV) <- typeInfAnn' opts env ctx =<< quote v
   (annE, annW') <- typeCheckAnn' opts env ((x, v, annV) : ctx) e w'
-  return (Ann.Lam x annV (Ann.Ann annE annW'), Ann.Pi x' annV annW')
+  return (Ann.Lam x annV annE annW', Ann.Pi x' annV annW')
 typeCheckAnn' opts _ _ (Lam _ _) _ = do
   loc <- getLocation
   throwError ("6: " ++ pprint loc)

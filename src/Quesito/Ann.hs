@@ -4,26 +4,23 @@ import Quesito
 import Quesito.TT (BinOp(..), UnOp(..))
 import qualified Quesito.TT as TT
 
-type Name = TT.Name
-
-data Term v
-  = Local v (Term v)
-  | Global Name (Term v)
+data Term
+  = Local String Term
+  | Global String Term
   | Type Int
   | BytesType Int
   | BinOp BinOp
   | UnOp UnOp
   | Num { num :: Int, bytes :: Int }
-  | Pi v (Term v) (Term v)
-  | App (Ann Term v) (Ann Term v)
-  | Lam v (Term v) (Ann Term v)
-  | Loc Location (Term v)
+  | Pi String Type Type
+  | App Term Type Term Type
+  | Lam String Term Term Type
+  | Loc Location Term
   deriving Show
 
-data Ann term v = Ann (term v) (term v)
-  deriving Show
+type Type = Term
 
-downgrade :: Term v -> TT.Term v
+downgrade :: Term -> TT.Term
 downgrade (Local v _) =
   TT.Local v
 downgrade (Global v _) =
@@ -40,14 +37,14 @@ downgrade (Num n _) =
   TT.Num n
 downgrade (Pi v s t) =
   TT.Pi v (downgrade s) (downgrade t)
-downgrade (App (Ann s _) (Ann t _)) =
+downgrade (App s _ t _) =
   TT.App (downgrade s) (downgrade t)
-downgrade (Lam v _ (Ann t _)) =
+downgrade (Lam v _ t _) =
   TT.Lam v (downgrade t)
 downgrade (Loc loc t) =
   TT.Loc loc (downgrade t)
 
-substLocal :: Eq v => v -> Term v -> Term v -> Term v
+substLocal :: String -> Term -> Term -> Term
 substLocal name term (Local name' ty) =
   if name == name' then
     term
@@ -66,17 +63,17 @@ substLocal name term (Pi name' t t') =
     Pi name' t t'
   else
     Pi name' (substLocal name term t) (substLocal name term t')
-substLocal name term (App (Ann t tTy) (Ann t' tTy')) =
-  App (Ann (substLocal name term t) (substLocal name term tTy)) (Ann (substLocal name term t') (substLocal name term tTy'))
-substLocal name term (Lam name' ty (Ann t tTy)) =
+substLocal name term (App t tTy t' tTy') =
+  App (substLocal name term t) (substLocal name term tTy) (substLocal name term t') (substLocal name term tTy')
+substLocal name term (Lam name' ty t tTy) =
   if name == name' then
-    Lam name' ty (Ann t tTy)
+    Lam name' ty t tTy
   else
-    Lam name' (substLocal name term ty) (Ann (substLocal name term t) (substLocal name term tTy))
+    Lam name' (substLocal name term ty) (substLocal name term t) (substLocal name term tTy)
 substLocal name term (Loc loc t) =
   Loc loc (substLocal name term t)
 
-substGlobal :: Name -> Term v -> Term v -> Term v
+substGlobal :: String -> Term -> Term -> Term
 substGlobal name term (Global name' ty) =
   if name == name' then
     term
@@ -92,9 +89,9 @@ substGlobal _ _ (Num n b) =
   Num n b
 substGlobal name term (Pi name' t t') =
   Pi name' (substGlobal name term t) (substGlobal name term t')
-substGlobal name term (App (Ann t tTy) (Ann t' tTy')) =
-  App (Ann (substGlobal name term t) (substGlobal name term tTy)) (Ann (substGlobal name term t') (substGlobal name term tTy'))
-substGlobal name term (Lam name' ty (Ann t tTy)) =
-  Lam name' (substGlobal name term ty) (Ann (substGlobal name term t) (substGlobal name term tTy))
+substGlobal name term (App t tTy t' tTy') =
+  App (substGlobal name term t) (substGlobal name term tTy) (substGlobal name term t') (substGlobal name term tTy')
+substGlobal name term (Lam name' ty t tTy) =
+  Lam name' (substGlobal name term ty) (substGlobal name term t) (substGlobal name term tTy)
 substGlobal name term (Loc loc t) =
   Loc loc (substGlobal name term t)

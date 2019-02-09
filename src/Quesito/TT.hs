@@ -2,8 +2,8 @@
 
 module Quesito.TT
   ( -- * Types
-    Name
-  , Term(..)
+    Term(..)
+  , Type(..)
   , mapInLoc
   , remLoc
   , deBruijnize
@@ -16,22 +16,22 @@ import Quesito
 
 import Prelude hiding (print)
 
-type Name = String
-
-data Term v
-  = Local v
-  | Global Name
+data Term
+  = Local String
+  | Global String
   | Type Int
   | BytesType Int
   | Num Int
   | BinOp BinOp
   | UnOp UnOp
-  | Pi v (Term v) (Term v)
-  | App (Term v) (Term v)
-  | Ann (Term v) (Term v)
-  | Lam v (Term v)
-  | Loc Location (Term v)
+  | Pi String Term Term
+  | App Term Term
+  | Ann Term Term
+  | Lam String Term
+  | Loc Location Term
   deriving Show
+
+type Type = Term
 
 data BinOp = Add | Sub | Mul | UDiv | SDiv | And | Or | Xor | Shr | Shl
   deriving Show
@@ -39,27 +39,23 @@ data BinOp = Add | Sub | Mul | UDiv | SDiv | And | Or | Xor | Shr | Shl
 data UnOp = Not
   deriving Show
 
-mapInLoc :: Term v -> (Term v -> Term v) -> Term v
+mapInLoc :: Term -> (Term -> Term) -> Term
 mapInLoc (Loc loc t) f =
   Loc loc (mapInLoc t f)
 mapInLoc t f =
   f t
 
-remLoc :: Term v -> Term v
+remLoc :: Term -> Term
 remLoc (Loc _ t) =
   remLoc t
 remLoc t =
   t
 
-instance PPrint Name where
-  pprint name =
-    name
-
-instance PPrint v => PPrint (Term v) where
+instance PPrint Term where
   pprint (Local v) =
-    pprint v
+    v
   pprint (Global v) =
-    pprint v
+    v
   pprint (BytesType n) =
     "(" ++ "Bytes " ++ show n ++ ")"
   pprint (Num x) =
@@ -72,73 +68,88 @@ instance PPrint v => PPrint (Term v) where
     "hue"
   pprint (Type i) =
     "(" ++ "Type " ++ show i ++ ")"
-  pprint (Pi n t t')
-    | length (pprint n) == 0 =
+  pprint (Pi v t t')
+    | length v == 0 =
       "(" ++ pprint t ++ " -> " ++ pprint t' ++ ")"
     | otherwise =
-      "(" ++ "(" ++ pprint n ++ " : "++ pprint t ++ ") -> " ++ pprint t' ++ ")"
+      "(" ++ "(" ++ v ++ " : "++ pprint t ++ ") -> " ++ pprint t' ++ ")"
   pprint (App t t') =
     "(" ++ pprint t ++ " " ++ pprint t' ++ ")"
   pprint (Ann t t') =
     "(" ++ pprint t ++ " " ++ pprint t' ++ ")"
-  pprint (Lam n t) =
-    "(" ++ "\\" ++ pprint n ++ " -> " ++ pprint t ++ ")"
+  pprint (Lam v t) =
+    "(" ++ "\\" ++ v ++ " -> " ++ pprint t ++ ")"
   pprint (Loc _ t) =
     pprint t
 
-instance Eq v => Eq (Term v) where
-  Loc _ t == t' =
+instance Eq DeBrujnizedTerm where
+  DBLoc _ t == t' =
     t == t'
-  t == Loc _ t' =
+  t == DBLoc _ t' =
     t == t'
-  Local v == Local w =
+  DBBound v == DBBound w =
     v == w
-  Global v == Global w =
+  DBFree v == DBFree w =
     v == w
-  Type i == Type j =
+  DBGlobal v == DBGlobal w =
+    v == w
+  DBType i == DBType j =
     i == j
-  BytesType n == BytesType m =
+  DBBytesType n == DBBytesType m =
     n == m
-  Num x == Num y =
+  DBNum x == DBNum y =
     x == y
-  Pi v s s' == Pi w t t' =
-    v == w && s == t && s' == t'
-  App s s' == App t t' =
+  DBPi s s' == DBPi t t' =
     s == t && s' == t'
-  Ann s sty == Ann t tty =
+  DBApp s s' == DBApp t t' =
+    s == t && s' == t'
+  DBAnn s sty == DBAnn t tty =
     s == t && sty == tty
   _ == _ =
     False
 
-data DeBruijnVar = Index Int | DBFree Name
-  deriving Eq
+data DeBrujnizedTerm
+  = DBBound Int
+  | DBFree String
+  | DBGlobal String
+  | DBType Int
+  | DBBytesType Int
+  | DBNum Int
+  | DBBinOp BinOp
+  | DBUnOp UnOp
+  | DBPi DeBrujnizedTerm DeBrujnizedTerm
+  | DBApp DeBrujnizedTerm DeBrujnizedTerm
+  | DBAnn DeBrujnizedTerm DeBrujnizedTerm
+  | DBLam DeBrujnizedTerm
+  | DBLoc Location DeBrujnizedTerm
+  deriving Show
 
-deBruijnize :: Term Name -> Term DeBruijnVar
+deBruijnize :: Term -> DeBrujnizedTerm
 deBruijnize =
   deBruijnize' []
   where
-    deBruijnize' :: [Name] -> Term Name -> Term DeBruijnVar
+    deBruijnize' :: [String] -> Term -> DeBrujnizedTerm
     deBruijnize' vars (Local v) =
       case takeWhile (\v' -> v /= v') vars of
         [] ->
-          Local (DBFree v)
+          DBFree v
         xs ->
-          Local (Index (length xs))
+          DBBound (length xs)
     deBruijnize' _ (Global v) =
-      Global v
+      DBGlobal v
     deBruijnize' vars (Pi n t t') =
-      Pi (Index 0) (deBruijnize' vars t) (deBruijnize' (n : vars) t')
+      DBPi (deBruijnize' vars t) (deBruijnize' (n : vars) t')
     deBruijnize' vars (Lam n t) =
-      Lam (Index 0) (deBruijnize' (n : vars) t)
+      DBLam (deBruijnize' (n : vars) t)
     deBruijnize' _ (Type i) =
-      Type i
+      DBType i
     deBruijnize' _ (BytesType n) =
-      BytesType n
+      DBBytesType n
     deBruijnize' _ (Num n) =
-      Num n
+      DBNum n
     deBruijnize' vars (App t t') =
-      App (deBruijnize' vars t) (deBruijnize' vars t')
+      DBApp (deBruijnize' vars t) (deBruijnize' vars t')
     deBruijnize' vars (Ann t t') =
-      Ann (deBruijnize' vars t) (deBruijnize' vars t')
+      DBAnn (deBruijnize' vars t) (deBruijnize' vars t')
     deBruijnize' vars (Loc loc t) =
-      Loc loc (deBruijnize' vars t)
+      DBLoc loc (deBruijnize' vars t)

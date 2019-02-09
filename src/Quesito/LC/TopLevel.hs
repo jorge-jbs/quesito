@@ -3,22 +3,22 @@ module Quesito.LC.TopLevel where
 import Quesito.LC
 import Quesito.TT.Eval (Flags)
 
-data Pattern name
-  = Binding name
+data Pattern
+  = Binding String
   | NumPat { num :: Int, bytes :: Int }
-  | Constructor name [Pattern name]
+  | Constructor String [Pattern]
   deriving Show
 
 data Decl
   = PatternMatchingDecl
-      { name :: Name
-      , equations :: [([(Name, Type Name)], [Pattern Name], Term Name)]
-      , args_ :: [Type Name]
-      , retTy :: Type Name
+      { name :: String
+      , equations :: [([(String, Type)], [Pattern], Term)]
+      , args_ :: [Type]
+      , retTy :: Type
       , flags :: Flags
       }
   | TypeDecl
-      { name :: Name
-      , constructors :: [(Name, Type Name)]
+      { name :: String
+      , constructors :: [(String, Type)]
       }
   deriving Show

@@ -41,7 +41,7 @@ getNames (PatternMatchingDef name _ _ _) =
 getNames (TypeDef name _ conss) =
   name : map fst conss
 
-convert :: [String] -> Term -> Ques (TT.Term TT.Name)
+convert :: [String] -> Term -> Ques TT.Term
 convert env (Var v)
   | v `elem` env =
       return (TT.Global v)

@@ -16,43 +16,43 @@ data Flags =
 data Def term ty
   = DDataType ty
   | DDataCons ty
-  | DMatchFunction (Maybe [([Pattern Name], [(Name, term)] -> Ques term)]) ty Flags
+  | DMatchFunction (Maybe [([Pattern], [(String, term)] -> Ques term)]) ty Flags
 
-data Pattern name
-  = Binding name
-  | Inaccessible (Term name)
+data Pattern
+  = Binding String
+  | Inaccessible Term
   | NumPat Int
-  | Constructor name
-  | MatchApp (Pattern name) (Pattern name)
+  | Constructor String
+  | MatchApp Pattern Pattern
   deriving Show
 
 type TContext =
-  [(Name, Value)]
+  [(String, Value)]
 
 type VContext =
   TContext
 
 type Env =
-  Map.Map Name (Def Value Value)
+  Map.Map String (Def Value Value)
 
 data Value
-  = VLam Name (Value -> Ques Value)
+  = VLam String (Value -> Ques Value)
   | VType Int
   | VBytesType Int
   | VNum Int
-  | VPi Name Value (Value -> Ques Value)
+  | VPi String Value (Value -> Ques Value)
   | VNormal Normal
 
 data Normal
-  = NFree Name
-  | NGlobal Name
-  | NDataType Name
-  | NDataCons Name
+  = NFree String
+  | NGlobal String
+  | NDataType String
+  | NDataCons String
   | NBinOp BinOp
   | NUnOp UnOp
   | NApp Normal Value
 
-quote :: Value -> Ques (Term Name)
+quote :: Value -> Ques (Term)
 quote (VLam x f) =
   Lam x <$> (quote =<< f (VNormal (NFree x)))
 quote (VType i) =
@@ -83,7 +83,7 @@ quote (VNormal n) =
     quoteNormal (NApp n v) =
       App <$> quoteNormal n <*> quote v
 
-eval :: Env -> VContext -> Term Name -> Ques Value
+eval :: Env -> VContext -> Term -> Ques Value
 eval _ ctx (Local x) =
   case lookup x ctx of
     Just v ->
@@ -170,7 +170,7 @@ eval env ctx (App e e') = do
     apply f [] =
       return (VNormal f)
 
-    match :: Pattern Name -> Value -> Maybe [(Name, Value)]
+    match :: Pattern -> Value -> Maybe [(String, Value)]
     match (Binding n) t =
       Just [(n, t)]
     match (Inaccessible _) _ =
@@ -196,11 +196,11 @@ eval env ctx (App e e') = do
     match (MatchApp _ _) _ =
       Nothing
 
-    matchEquation :: [Pattern Name] -> [Value] -> Maybe [(Name, Value)]
+    matchEquation :: [Pattern] -> [Value] -> Maybe [(String, Value)]
     matchEquation =
       matchEquation' []
       where
-        matchEquation' :: [(Name, Value)] -> [Pattern Name] -> [Value] -> Maybe [(Name, Value)]
+        matchEquation' :: [(String, Value)] -> [Pattern] -> [Value] -> Maybe [(String, Value)]
         matchEquation' l (p:ps) (v:vs) = do
           l' <- match p v
           matchEquation' (l ++ l') ps vs

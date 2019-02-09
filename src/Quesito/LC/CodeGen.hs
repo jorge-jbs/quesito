@@ -45,7 +45,7 @@ defCodeGen (PatternMatchingDecl name equations args retTy _) = do
     (const . void $ genEquations equations)
   return ()
   where
-    genEquations :: [([(Name, Type Name)], [Pattern Name], Term Name)] -> L.IRBuilderT (L.ModuleBuilderT IO) L.Name
+    genEquations :: [([(String, Type)], [Pattern], Term)] -> L.IRBuilderT (L.ModuleBuilderT IO) L.Name
     genEquations [] =
       L.block <* L.unreachable
     genEquations ((vars, patterns, body):es) = mdo
@@ -53,7 +53,7 @@ defCodeGen (PatternMatchingDecl name equations args retTy _) = do
       lb' <- genEquations es
       return lb
 
-    genEquation :: [(Name, Type Name)] -> [Pattern Name] -> Term Name -> L.Name -> L.IRBuilderT (L.ModuleBuilderT IO) L.Name
+    genEquation :: [(String, Type)] -> [Pattern] -> Term -> L.Name -> L.IRBuilderT (L.ModuleBuilderT IO) L.Name
     genEquation vars patterns body lb = mdo
       n <- L.block
       b <- genEquationIf patterns
@@ -61,7 +61,7 @@ defCodeGen (PatternMatchingDecl name equations args retTy _) = do
       lb' <- genBody vars patterns body
       return n
 
-    genEquationIf :: [Pattern Name] -> L.IRBuilderT (L.ModuleBuilderT IO) L.Operand
+    genEquationIf :: [Pattern] -> L.IRBuilderT (L.ModuleBuilderT IO) L.Operand
     genEquationIf ps = do
       checks <- mapM
         (uncurry checkArg)
@@ -74,7 +74,7 @@ defCodeGen (PatternMatchingDecl name equations args retTy _) = do
         )
       foldlM L.and (L.ConstantOperand (L.Int 1 1)) checks
 
-    checkArg :: Pattern Name -> L.Operand -> L.IRBuilderT (L.ModuleBuilderT IO) L.Operand
+    checkArg :: Pattern -> L.Operand -> L.IRBuilderT (L.ModuleBuilderT IO) L.Operand
     checkArg (Binding _) _ = do
       return (L.ConstantOperand (L.Int 1 1))
     checkArg (NumPat n b) op = do
@@ -82,7 +82,7 @@ defCodeGen (PatternMatchingDecl name equations args retTy _) = do
     checkArg (Constructor _ _) _ = do
       undefined
 
-    bindArg :: Pattern Name -> L.Operand -> L.IRBuilderT (L.ModuleBuilderT IO) [(Name, L.Operand)]
+    bindArg :: Pattern -> L.Operand -> L.IRBuilderT (L.ModuleBuilderT IO) [(String, L.Operand)]
     bindArg (Binding x) op = do
       return [(x, op)]
     bindArg (NumPat _ _) _ = do
@@ -90,7 +90,7 @@ defCodeGen (PatternMatchingDecl name equations args retTy _) = do
     bindArg (Constructor _ _) _ = do
       undefined
 
-    genBody :: [(Name, Type Name)] -> [Pattern Name] -> Term Name -> L.IRBuilderT (L.ModuleBuilderT IO) L.Name
+    genBody :: [(String, Type)] -> [Pattern] -> Term -> L.IRBuilderT (L.ModuleBuilderT IO) L.Name
     genBody _ patterns t = do
       n <- L.block
       boundArgs <- foldl (++) [] <$> (mapM (uncurry bindArg) (zip patterns
@@ -131,14 +131,14 @@ defCodeGen (TypeDecl name cons) = do
     )
   return ()
   where
-    flatten :: LC.Type LC.Name -> ([GType LC.Name], LC.Type LC.Name)
+    flatten :: LC.Type -> ([GType], LC.Type)
     flatten (Pi _ arg t) =
       let (args, retTy) = flatten t
       in (arg : args, retTy)
     flatten t =
       ([], t)
 
-    consLType :: [GType LC.Name] -> L.Type
+    consLType :: [GType] -> L.Type
     consLType =
       L.StructureType False . map gtypeToLType
 
@@ -149,7 +149,7 @@ defCodeGen (TypeDecl name cons) = do
       x <- constructor (n+1) args ty
       L.insertValue x (L.LocalReference arg (L.UnName (fromIntegral $ toInteger n))) [n]
 
-codeGen :: [(Name, L.Operand)] -> LC.Term LC.Name -> L.IRBuilderT (L.ModuleBuilderT IO) L.Operand
+codeGen :: [(String, L.Operand)] -> LC.Term -> L.IRBuilderT (L.ModuleBuilderT IO) L.Operand
 codeGen env (Local v ty) =
   case snd <$> find ((==) v . fst) env of
     Just op ->
@@ -176,20 +176,20 @@ codeGen env (BinOp op a b) =
 codeGen env (UnOp TT.Not op) =
   undefined
 
-gtypeToLType :: GType LC.Name -> L.Type
+gtypeToLType :: GType -> L.Type
 gtypeToLType (BytesType n) =
   L.IntegerType (fromIntegral (n*8))
 gtypeToLType (TypeVar x) =
   L.NamedTypeReference (L.mkName x)
 
-typeToLType :: LC.Type LC.Name -> L.Type
+typeToLType :: LC.Type -> L.Type
 typeToLType (GroundType ty) =
   gtypeToLType ty
 typeToLType ty@(Pi _ _ _) =
   let (args, ret) = flatten ty
   in L.FunctionType ret args False
   where
-    flatten :: LC.Type LC.Name -> ([L.Type], L.Type)
+    flatten :: LC.Type -> ([L.Type], L.Type)
     flatten (GroundType ty) =
       ([], gtypeToLType ty)
     flatten (Pi _ ty ty') =

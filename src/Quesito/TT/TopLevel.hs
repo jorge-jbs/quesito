@@ -16,14 +16,14 @@ import qualified Quesito.LC.TopLevel as LC
 import Control.Monad (when)
 
 data Decl
-  = PatternMatchingDecl Name [(Term Name, Term Name)] (Term Name) Flags
+  = PatternMatchingDecl String [(Term, Term)] (Term) Flags
   | TypeDecl
-      Name
-      (Term Name)  -- ^ Type
-      [(Name, Term Name)]  -- ^ Constructors
+      String
+      (Term)  -- ^ Type
+      [(String, Term)]  -- ^ Constructors
   deriving Show
 
-getNames :: Decl -> [Name]
+getNames :: Decl -> [String]
 getNames (PatternMatchingDecl name _ _ _) =
   [name]
 getNames (TypeDecl name _ conss) =
@@ -57,8 +57,8 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = do
   return (LC.PatternMatchingDecl name equations' args retTy flags, env')
   where
     flattenTy
-      :: Ann.Term Ann.Name
-      -> Ques ([LC.Type LC.Name], LC.Type LC.Name)
+      :: Ann.Term
+      -> Ques ([LC.Type], LC.Type)
     flattenTy =
       flatten
       where
@@ -72,20 +72,20 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = do
           t' <- LC.cnvType t
           return ([], t')
 
-    findVars :: Ann.Term Name -> Ques [(Name, Value, Ann.Term Name)]
+    findVars :: Ann.Term -> Ques [(String, Value, Ann.Term)]
     findVars (Ann.Local v ty) = do
       ty' <- eval (Map.map fst env) [] (Ann.downgrade ty)
       return [(v, ty', ty)]
-    findVars (Ann.App (Ann.Ann s _) (Ann.Ann t _)) =
+    findVars (Ann.App s _ t _) =
       (++) <$> findVars s <*> findVars t
     findVars _ =
       return []
 
-    flattenApp :: Term Name -> [Term Name]
+    flattenApp :: Term -> [Term]
     flattenApp =
       flattenApp' []
       where
-        flattenApp' :: [Term Name] -> Term Name -> [Term Name]
+        flattenApp' :: [Term] -> Term -> [Term]
         flattenApp' as (App f a) =
           flattenApp' (a:as) f
         flattenApp' as (Loc _ a) =
@@ -93,19 +93,19 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = do
         flattenApp' as f =
           f:as
 
-    flattenApp' :: Ann.Term Name -> [Ann.Term Name]
+    flattenApp' :: Ann.Term -> [Ann.Term]
     flattenApp' =
       flattenApp'' []
       where
-        flattenApp'' :: [Ann.Term Name] -> Ann.Term Name -> [Ann.Term Name]
-        flattenApp'' as (Ann.App (Ann.Ann f _) (Ann.Ann a _)) =
+        flattenApp'' :: [Ann.Term] -> Ann.Term -> [Ann.Term]
+        flattenApp'' as (Ann.App f _ a _) =
           flattenApp'' (a:as) f
         flattenApp'' as (Ann.Loc _ a) =
           flattenApp'' as a
         flattenApp'' as f =
           f:as
 
-    rawToMatch :: [Name] -> Bool -> Term Name -> Ques (Pattern Name)
+    rawToMatch :: [String] -> Bool -> Term -> Ques (Pattern)
     rawToMatch vars normalized (Local x)
       | elem x vars =
         return (Binding x)
@@ -144,7 +144,7 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = do
     rawToMatch vars normalized (Loc loc t) =
       rawToMatch vars normalized t `locatedAt` loc
 
-    termToPattern :: [Name] -> Ann.Term Name -> Ques (LC.Pattern Name)
+    termToPattern :: [String] -> Ann.Term -> Ques (LC.Pattern)
     termToPattern vars (Ann.Local x _)
       | elem x vars =
         return (LC.Binding x)
@@ -153,7 +153,7 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = do
         throwError ("Free variable at " ++ pprint loc ++ ".")
     termToPattern _ (Ann.Global x _) =
       return (LC.Constructor x [])
-    termToPattern _ (Ann.App _ _) = do
+    termToPattern _ (Ann.App _ _ _ _) = do
       undefined
     termToPattern _ (Ann.Num x b) = do
       return (LC.NumPat x b)
@@ -166,7 +166,7 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = do
     termToPattern _ (Ann.Pi _ _ _) = do
       loc <- getLocation
       throwError ("Can't pattern match on function spaces (at " ++ pprint loc ++ ")")
-    termToPattern _ (Ann.Lam _ _ _) = do
+    termToPattern _ (Ann.Lam _ _ _ _) = do
       loc <- getLocation
       throwError ("Can't pattern match on lambda expressions (at " ++ pprint loc ++ ")")
     termToPattern vars (Ann.Loc loc t) =
@@ -174,12 +174,12 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = do
 
     checkEquation
       :: Env
-      -> [(Name, Value, Ann.Term Ann.Name)]
+      -> [(String, Value, Ann.Term)]
       -> Value
-      -> Ann.Term Ann.Name
-      -> Term Name
+      -> Ann.Term
+      -> Term
       -> Value
-      -> Ques ([(Name, LC.Type Name)], [LC.Pattern Name], LC.Term Name)
+      -> Ques ([(String, LC.Type)], [LC.Pattern], LC.Term)
     checkEquation env vars lhsTy lhsAnn rhs ty' = do
       tell ["Checking vars of " ++ name]
       vars' <- mapM (\(name, _, annVarTy) -> (,) name <$> LC.cnvType annVarTy) vars
@@ -192,7 +192,7 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = do
       tell ["Successful"]
       return (vars', ps, rhsLc)
 
-    evalEquation :: Def Value Value -> [Pattern Name] -> Term Name -> ([Pattern Name], [(Name, Value)] -> Ques Value)
+    evalEquation :: Def Value Value -> [Pattern] -> Term -> ([Pattern], [(String, Value)] -> Ques Value)
     evalEquation recur lhs' rhs =
       (lhs', \ctx -> eval (Map.insert name recur (Map.map fst env)) ctx rhs)
 ttDeclToLcDecl env (TypeDecl name ty conss) = do
