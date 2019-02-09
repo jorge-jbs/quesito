@@ -3,6 +3,7 @@ module Quesito.TT.TopLevel where
 import Data.Foldable (foldlM)
 import Data.List (find)
 import qualified Data.Map as Map
+import Data.Default
 
 import Quesito
 import Quesito.TT
@@ -37,14 +38,8 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = do
     (throwError (name ++ "'s type is not of kind type."))
   (args, retTy) <- flattenTy annTy
   ty' <- eval (Map.map fst env) [] ty
-  checkedVars <- do
-    m <- sequence <$> mapM (\t -> inferVars (Map.insert name (DMatchFunction Nothing ty' flags, annTy) env) t Nothing) (map fst equations)
-    case m of
-      Just l -> return (map snd l)
-      Nothing -> throwError "Bad pattern"
-  lhssAnn <- mapM (uncurry (typeInfAnn (Map.insert name (DMatchFunction Nothing ty' flags, annTy) env))) (zip checkedVars (map fst equations))
-  --lhssAnn <- mapM (typeInfAnn env [(name, ty', annTy)] . Ann.substGlobal name (Local name annTy)) (map fst equations)
-  --lhssAnn <- mapM (uncurry (typeInfAnn env')) (zip checkedVars (map fst equations))
+  lhssAnn <- mapM (typeInfAnn' (def { inferVars = True }) (Map.insert name (DMatchFunction Nothing ty' flags, annTy) env) []) (map fst equations)
+  checkedVars <- mapM (findVars . snd) lhssAnn
   lhss' <- mapM
     (\(vars', (lhs, _)) ->
       mapM (rawToMatch (map (\(x, _, _) -> x) vars') True) (tail $ flattenApp lhs)

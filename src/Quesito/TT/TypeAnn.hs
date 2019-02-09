@@ -1,4 +1,13 @@
-module Quesito.TT.TypeAnn where
+module Quesito.TT.TypeAnn
+  ( TContext
+  , Env
+  , Options(..)
+  , typeInfAnn
+  , typeCheckAnn
+  , typeInfAnn'
+  , typeCheckAnn'
+  )
+  where
 
 import Quesito
 import Quesito.TT
@@ -8,6 +17,7 @@ import qualified Quesito.Ann as Ann
 import Data.List (find)
 import qualified Data.Map as Map
 import Control.Monad (unless)
+import Data.Default
 
 type TContext =
   [ ( Name  -- ^ var
@@ -19,44 +29,16 @@ type TContext =
 type Env =
   Map.Map Name (Def Value Value, Ann.Term Ann.Name)
 
-inferVars :: Env -> Term Name -> Maybe (Ann.Term Name) -> Ques (Maybe (Ann.Term Name, [(Name, Value, Ann.Term Name)]))
-inferVars env t@(Global x) _ =
-  case Map.lookup x env of
-    Just (_, annTy) ->
-      return (Just (annTy, []))
-    Nothing -> do
-      tell [show $ Map.keys env]
-      tell ["HUFDSHFDA " ++ show t]
-      return Nothing
-inferVars env (Local v) (Just ty) = do
-  ty' <- eval (Map.map fst env) [] (Ann.downgrade ty)
-  return (Just (ty, [(v, ty', ty)]))
-inferVars env (App s t) _ = do
-  m <- inferVars env s Nothing
-  case m of
-    Just (sTy, ls) ->
-      case sTy of
-        Ann.Pi _ ty1 ty2 -> do
-          m <- inferVars env t (Just ty1)
-          case m of
-            Just (tTy, lt) ->
-              return (Just (ty2, ls ++ lt))
-            Nothing -> do
-              tell ["HUFDSHFDA " ++ show (App s t)]
-              return Nothing
-        _ -> do
-          tell ["HUFDSHFDA " ++ show (App s t)]
-          return Nothing
-    _ -> do
-      tell ["HUFDSHFDA " ++ show (App s t)]
-      return Nothing
-inferVars env (Loc loc t) m =
-  inferVars env t m `locatedAt` loc
-inferVars env (Num _) _ =
-  return (Just (undefined, []))
-inferVars env t _ = do
-  tell ["HUFDSHFDA " ++ show t]
-  return Nothing
+data Options
+  = Options
+      { inferVars :: Bool
+      }
+
+instance Default Options where
+  def =
+    Options
+      { inferVars = False
+      }
 
 typeInfAnn
   :: Env
@@ -66,7 +48,19 @@ typeInfAnn
        ( Value
        , Ann.Term Ann.Name  -- ^ Anntated input term
        )
-typeInfAnn env ctx (Local x) =
+typeInfAnn = typeInfAnn' def
+
+
+typeInfAnn'
+  :: Options
+  -> Env
+  -> TContext
+  -> Term Name
+  -> Ques
+       ( Value
+       , Ann.Term Ann.Name  -- ^ Anntated input term
+       )
+typeInfAnn' opts env ctx (Local x) =
   case find (\(x', _, _) -> x == x') ctx of
     Just (_, ty, annTy) ->
       return (ty, Ann.Local x annTy)
@@ -75,15 +69,15 @@ typeInfAnn env ctx (Local x) =
       tell [show $ Map.keys env]
       tell [show $ map (\(v, _, _) -> v) ctx]
       throwError ("Local variable not found at " ++ pprint loc ++ ": " ++ x)
-typeInfAnn env ctx (Global x) =
+typeInfAnn' opts env ctx (Global x) =
   case Map.lookup x env of
     Just (DDataType ty, _) -> do
       qty <- quote ty
-      (_, tyAnn) <- typeInfAnn env ctx qty
+      (_, tyAnn) <- typeInfAnn' opts env ctx qty
       return (ty, Ann.Global x tyAnn)
     Just (DDataCons ty, _) -> do
       qty <- quote ty
-      (_, tyAnn) <- typeInfAnn env ctx qty
+      (_, tyAnn) <- typeInfAnn' opts env ctx qty
       return (ty, Ann.Global x tyAnn)
     Just (DMatchFunction _ ty _, annTy) ->
       return (ty, Ann.Global x annTy)
@@ -92,25 +86,25 @@ typeInfAnn env ctx (Global x) =
       tell ["env: " ++ show (Map.keys env)]
       tell ["ctx: " ++ show (map (\(v, _, _) -> v) ctx)]
       throwError ("Global variable not found at " ++ pprint loc ++ ": " ++ x)
-typeInfAnn _ _ (Type i) =
+typeInfAnn' opts _ _ (Type i) =
   return (VType (i + 1), Ann.Type i)
-typeInfAnn _ _ (BytesType n) =
+typeInfAnn' opts _ _ (BytesType n) =
   return (VType 0, Ann.BytesType n)
-typeInfAnn _ _ (Num n) = do
+typeInfAnn' opts _ _ (Num n) = do
   loc <- getLocation
   throwError ("Cannot infer byte size of number " ++ show n ++ ": " ++ pprint loc)
-typeInfAnn _ _ (BinOp op) =
+typeInfAnn' opts _ _ (BinOp op) =
   return (VPi "" (VBytesType 4) (\_ -> return (VPi "" (VBytesType 4) (const (return (VBytesType 4))))), Ann.BinOp op)
-typeInfAnn _ _ (UnOp op) =
+typeInfAnn' opts _ _ (UnOp op) =
   return (VPi "" (VBytesType 4) (const (return (VBytesType 4))), Ann.UnOp op)
-typeInfAnn env ctx (Pi x e f) = do
-  (ty, _) <- typeInfAnn env ctx e
+typeInfAnn' opts env ctx (Pi x e f) = do
+  (ty, _) <- typeInfAnn' opts env ctx e
   case ty of
     VType i -> do
       e' <- eval (Map.map fst env) [] e
-      annE <- snd <$> typeInfAnn env ctx e
+      annE <- snd <$> typeInfAnn' opts env ctx e
       (t', annF) <-
-        typeInfAnn
+        typeInfAnn' opts
           env
           ((x, e', annE) : ctx)
           f
@@ -123,12 +117,12 @@ typeInfAnn env ctx (Pi x e f) = do
     _ -> do
       loc <- getLocation
       throwError ("2: " ++ pprint loc)
-typeInfAnn env ctx (App e f) = do
-  (s, annE) <- typeInfAnn env ctx e
-  annS <- snd <$> (typeInfAnn env ctx =<< quote s)
+typeInfAnn' opts env ctx (App e f) = do
+  (s, annE) <- typeInfAnn' opts env ctx e
+  annS <- snd <$> (typeInfAnn' opts env ctx =<< quote s)
   case s of
     VPi _ t t' -> do
-      (annF, annT) <- typeCheckAnn env ctx f t
+      (annF, annT) <- typeCheckAnn' opts env ctx f t
       f' <- eval (Map.map fst env) [] f
       x <- t' f'
       return (x, Ann.App (Ann.Ann annE annS) (Ann.Ann annF annT))
@@ -136,20 +130,20 @@ typeInfAnn env ctx (App e f) = do
       loc <- getLocation
       qs <- quote s
       throwError ("Applying to non-function at " ++ pprint loc ++ ": " ++ show qs)
-typeInfAnn env ctx (Ann e ty) = do
-  (tyTy, _) <- typeInfAnn env ctx ty
+typeInfAnn' opts env ctx (Ann e ty) = do
+  (tyTy, _) <- typeInfAnn' opts env ctx ty
   case tyTy of
     VType _ -> do
       ty' <- eval (Map.map fst env) [] ty
-      (annE, _) <- typeCheckAnn env ctx e ty'
+      (annE, _) <- typeCheckAnn' opts env ctx e ty'
       return (ty', annE)
     _ ->
       throwError ""
-typeInfAnn _ _ e@(Lam _ _) =
+typeInfAnn' opts _ _ e@(Lam _ _) =
   throwError ("Can't infer type of lambda expression " ++ show e)
-typeInfAnn env ctx (Loc loc t) = do
-  tell ["typeInfAnn Loc: " ++ show t]
-  typeInfAnn env ctx t `locatedAt` loc
+typeInfAnn' opts env ctx (Loc loc t) = do
+  tell ["typeInfAnn' opts Loc: " ++ show t]
+  typeInfAnn' opts env ctx t `locatedAt` loc
 
 typeCheckAnn
   :: Env
@@ -160,16 +154,31 @@ typeCheckAnn
        ( Ann.Term Ann.Name  -- ^ annotated expr
        , Ann.Term Ann.Name  -- ^ annotated type
        )
-typeCheckAnn env ctx (Lam x e) (VPi x' v w) = do
-  tell ["typeInfAnn Lam: " ++ show e]
+typeCheckAnn = typeCheckAnn' def
+
+typeCheckAnn'
+  :: Options
+  -> Env
+  -> TContext
+  -> Term Name  -- ^ expr
+  -> Value  -- ^ type
+  -> Ques
+       ( Ann.Term Ann.Name  -- ^ annotated expr
+       , Ann.Term Ann.Name  -- ^ annotated type
+       )
+typeCheckAnn' opts env ctx t@(Local v) ty | inferVars opts = do
+  (_, annTy) <- typeInfAnn' opts env ctx =<< quote ty
+  return (Ann.Local v annTy, annTy)
+typeCheckAnn' opts env ctx (Lam x e) (VPi x' v w) = do
+  tell ["typeInfAnn' opts Lam: " ++ show e]
   w' <- w (VNormal (NFree x))
-  (_, annV) <- typeInfAnn env ctx =<< quote v
-  (annE, annW') <- typeCheckAnn env ((x, v, annV) : ctx) e w'
+  (_, annV) <- typeInfAnn' opts env ctx =<< quote v
+  (annE, annW') <- typeCheckAnn' opts env ((x, v, annV) : ctx) e w'
   return (Ann.Lam x annV (Ann.Ann annE annW'), Ann.Pi x' annV annW')
-typeCheckAnn _ _ (Lam _ _) _ = do
+typeCheckAnn' opts _ _ (Lam _ _) _ = do
   loc <- getLocation
   throwError ("6: " ++ pprint loc)
-typeCheckAnn _ _ (Num x) (VBytesType n) =
+typeCheckAnn' opts _ _ (Num x) (VBytesType n) =
   if x >= 0 && fromIntegral x < (2^(n*8)) then
     return (Ann.Num x n, Ann.BytesType n)
   else do
@@ -178,8 +187,8 @@ typeCheckAnn _ _ (Num x) (VBytesType n) =
       throwError ("Bytes cannot be negative numbers: " ++ pprint loc)
     else
       throwError ("Number " ++ show x ++ " is larger than byte size (" ++ show n ++ "): " ++ pprint loc)
-typeCheckAnn env ctx t (VType j) = do
-  (t', annT) <- typeInfAnn env ctx t
+typeCheckAnn' opts env ctx t (VType j) = do
+  (t', annT) <- typeInfAnn' opts env ctx t
   case t' of
     VType i  ->
       if i <= j then
@@ -192,13 +201,13 @@ typeCheckAnn env ctx t (VType j) = do
       loc <- getLocation
       qv <- quote v
       throwError ("Expected type at " ++ pprint loc ++ " and got: " ++ show qv)
-typeCheckAnn env ctx (Loc loc t) ty = do
-  tell ["typeInfAnn Loc: " ++ show t]
-  typeCheckAnn env ctx t ty `locatedAt` loc
-typeCheckAnn env ctx t ty = do
-  (ty', annT) <- typeInfAnn env ctx t
+typeCheckAnn' opts env ctx (Loc loc t) ty = do
+  tell ["typeInfAnn' opts Loc: " ++ show t]
+  typeCheckAnn' opts env ctx t ty `locatedAt` loc
+typeCheckAnn' opts env ctx t ty = do
+  (ty', annT) <- typeInfAnn' opts env ctx t
   qty <- quote ty
-  (_, annTy) <- typeInfAnn env ctx qty
+  (_, annTy) <- typeInfAnn' opts env ctx qty
   qty' <- quote ty'
   loc <- getLocation
   unless
