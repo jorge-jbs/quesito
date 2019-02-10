@@ -17,7 +17,6 @@ import qualified Quesito.Ann as Ann
 import Data.List (find)
 import qualified Data.Map as Map
 import Control.Monad (unless)
-import Control.Monad.State (get)
 import Data.Default
 
 type TContext =
@@ -63,7 +62,7 @@ typeInfAnn'
        ( Value
        , Ann.Term  -- ^ Anntated input term
        )
-typeInfAnn' opts env ctx (Local x) =
+typeInfAnn' _ env ctx (Local x) =
   case find (\(x', _, _) -> x == x') ctx of
     Just (_, ty, annTy) ->
       return (ty, Ann.Local x annTy)
@@ -89,17 +88,17 @@ typeInfAnn' opts env ctx (Global x) =
       tell ("env: " ++ show (Map.keys env))
       tell ("ctx: " ++ show (map (\(v, _, _) -> v) ctx))
       throwError ("Global variable not found at " ++ pprint loc ++ ": " ++ x)
-typeInfAnn' opts _ _ (Type i) =
+typeInfAnn' _ _ _ (Type i) =
   return (VType (i + 1), Ann.Type i)
-typeInfAnn' opts _ _ (BytesType n) =
+typeInfAnn' _ _ _ (BytesType n) =
   return (VType 0, Ann.BytesType n)
-typeInfAnn' opts _ _ (Num n) = do
+typeInfAnn' _ _ _ (Num n) = do
   loc <- getLocation
   throwError ("Cannot infer byte size of number " ++ show n ++ ": " ++ pprint loc)
-typeInfAnn' opts _ _ (BinOp op) = do
+typeInfAnn' _ _ _ (BinOp op) = do
   ty <- eval (Map.empty) [] (Pi "" (BytesType 4) (Pi "" (BytesType 4) (BytesType 4)))
   return (ty, Ann.BinOp op)
-typeInfAnn' opts _ _ (UnOp op) = do
+typeInfAnn' _ _ _ (UnOp op) = do
   ty <- eval (Map.empty) [] (Pi "" (BytesType 4) (BytesType 4))
   return (ty, Ann.UnOp op)
 typeInfAnn' opts env ctx (Pi x e f) = do
@@ -144,7 +143,7 @@ typeInfAnn' opts env ctx (Ann e ty) = do
       return (ty', annE)
     _ ->
       throwError ""
-typeInfAnn' opts _ _ e@(Lam _ _) =
+typeInfAnn' _ _ _ e@(Lam _ _) =
   throwError ("Can't infer type of lambda expression " ++ show e)
 typeInfAnn' opts env ctx (Loc loc t) = do
   tell ("typeInfAnn' opts Loc: " ++ show t)
@@ -173,7 +172,7 @@ typeCheckAnn'
        ( Ann.Term  -- ^ annotated expr
        , Ann.Term  -- ^ annotated type
        )
-typeCheckAnn' opts env ctx t@(Local v) ty | inferVars opts = do
+typeCheckAnn' opts env ctx (Local v) ty | inferVars opts = do
   (_, annTy) <- typeInfAnn' opts env ctx =<< quote ty
   return (Ann.Local v annTy, annTy)
 typeCheckAnn' opts env ctx (Lam x e) (VPi x' v w (Closure env' ctx')) = do
@@ -182,11 +181,11 @@ typeCheckAnn' opts env ctx (Lam x e) (VPi x' v w (Closure env' ctx')) = do
   (_, annV) <- typeInfAnn' opts env ctx =<< quote v
   (annE, annW') <- typeCheckAnn' opts env ((x, v, annV) : ctx) e w'
   return (Ann.Lam x annV annE annW', Ann.Pi x' annV annW')
-typeCheckAnn' opts _ _ (Lam _ _) _ = do
+typeCheckAnn' _ _ _ (Lam _ _) _ = do
   loc <- getLocation
   throwError ("6: " ++ pprint loc)
-typeCheckAnn' opts _ _ (Num x) (VBytesType n) =
-  if x >= 0 && fromIntegral x < (2^(n*8)) then
+typeCheckAnn' _ _ _ (Num x) (VBytesType n) =
+  if x >= 0 && fromIntegral x < (2^(n*8) :: Integer) then
     return (Ann.Num x n, Ann.BytesType n)
   else do
     loc <- getLocation

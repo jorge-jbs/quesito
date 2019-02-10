@@ -5,20 +5,20 @@ import Quesito.TT.Eval (Flags)
 
 data Pattern
   = Binding String
-  | NumPat { num :: Int, bytes :: Int }
+  | NumPat
+      Int -- ^ literal
+      Int -- ^ size in bytes
   | Constructor String [Pattern]
   deriving Show
 
 data Decl
   = PatternMatchingDecl
-      { name :: String
-      , equations :: [([(String, Type)], [Pattern], Term)]
-      , args_ :: [Type]
-      , retTy :: Type
-      , flags :: Flags
-      }
+      String  -- ^ name
+      [([(String, Type)], [Pattern], Term)]  -- ^ equations
+      [Type]  -- ^ arguments types
+      Type  -- ^ return type
+      Flags
   | TypeDecl
-      { name :: String
-      , constructors :: [(String, Type)]
-      }
+      String  -- ^ name
+      [(String, Type)]  -- ^ constructors
   deriving Show

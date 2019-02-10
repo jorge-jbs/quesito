@@ -52,12 +52,6 @@ substLocal name term (Local name' ty) =
     Local name' ty
 substLocal _ _ (Global name' ty) =
   Global name' ty
-substLocal _ _ (Type level) =
-  Type level
-substLocal _ _ (BytesType n) =
-  BytesType n
-substLocal _ _ (Num n b) =
-  Num n b
 substLocal name term (Pi name' t t') =
   if name == name' then
     Pi name' t t'
@@ -72,6 +66,8 @@ substLocal name term (Lam name' ty t tTy) =
     Lam name' (substLocal name term ty) (substLocal name term t) (substLocal name term tTy)
 substLocal name term (Loc loc t) =
   Loc loc (substLocal name term t)
+substLocal _ _ t =
+  t
 
 substGlobal :: String -> Term -> Term -> Term
 substGlobal name term (Global name' ty) =
@@ -81,12 +77,6 @@ substGlobal name term (Global name' ty) =
     Global name' ty
 substGlobal _ _ (Local name' ty) =
   Local name' ty
-substGlobal _ _ (Type level) =
-  Type level
-substGlobal _ _ (BytesType n) =
-  BytesType n
-substGlobal _ _ (Num n b) =
-  Num n b
 substGlobal name term (Pi name' t t') =
   Pi name' (substGlobal name term t) (substGlobal name term t')
 substGlobal name term (App t tTy t' tTy') =
@@ -95,3 +85,17 @@ substGlobal name term (Lam name' ty t tTy) =
   Lam name' (substGlobal name term ty) (substGlobal name term t) (substGlobal name term tTy)
 substGlobal name term (Loc loc t) =
   Loc loc (substGlobal name term t)
+substGlobal _ _ t =
+  t
+
+flattenApp :: Term -> [Term]
+flattenApp =
+  flattenApp' []
+  where
+    flattenApp' :: [Term] -> Term -> [Term]
+    flattenApp' as (App f _ a _) =
+      flattenApp' (a:as) f
+    flattenApp' as (Loc _ a) =
+      flattenApp' as a
+    flattenApp' as f =
+      f:as

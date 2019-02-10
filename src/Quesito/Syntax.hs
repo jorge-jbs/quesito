@@ -23,16 +23,14 @@ data Term
 
 data Definition
   = PatternMatchingDef
-      { name :: String
-      , equations :: [(Term, Term)]
-      , ty :: Term
-      , flags :: Flags
-      }
+      String  -- ^ name
+      [(Term, Term)] -- ^ equations
+      Term -- ^ type
+      Flags
   | TypeDef
-      { name :: String
-      , ty :: Term
-      , constructors :: [(String, Term)]
-      }
+      String  -- ^ name
+      Term  -- ^ type
+      [(String, Term)]  -- ^ constructors
   deriving Show
 
 getNames :: Definition -> [String]
@@ -67,14 +65,14 @@ convert env (Var v)
         return (TT.Local v)
 convert _ (Num n) =
   return (TT.Num n)
-convert env (App (Var "Bytes") [Num n]) =
+convert _ (App (Var "Bytes") [Num n]) =
   return (TT.BytesType n)
-convert env (App (Var "Bytes") _) = do
+convert _ (App (Var "Bytes") _) = do
   loc <- getLocation
   throwError ("Type error on Bytes at " ++ pprint loc)
-convert env (App (Var "Type") [Num n]) =
+convert _ (App (Var "Type") [Num n]) =
   return (TT.Type n)
-convert env (App (Var "Type") _) = do
+convert _ (App (Var "Type") _) = do
   loc <- getLocation
   throwError ("Type error on Type at " ++ pprint loc)
 convert env (App t args) =
@@ -83,7 +81,7 @@ convert env (Lam v body) =
   TT.Lam v <$> convert env body
 convert env (Arrow (Ann (Var v) ty1) ty2) =
   TT.Pi v <$> convert env ty1 <*> convert env ty2
-convert env (Arrow (Ann _ ty1) ty2) = do
+convert _ (Arrow (Ann _ _) _) = do
   loc <- getLocation
   throwError ("Type annotation not allowed here " ++ pprint loc)
 convert env (Arrow ty1 ty2) =

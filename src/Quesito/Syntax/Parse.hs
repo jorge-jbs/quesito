@@ -5,13 +5,12 @@ import Quesito.Syntax
 import Quesito.TT.Eval (Flags(..))
 
 import Control.Monad (when)
-import Data.Foldable (foldlM)
 import Data.Functor.Identity (Identity)
 import Data.Maybe (isJust)
 import Text.Parsec
-  ( Parsec, SourcePos, (<|>), try, parserFail, eof, alphaNum, letter , oneOf
-  , space, spaces, string, char, getPosition, sourceLine, sourceColumn, sepBy, option
-  , runParser, putState, getState, optionMaybe
+  ( Parsec, (<|>), try, parserFail, eof, alphaNum, letter, oneOf, space
+  , spaces, string, char, getPosition, sourceLine, sourceColumn, runParser
+  , optionMaybe
   )
 import Text.Parsec.Combinator (many1)
 import Text.Parsec.Error (ParseError)
@@ -159,13 +158,13 @@ patternMatchingCaseParser = do
 patternMatchingDefinition :: Parser Definition
 patternMatchingDefinition = do
   spaces
-  total <- isJust <$> optionMaybe (string "#total")
+  isTotal <- isJust <$> optionMaybe (string "#total")
   spaces
   (name, ty) <- annotation True
   spaces
   defs <- patternMatchingParser name
   spaces
-  return (PatternMatchingDef name defs ty (Flags total))
+  return (PatternMatchingDef name defs ty (Flags isTotal))
 
 definitions :: Parser [Definition]
 definitions = do

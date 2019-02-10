@@ -3,10 +3,11 @@
 module Quesito.TT
   ( -- * Types
     Term(..)
-  , Type(..)
+  , Type
   , mapInLoc
   , remLoc
   , deBruijnize
+  , flattenApp
   , BinOp(..)
   , UnOp(..)
   )
@@ -66,6 +67,8 @@ instance PPrint Term where
     "sub"
   pprint (BinOp _) =
     "hue"
+  pprint (UnOp Not) =
+    "not"
   pprint (Type i) =
     "(" ++ "Type " ++ show i ++ ")"
   pprint (Pi v t t')
@@ -147,9 +150,25 @@ deBruijnize =
       DBBytesType n
     deBruijnize' _ (Num n) =
       DBNum n
+    deBruijnize' _ (BinOp op) =
+      DBBinOp op
+    deBruijnize' _ (UnOp op) =
+      DBUnOp op
     deBruijnize' vars (App t t') =
       DBApp (deBruijnize' vars t) (deBruijnize' vars t')
     deBruijnize' vars (Ann t t') =
       DBAnn (deBruijnize' vars t) (deBruijnize' vars t')
     deBruijnize' vars (Loc loc t) =
       DBLoc loc (deBruijnize' vars t)
+
+flattenApp :: Term -> [Term]
+flattenApp =
+  flattenApp' []
+  where
+    flattenApp' :: [Term] -> Term -> [Term]
+    flattenApp' as (App f a) =
+      flattenApp' (a:as) f
+    flattenApp' as (Loc _ a) =
+      flattenApp' as a
+    flattenApp' as f =
+      f:as

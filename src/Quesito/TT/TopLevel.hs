@@ -1,7 +1,5 @@
 module Quesito.TT.TopLevel where
 
-import Data.Foldable (foldlM)
-import Data.List (find)
 import qualified Data.Map as Map
 import Data.Default
 
@@ -16,10 +14,10 @@ import qualified Quesito.LC.TopLevel as LC
 import Control.Monad (when)
 
 data Decl
-  = PatternMatchingDecl String [(Term, Term)] (Term) Flags
+  = PatternMatchingDecl String [(Term, Term)] Term Flags
   | TypeDecl
-      String
-      (Term)  -- ^ Type
+      String  -- ^ name
+      Type  -- ^ Type
       [(String, Term)]  -- ^ Constructors
   deriving Show
 
@@ -52,7 +50,7 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = do
       env' =
         Map.insert name (DMatchFunction (Just evaledEquations) ty' flags, annTy) env
   equations' <- mapM
-    (\(vars', (lhsTy, lhsAnn), (_, rhs)) -> checkEquation env' vars' lhsTy lhsAnn rhs ty')
+    (\(vars', (lhsTy, lhsAnn), (_, rhs)) -> checkEquation env' vars' lhsTy lhsAnn rhs)
     (zip3 checkedVars lhssAnn equations)
   return (LC.PatternMatchingDecl name equations' args retTy flags, env')
   where
@@ -74,37 +72,13 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = do
           return ([], t')
 
     findVars :: MonadQues m => Ann.Term -> m [(String, Value, Ann.Term)]
-    findVars (Ann.Local v ty) = do
-      ty' <- eval (Map.map fst env) [] (Ann.downgrade ty)
-      return [(v, ty', ty)]
+    findVars (Ann.Local v varTy) = do
+      varTy' <- eval (Map.map fst env) [] (Ann.downgrade varTy)
+      return [(v, varTy', varTy)]
     findVars (Ann.App s _ t _) =
       (++) <$> findVars s <*> findVars t
     findVars _ =
       return []
-
-    flattenApp :: Term -> [Term]
-    flattenApp =
-      flattenApp' []
-      where
-        flattenApp' :: [Term] -> Term -> [Term]
-        flattenApp' as (App f a) =
-          flattenApp' (a:as) f
-        flattenApp' as (Loc _ a) =
-          flattenApp' as a
-        flattenApp' as f =
-          f:as
-
-    flattenApp' :: Ann.Term -> [Ann.Term]
-    flattenApp' =
-      flattenApp'' []
-      where
-        flattenApp'' :: [Ann.Term] -> Ann.Term -> [Ann.Term]
-        flattenApp'' as (Ann.App f _ a _) =
-          flattenApp'' (a:as) f
-        flattenApp'' as (Ann.Loc _ a) =
-          flattenApp'' as a
-        flattenApp'' as f =
-          f:as
 
     rawToMatch :: MonadQues m => [String] -> Bool -> Term -> m Pattern
     rawToMatch vars normalized (Local x)
@@ -127,6 +101,12 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = do
       return (MatchApp l' r')
     rawToMatch _ _ (Num x) = do
       return (NumPat x)
+    rawToMatch _ _ (BinOp _) = do
+      loc <- getLocation
+      throwError ("Can't pattern match on type built-in operations (at " ++ pprint loc ++ ")")
+    rawToMatch _ _ (UnOp _) = do
+      loc <- getLocation
+      throwError ("Can't pattern match on type built-in operations (at " ++ pprint loc ++ ")")
     rawToMatch _ _ (Type _) = do
       loc <- getLocation
       throwError ("Can't pattern match on type universes (at " ++ pprint loc ++ ")")
@@ -158,6 +138,12 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = do
       undefined
     termToPattern _ (Ann.Num x b) = do
       return (LC.NumPat x b)
+    termToPattern _ (Ann.BinOp _) = do
+      loc <- getLocation
+      throwError ("Can't pattern match on built-in operations (at " ++ pprint loc ++ ")")
+    termToPattern _ (Ann.UnOp _) = do
+      loc <- getLocation
+      throwError ("Can't pattern match on built-in operations (at " ++ pprint loc ++ ")")
     termToPattern _ (Ann.Type _) = do
       loc <- getLocation
       throwError ("Can't pattern match on type universes (at " ++ pprint loc ++ ")")
@@ -180,15 +166,14 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = do
       -> Value
       -> Ann.Term
       -> Term
-      -> Value
       -> m ([(String, LC.Type)], [LC.Pattern], LC.Term)
-    checkEquation env vars lhsTy lhsAnn rhs ty' = do
+    checkEquation env' vars lhsTy lhsAnn rhs = do
       tell ("Checking vars of " ++ name)
-      vars' <- mapM (\(name, _, annVarTy) -> (,) name <$> LC.cnvType annVarTy) vars
+      vars' <- mapM (\(x, _, annVarTy) -> (,) x <$> LC.cnvType annVarTy) vars
       tell ("Checking lhs of one of the equations of " ++ name ++ "; ctx: " ++ (show $ name : map (\(name', _, _) -> name') vars))
-      ps <- mapM (termToPattern (map (\(x, _, _) -> x) vars)) (tail (flattenApp' lhsAnn))
+      ps <- mapM (termToPattern (map (\(x, _, _) -> x) vars)) (tail (Ann.flattenApp lhsAnn))
       tell ("Checking rhs of one of the equations of " ++ name ++ "; ctx: " ++ (show $ name : map (\(name', _, _) -> name') vars))
-      (rhsAnn, _) <- typeCheckAnn env vars rhs lhsTy
+      (rhsAnn, _) <- typeCheckAnn env' vars rhs lhsTy
       tell ("Converting rhs to LC")
       rhsLc <- LC.cnvBody rhsAnn
       tell ("Successful")

@@ -71,20 +71,20 @@ quote (VPi x v v' _) =
 quote (VNormal n) =
   quoteNormal n
   where
-    quoteNormal (NFree n) =
-      return (Local n)
-    quoteNormal (NGlobal n) =
-      return (Global n)
-    quoteNormal (NDataType n) =
-      return (Global n)
-    quoteNormal (NDataCons n) =
-      return (Global n)
+    quoteNormal (NFree x) =
+      return (Local x)
+    quoteNormal (NGlobal x) =
+      return (Global x)
+    quoteNormal (NDataType x) =
+      return (Global x)
+    quoteNormal (NDataCons x) =
+      return (Global x)
     quoteNormal (NBinOp op) =
       return (BinOp op)
     quoteNormal (NUnOp op) =
       return (UnOp op)
-    quoteNormal (NApp n v) =
-      App <$> quoteNormal n <*> quote v
+    quoteNormal (NApp m v) =
+      App <$> quoteNormal m <*> quote v
 
 eval :: MonadQues m => Env -> VContext -> Term -> m (Value)
 eval _ ctx (Local x) =
@@ -129,6 +129,8 @@ eval env ctx (App e e') = do
       eval env' ((x, v') : ctx') body
     VNormal n ->
       uncurry apply (flattenNormal (NApp n v'))
+    _ ->
+      undefined
   where
     flattenNormal :: Normal -> (Normal, [Value])
     flattenNormal =
@@ -148,8 +150,8 @@ eval env ctx (App e e') = do
     apply (NGlobal name) args@(a:as) = do
       loc <- getLocation
       case Map.lookup name env of
-        Just (DMatchFunction (Just equations) _ (Flags total)) ->
-          if total then
+        Just (DMatchFunction (Just equations) _ flags) ->
+          if total flags then
             let
               matchedEq
                 = join
@@ -163,7 +165,7 @@ eval env ctx (App e e') = do
                   apply (NApp (NGlobal name) a) as
           else do
             apply (NApp (NGlobal name) a) as
-        Just (DMatchFunction Nothing _ (Flags total)) ->
+        Just (DMatchFunction Nothing _ _) ->
           apply (NApp (NGlobal name) a) as
         Just _ ->
           throwError ("Variable should have been evaluated at " ++ pprint loc ++ ": " ++ name)

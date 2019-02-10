@@ -6,9 +6,8 @@ import Quesito.LC as LC
 import Quesito.LC.TopLevel as LC
 import qualified Quesito.TT as TT
 
-import Data.String (fromString)
 import Data.Foldable (foldlM)
-import Data.List (find)
+import Data.List (find, zip4)
 import Control.Monad (forM_, void)
 import Control.Monad.IO.Class (liftIO)
 import LLVM ()
@@ -103,19 +102,18 @@ defCodeGen (PatternMatchingDecl name equations args retTy _) = do
 
 defCodeGen (TypeDecl name cons) = do
   let flattened = map (flatten . snd) cons
-  let consLTypes = map consLType (map fst flattened)
-  maxSize <- liftIO (maximum <$> mapM sizeOf consLTypes)
+  let getConsLTypes = map getConsLType (map fst flattened)
+  maxSize <- liftIO (maximum <$> mapM sizeOf getConsLTypes)
   _ <- L.typedef (L.mkName name) (Just (L.StructureType False [L.IntegerType 32, L.ArrayType maxSize (L.IntegerType 8)]))
-  forM_ (zip (zip (zip [0..] consLTypes) flattened) cons) (\(((n, consLType), (args, retTy)), (name, consTy)) -> do
-      --let (args, retTy) = flatten consTy
+  forM_ (zip4 [0..] getConsLTypes flattened (map fst cons)) (\(n, consLType, (args, retTy), consName) -> do
       _ <- if length args == 0 then
         L.global
-          (L.mkName name)
+          (L.mkName consName)
           (typeToLType retTy)
-          (L.Struct (Just (L.mkName name)) False  [L.Int 32 n, L.Array (L.IntegerType 8) (replicate (fromIntegral maxSize) (L.Int 8 0))])
+          (L.Struct (Just (L.mkName consName)) False  [L.Int 32 n, L.Array (L.IntegerType 8) (replicate (fromIntegral maxSize) (L.Int 8 0))])
       else
         L.function
-          (L.mkName name)
+          (L.mkName consName)
           (map (\arg -> (gtypeToLType arg, L.NoParameterName)) args)
           (typeToLType retTy)
           (const (do
@@ -138,8 +136,8 @@ defCodeGen (TypeDecl name cons) = do
     flatten t =
       ([], t)
 
-    consLType :: [GType] -> L.Type
-    consLType =
+    getConsLType :: [GType] -> L.Type
+    getConsLType =
       L.StructureType False . map gtypeToLType
 
     constructor :: Word32 -> [L.Type] -> L.Type -> L.IRBuilderT (L.ModuleBuilderT IO) L.Operand
@@ -169,11 +167,12 @@ codeGen env (BinOp op a b) =
         case op of
           TT.Add -> L.add
           TT.Sub -> L.sub
+          _ -> undefined
   in do
     a' <- codeGen env a
     b' <- codeGen env b
     instr a' b'
-codeGen env (UnOp TT.Not op) =
+codeGen _ (UnOp TT.Not _) =
   undefined
 
 gtypeToLType :: GType -> L.Type
@@ -190,9 +189,9 @@ typeToLType ty@(Pi _ _ _) =
   in L.FunctionType ret args False
   where
     flatten :: LC.Type -> ([L.Type], L.Type)
-    flatten (GroundType ty) =
-      ([], gtypeToLType ty)
-    flatten (Pi _ ty ty') =
-      (gtypeToLType ty : args, ret)
+    flatten (GroundType ty') =
+      ([], gtypeToLType ty')
+    flatten (Pi _ ty1 ty2) =
+      (gtypeToLType ty1 : args, ret)
       where
-        (args, ret) = flatten ty'
+        (args, ret) = flatten ty2
