@@ -112,7 +112,7 @@ defCodeGen (TypeDecl name cons) = do
         L.global
           (L.mkName name)
           (typeToLType retTy)
-          (L.Struct (Just (L.mkName name)) False  [L.Int 32 0, L.Array (L.IntegerType 8) (replicate (fromIntegral maxSize) (L.Int 8 0))])
+          (L.Struct (Just (L.mkName name)) False  [L.Int 32 n, L.Array (L.IntegerType 8) (replicate (fromIntegral maxSize) (L.Int 8 0))])
       else
         L.function
           (L.mkName name)
