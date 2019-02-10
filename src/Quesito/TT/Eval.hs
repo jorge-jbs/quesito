@@ -1,5 +1,7 @@
-module Quesito.TT.Eval where
+{-# LANGUAGE ScopedTypeVariables #-}
 
+module Quesito.TT.Eval where
+  
 import Quesito
 import Quesito.TT
 
@@ -13,10 +15,10 @@ data Flags =
     }
   deriving Show
 
-data Def term ty
-  = DDataType ty
-  | DDataCons ty
-  | DMatchFunction (Maybe [([Pattern], [(String, term)] -> Ques term)]) ty Flags
+data Def m
+  = DDataType (Value m)
+  | DDataCons (Value m)
+  | DMatchFunction (Maybe [([Pattern], [(String, Value m)] -> m (Value m))]) (Value m) Flags
 
 data Pattern
   = Binding String
@@ -26,33 +28,33 @@ data Pattern
   | MatchApp Pattern Pattern
   deriving Show
 
-type TContext =
-  [(String, Value)]
+type TContext m =
+  [(String, Value m)]
 
-type VContext =
-  TContext
+type VContext m =
+  TContext m
 
-type Env =
-  Map.Map String (Def Value Value)
+type Env m =
+  Map.Map String (Def m)
 
-data Value
-  = VLam String (Value -> Ques Value)
+data Value m
+  = VLam String (Value m -> m (Value m))
   | VType Int
   | VBytesType Int
   | VNum Int
-  | VPi String Value (Value -> Ques Value)
-  | VNormal Normal
+  | VPi String (Value m) (Value m -> m (Value m))
+  | VNormal (Normal m)
 
-data Normal
+data Normal m
   = NFree String
   | NGlobal String
   | NDataType String
   | NDataCons String
   | NBinOp BinOp
   | NUnOp UnOp
-  | NApp Normal Value
+  | NApp (Normal m) (Value m)
 
-quote :: Value -> Ques (Term)
+quote :: MonadQues m => Value m -> m Term
 quote (VLam x f) =
   Lam x <$> (quote =<< f (VNormal (NFree x)))
 quote (VType i) =
@@ -83,7 +85,7 @@ quote (VNormal n) =
     quoteNormal (NApp n v) =
       App <$> quoteNormal n <*> quote v
 
-eval :: Env -> VContext -> Term -> Ques Value
+eval :: MonadQues m => Env m -> VContext m -> Term -> m (Value m)
 eval _ ctx (Local x) =
   case lookup x ctx of
     Just v ->
@@ -102,8 +104,8 @@ eval env ctx (Global x) =
       return (VNormal (NGlobal x))
     Nothing -> do
       loc <- getLocation
-      tell ["env: " ++ show (Map.keys env)]
-      tell ["ctx: " ++ show (map fst ctx)]
+      tell ("env: " ++ show (Map.keys env))
+      tell ("ctx: " ++ show (map fst ctx))
       throwError ("Unknown global variable at " ++ pprint loc ++ ": " ++ x)
 eval _ _ (Type lvl) =
   return (VType lvl)
@@ -115,8 +117,8 @@ eval _ _ (BinOp op) =
   return (VNormal (NBinOp op))
 eval _ _ (UnOp op) =
   return (VNormal (NUnOp op))
-eval env ctx (Pi x e e') =
-  VPi x <$> eval env ctx e <*> return (\t -> eval env ((x, t) : ctx) e')
+eval env ctx (Pi x r s) =
+  VPi x <$> eval env ctx r <*> return (\v -> eval env ((x, v) : ctx) s)
 eval env ctx (App e e') = do
   v <- eval env ctx e
   v' <- eval env ctx e'
@@ -126,17 +128,17 @@ eval env ctx (App e e') = do
     VNormal n ->
       uncurry apply (flattenNormal (NApp n v'))
   where
-    flattenNormal :: Normal -> (Normal, [Value])
+    flattenNormal :: Normal m -> (Normal m, [Value m])
     flattenNormal =
       flattenNormal' []
       where
-        flattenNormal' :: [Value] -> Normal -> (Normal, [Value])
+        flattenNormal' :: [Value m] -> Normal m -> (Normal m, [Value m])
         flattenNormal' as (NApp f a) =
           flattenNormal' (a:as) f
         flattenNormal' as f =
           (f, as)
 
-    apply :: Normal -> [Value] -> Ques Value
+    --apply :: Normal m -> [Value m] -> m (Value m)
     apply (NBinOp Add) [VNum x, VNum y] = do
       return (VNum (x + y))
     apply (NBinOp Sub) [VNum x, VNum y] = do
@@ -170,7 +172,7 @@ eval env ctx (App e e') = do
     apply f [] =
       return (VNormal f)
 
-    match :: Pattern -> Value -> Maybe [(String, Value)]
+    match :: Pattern -> Value m -> Maybe [(String, Value m)]
     match (Binding n) t =
       Just [(n, t)]
     match (Inaccessible _) _ =
@@ -196,11 +198,11 @@ eval env ctx (App e e') = do
     match (MatchApp _ _) _ =
       Nothing
 
-    matchEquation :: [Pattern] -> [Value] -> Maybe [(String, Value)]
+    matchEquation :: [Pattern] -> [Value m] -> Maybe [(String, Value m)]
     matchEquation =
       matchEquation' []
       where
-        matchEquation' :: [(String, Value)] -> [Pattern] -> [Value] -> Maybe [(String, Value)]
+        matchEquation' :: [(String, Value m)] -> [Pattern] -> [Value m] -> Maybe [(String, Value m)]
         matchEquation' l (p:ps) (v:vs) = do
           l' <- match p v
           matchEquation' (l ++ l') ps vs

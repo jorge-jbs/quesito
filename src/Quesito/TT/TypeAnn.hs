@@ -17,17 +17,18 @@ import qualified Quesito.Ann as Ann
 import Data.List (find)
 import qualified Data.Map as Map
 import Control.Monad (unless)
+import Control.Monad.State (get)
 import Data.Default
 
-type TContext =
+type TContext m =
   [ ( String -- ^ var
-    , Value  -- ^ type
+    , Value m  -- ^ type
     , Ann.Term  -- ^ annotated type
     )
   ]
 
-type Env =
-  Map.Map String (Def Value Value, Ann.Term)
+type Env m =
+  Map.Map String (Def m, Ann.Term)
 
 data Options
   = Options
@@ -41,23 +42,25 @@ instance Default Options where
       }
 
 typeInfAnn
-  :: Env
-  -> TContext
+  :: MonadQues m
+  => Env m
+  -> TContext m
   -> Term
-  -> Ques
-       ( Value
+  -> m
+       ( Value m
        , Ann.Term  -- ^ Anntated input term
        )
 typeInfAnn = typeInfAnn' def
 
 
 typeInfAnn'
-  :: Options
-  -> Env
-  -> TContext
+  :: MonadQues m
+  => Options
+  -> Env m
+  -> TContext m
   -> Term
-  -> Ques
-       ( Value
+  -> m
+       ( Value m
        , Ann.Term  -- ^ Anntated input term
        )
 typeInfAnn' opts env ctx (Local x) =
@@ -66,8 +69,8 @@ typeInfAnn' opts env ctx (Local x) =
       return (ty, Ann.Local x annTy)
     Nothing -> do
       loc <- getLocation
-      tell [show $ Map.keys env]
-      tell [show $ map (\(v, _, _) -> v) ctx]
+      tell (show $ Map.keys env)
+      tell (show $ map (\(v, _, _) -> v) ctx)
       throwError ("Local variable not found at " ++ pprint loc ++ ": " ++ x)
 typeInfAnn' opts env ctx (Global x) =
   case Map.lookup x env of
@@ -83,8 +86,8 @@ typeInfAnn' opts env ctx (Global x) =
       return (ty, Ann.Global x annTy)
     Nothing -> do
       loc <- getLocation
-      tell ["env: " ++ show (Map.keys env)]
-      tell ["ctx: " ++ show (map (\(v, _, _) -> v) ctx)]
+      tell ("env: " ++ show (Map.keys env))
+      tell ("ctx: " ++ show (map (\(v, _, _) -> v) ctx))
       throwError ("Global variable not found at " ++ pprint loc ++ ": " ++ x)
 typeInfAnn' opts _ _ (Type i) =
   return (VType (i + 1), Ann.Type i)
@@ -142,27 +145,29 @@ typeInfAnn' opts env ctx (Ann e ty) = do
 typeInfAnn' opts _ _ e@(Lam _ _) =
   throwError ("Can't infer type of lambda expression " ++ show e)
 typeInfAnn' opts env ctx (Loc loc t) = do
-  tell ["typeInfAnn' opts Loc: " ++ show t]
+  tell ("typeInfAnn' opts Loc: " ++ show t)
   typeInfAnn' opts env ctx t `locatedAt` loc
 
 typeCheckAnn
-  :: Env
-  -> TContext
+  :: MonadQues m
+  => Env m
+  -> TContext m
   -> Term  -- ^ expr
-  -> Value  -- ^ type
-  -> Ques
+  -> Value m  -- ^ type
+  -> m
        ( Ann.Term  -- ^ annotated expr
        , Ann.Term  -- ^ annotated type
        )
 typeCheckAnn = typeCheckAnn' def
 
 typeCheckAnn'
-  :: Options
-  -> Env
-  -> TContext
+  :: MonadQues m
+  => Options
+  -> Env m
+  -> TContext m
   -> Term  -- ^ expr
-  -> Value  -- ^ type
-  -> Ques
+  -> Value m  -- ^ type
+  -> m
        ( Ann.Term  -- ^ annotated expr
        , Ann.Term  -- ^ annotated type
        )
@@ -170,7 +175,7 @@ typeCheckAnn' opts env ctx t@(Local v) ty | inferVars opts = do
   (_, annTy) <- typeInfAnn' opts env ctx =<< quote ty
   return (Ann.Local v annTy, annTy)
 typeCheckAnn' opts env ctx (Lam x e) (VPi x' v w) = do
-  tell ["typeInfAnn' opts Lam: " ++ show e]
+  tell ("typeInfAnn' opts Lam: " ++ show e)
   w' <- w (VNormal (NFree x))
   (_, annV) <- typeInfAnn' opts env ctx =<< quote v
   (annE, annW') <- typeCheckAnn' opts env ((x, v, annV) : ctx) e w'
@@ -202,7 +207,7 @@ typeCheckAnn' opts env ctx t (VType j) = do
       qv <- quote v
       throwError ("Expected type at " ++ pprint loc ++ " and got: " ++ show qv)
 typeCheckAnn' opts env ctx (Loc loc t) ty = do
-  tell ["typeInfAnn' opts Loc: " ++ show t]
+  tell ("typeInfAnn' opts Loc: " ++ show t)
   typeCheckAnn' opts env ctx t ty `locatedAt` loc
 typeCheckAnn' opts env ctx t ty = do
   (ty', annT) <- typeInfAnn' opts env ctx t

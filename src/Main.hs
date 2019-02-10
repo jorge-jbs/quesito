@@ -22,7 +22,7 @@ main = do
       $ parse input
   let (m, w) = runQues $ do
         declarations <- snd <$> foldlM (\(env, decls) def -> do decl <- convertDef env def; return (getNames def ++ env, decls ++ [decl])) ([], []) definitions
-        mapM_ (tell . (:[]) . show) declarations
+        mapM_ (tell . show) declarations
         (decls, _) <- foldlM
           (\(decls, env) decl -> do
               (decl', env') <- ttDeclToLcDecl env decl

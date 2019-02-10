@@ -23,7 +23,7 @@ data Type
   | Pi String GType Type
   deriving Show
 
-cnvBody :: Ann.Term -> Ques Term
+cnvBody :: MonadQues m => Ann.Term -> m Term
 cnvBody (Ann.Local v ty) =
   Local v <$> cnvGType ty
 cnvBody (Ann.Global v ty) =
@@ -67,7 +67,7 @@ cnvBody (Ann.UnOp _) =
 cnvBody (Ann.Loc _ t) =
   cnvBody t
 
-cnvGType :: Ann.Type -> Ques GType
+cnvGType :: MonadQues m => Ann.Type -> m GType
 cnvGType (Ann.Global v _) =
   return (TypeVar v)
 cnvGType (Ann.Type _) =
@@ -79,7 +79,7 @@ cnvGType (Ann.Loc _ t) =
 cnvGType _ =
   throwError "Can't convert arbitrary expressions to Lambda-Calculus ground types"
 
-cnvType :: Ann.Type -> Ques Type
+cnvType :: MonadQues m => Ann.Type -> m Type
 cnvType (Ann.Local _ _) =
   throwError "WIP 5" -- return (TypeVar v)
 cnvType (Ann.Global v _) =
