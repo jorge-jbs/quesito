@@ -1,4 +1,4 @@
-{-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE RecursiveDo, FlexibleContexts #-}
 
 module Quesito.LC.CodeGen where
 
@@ -6,10 +6,11 @@ import Quesito.LC as LC
 import Quesito.LC.TopLevel as LC
 import qualified Quesito.TT as TT
 
+import Control.Monad (forM_, void)
+import Control.Monad.IO.Class (MonadIO, liftIO)
+import Control.Monad.Fix (MonadFix)
 import Data.Foldable (foldlM)
 import Data.List (find, zip4)
-import Control.Monad (forM_, void)
-import Control.Monad.IO.Class (liftIO)
 import LLVM ()
 import qualified LLVM.AST as L hiding (function)
 import qualified LLVM.AST.AddrSpace as L
@@ -34,7 +35,7 @@ sizeOf ty = L.withContext $ \ctx -> L.runEncodeAST ctx $ do
     (L.defaultDataLayout L.LittleEndian)
     (\dl -> L.getTypeAllocSize dl ty'))
 
-defCodeGen :: Decl -> L.ModuleBuilderT IO ()
+defCodeGen :: (L.MonadModuleBuilder m, MonadIO m, MonadFix m) => Decl -> m ()
 defCodeGen (PatternMatchingDecl name equations args retTy _) = do
   let argsTypes = map (\ty -> (typeToLType ty, L.NoParameterName)) args
   _ <- L.function
@@ -44,7 +45,7 @@ defCodeGen (PatternMatchingDecl name equations args retTy _) = do
     (const . void $ genEquations equations)
   return ()
   where
-    genEquations :: [([(String, Type)], [Pattern], Term)] -> L.IRBuilderT (L.ModuleBuilderT IO) L.Name
+    genEquations :: (L.MonadIRBuilder m, L.MonadModuleBuilder m, MonadFix m) => [([(String, Type)], [Pattern], Term)] -> m L.Name
     genEquations [] =
       L.block <* L.unreachable
     genEquations ((vars, patterns, body):es) = mdo
@@ -52,7 +53,7 @@ defCodeGen (PatternMatchingDecl name equations args retTy _) = do
       lb' <- genEquations es
       return lb
 
-    genEquation :: [(String, Type)] -> [Pattern] -> Term -> L.Name -> L.IRBuilderT (L.ModuleBuilderT IO) L.Name
+    genEquation :: (L.MonadIRBuilder m, L.MonadModuleBuilder m, MonadFix m) => [(String, Type)] -> [Pattern] -> Term -> L.Name -> m L.Name
     genEquation vars patterns body lb = mdo
       n <- L.block
       b <- genEquationIf patterns
@@ -60,7 +61,7 @@ defCodeGen (PatternMatchingDecl name equations args retTy _) = do
       lb' <- genBody vars patterns body
       return n
 
-    genEquationIf :: [Pattern] -> L.IRBuilderT (L.ModuleBuilderT IO) L.Operand
+    genEquationIf :: (L.MonadIRBuilder m) => [Pattern] -> m L.Operand
     genEquationIf ps = do
       checks <- mapM
         (uncurry checkArg)
@@ -73,7 +74,7 @@ defCodeGen (PatternMatchingDecl name equations args retTy _) = do
         )
       foldlM L.and (L.ConstantOperand (L.Int 1 1)) checks
 
-    checkArg :: Pattern -> L.Operand -> L.IRBuilderT (L.ModuleBuilderT IO) L.Operand
+    checkArg :: (L.MonadIRBuilder m) => Pattern -> L.Operand -> m L.Operand
     checkArg (Binding _) _ = do
       return (L.ConstantOperand (L.Int 1 1))
     checkArg (NumPat n b) op = do
@@ -81,7 +82,7 @@ defCodeGen (PatternMatchingDecl name equations args retTy _) = do
     checkArg (Constructor _ _) _ = do
       undefined
 
-    bindArg :: Pattern -> L.Operand -> L.IRBuilderT (L.ModuleBuilderT IO) [(String, L.Operand)]
+    bindArg :: (L.MonadIRBuilder m) => Pattern -> L.Operand -> m [(String, L.Operand)]
     bindArg (Binding x) op = do
       return [(x, op)]
     bindArg (NumPat _ _) _ = do
@@ -89,7 +90,7 @@ defCodeGen (PatternMatchingDecl name equations args retTy _) = do
     bindArg (Constructor _ _) _ = do
       undefined
 
-    genBody :: [(String, Type)] -> [Pattern] -> Term -> L.IRBuilderT (L.ModuleBuilderT IO) L.Name
+    genBody :: (L.MonadIRBuilder m, L.MonadModuleBuilder m) => [(String, Type)] -> [Pattern] -> Term -> m L.Name
     genBody _ patterns t = do
       n <- L.block
       boundArgs <- foldl (++) [] <$> (mapM (uncurry bindArg) (zip patterns
@@ -140,14 +141,14 @@ defCodeGen (TypeDecl name cons) = do
     getConsLType =
       L.StructureType False . map gtypeToLType
 
-    constructor :: Word32 -> [L.Type] -> L.Type -> L.IRBuilderT (L.ModuleBuilderT IO) L.Operand
+    constructor :: (L.MonadIRBuilder m, L.MonadModuleBuilder m) => Word32 -> [L.Type] -> L.Type -> m L.Operand
     constructor _ [] ty =
       return (L.ConstantOperand (L.Undef ty))
     constructor n (arg:args) ty = do
       x <- constructor (n+1) args ty
       L.insertValue x (L.LocalReference arg (L.UnName (fromIntegral $ toInteger n))) [n]
 
-codeGen :: [(String, L.Operand)] -> LC.Term -> L.IRBuilderT (L.ModuleBuilderT IO) L.Operand
+codeGen :: (L.MonadIRBuilder m, L.MonadModuleBuilder m) => [(String, L.Operand)] -> LC.Term -> m L.Operand
 codeGen env (Local v ty) =
   case snd <$> find ((==) v . fst) env of
     Just op ->
