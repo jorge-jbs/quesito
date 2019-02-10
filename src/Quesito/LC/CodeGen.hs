@@ -9,8 +9,11 @@ import qualified Quesito.TT as TT
 import Control.Monad (forM_, void)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Fix (MonadFix)
+import Control.Monad.State.Class (MonadState, modify, get)
 import Data.Foldable (foldlM)
 import Data.List (find, zip4)
+import qualified Data.Map as Map
+import Data.Maybe (fromJust)
 import LLVM ()
 import qualified LLVM.AST as L hiding (function)
 import qualified LLVM.AST.AddrSpace as L
@@ -35,7 +38,9 @@ sizeOf ty = L.withContext $ \ctx -> L.runEncodeAST ctx $ do
     (L.defaultDataLayout L.LittleEndian)
     (\dl -> L.getTypeAllocSize dl ty'))
 
-defCodeGen :: (L.MonadModuleBuilder m, MonadIO m, MonadFix m) => Decl -> m ()
+type CodeGenState = Map.Map String Int
+
+defCodeGen :: (L.MonadModuleBuilder m, MonadIO m, MonadFix m, MonadState CodeGenState m) => Decl -> m ()
 defCodeGen (PatternMatchingDecl name equations args retTy _) = do
   let argsTypes = map (\ty -> (typeToLType ty, L.NoParameterName)) args
   _ <- L.function
@@ -45,7 +50,7 @@ defCodeGen (PatternMatchingDecl name equations args retTy _) = do
     (const . void $ genEquations equations)
   return ()
   where
-    genEquations :: (L.MonadIRBuilder m, L.MonadModuleBuilder m, MonadFix m) => [([(String, Type)], [Pattern], Term)] -> m L.Name
+    genEquations :: (L.MonadIRBuilder m, L.MonadModuleBuilder m, MonadFix m, MonadState CodeGenState m) => [([(String, Type)], [Pattern], Term)] -> m L.Name
     genEquations [] =
       L.block <* L.unreachable
     genEquations ((vars, patterns, body):es) = mdo
@@ -53,7 +58,7 @@ defCodeGen (PatternMatchingDecl name equations args retTy _) = do
       lb' <- genEquations es
       return lb
 
-    genEquation :: (L.MonadIRBuilder m, L.MonadModuleBuilder m, MonadFix m) => [(String, Type)] -> [Pattern] -> Term -> L.Name -> m L.Name
+    genEquation :: (L.MonadIRBuilder m, L.MonadModuleBuilder m, MonadFix m, MonadState CodeGenState m) => [(String, Type)] -> [Pattern] -> Term -> L.Name -> m L.Name
     genEquation vars patterns body lb = mdo
       n <- L.block
       b <- genEquationIf patterns
@@ -61,7 +66,7 @@ defCodeGen (PatternMatchingDecl name equations args retTy _) = do
       lb' <- genBody vars patterns body
       return n
 
-    genEquationIf :: (L.MonadIRBuilder m) => [Pattern] -> m L.Operand
+    genEquationIf :: (L.MonadIRBuilder m, MonadState CodeGenState m) => [Pattern] -> m L.Operand
     genEquationIf ps = do
       checks <- mapM
         (uncurry checkArg)
@@ -74,18 +79,22 @@ defCodeGen (PatternMatchingDecl name equations args retTy _) = do
         )
       foldlM L.and (L.ConstantOperand (L.Int 1 1)) checks
 
-    checkArg :: (L.MonadIRBuilder m) => Pattern -> L.Operand -> m L.Operand
+    checkArg :: (L.MonadIRBuilder m, MonadState CodeGenState m) => Pattern -> L.Operand -> m L.Operand
     checkArg (Binding _) _ = do
       return (L.ConstantOperand (L.Int 1 1))
     checkArg (NumPat n b) op = do
       L.icmp L.EQ (L.ConstantOperand (L.Int (fromIntegral (b*8)) (fromIntegral n))) op
-    checkArg (Constructor _ _) _ = do
-      undefined
+    checkArg (Constructor consName _) op = do
+      n <- fromJust . Map.lookup consName <$> get
+      m <- L.extractValue op [0]
+      L.icmp L.EQ (L.ConstantOperand $ L.Int 32 $ fromIntegral n) m
 
     bindArg :: (L.MonadIRBuilder m) => Pattern -> L.Operand -> m [(String, L.Operand)]
     bindArg (Binding x) op = do
       return [(x, op)]
     bindArg (NumPat _ _) _ = do
+      return []
+    bindArg (Constructor _ []) _ = do
       return []
     bindArg (Constructor _ _) _ = do
       undefined
@@ -107,6 +116,7 @@ defCodeGen (TypeDecl name cons) = do
   maxSize <- liftIO (maximum <$> mapM sizeOf getConsLTypes)
   _ <- L.typedef (L.mkName name) (Just (L.StructureType False [L.IntegerType 32, L.ArrayType maxSize (L.IntegerType 8)]))
   forM_ (zip4 [0..] getConsLTypes flattened (map fst cons)) (\(n, consLType, (args, retTy), consName) -> do
+      modify (Map.insert consName (fromIntegral n))
       _ <- if length args == 0 then
         L.global
           (L.mkName consName)
