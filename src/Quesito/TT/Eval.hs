@@ -15,10 +15,10 @@ data Flags =
     }
   deriving Show
 
-data Def m
-  = DDataType (Value m)
-  | DDataCons (Value m)
-  | DMatchFunction (Maybe [([Pattern], [(String, Value m)] -> m (Value m))]) (Value m) Flags
+data Def
+  = DDataType Value
+  | DDataCons Value
+  | DMatchFunction (Maybe [([Pattern], Term, Env)]) Value Flags
 
 data Pattern
   = Binding String
@@ -28,45 +28,46 @@ data Pattern
   | MatchApp Pattern Pattern
   deriving Show
 
-type TContext m =
-  [(String, Value m)]
+type TContext =
+  [(String, Value)]
 
-type VContext m =
-  TContext m
+type VContext =
+  TContext
 
-type Env m =
-  Map.Map String (Def m)
+type Env =
+  Map.Map String Def
 
-data Value m
-  = VLam String (Value m -> m (Value m))
+data Value
+  = VLam String Term Closure
   | VType Int
   | VBytesType Int
   | VNum Int
-  | VPi String (Value m) (Value m -> m (Value m))
-  | VNormal (Normal m)
+  | VPi String Value Term Closure
+  | VNormal Normal
 
-data Normal m
+data Normal
   = NFree String
   | NGlobal String
   | NDataType String
   | NDataCons String
   | NBinOp BinOp
   | NUnOp UnOp
-  | NApp (Normal m) (Value m)
+  | NApp Normal Value
 
-quote :: MonadQues m => Value m -> m Term
-quote (VLam x f) =
-  Lam x <$> (quote =<< f (VNormal (NFree x)))
+data Closure
+  = Closure Env VContext
+
+quote :: MonadQues m => Value -> m Term
+quote (VLam x body _) =
+  return (Lam x body)
 quote (VType i) =
   return (Type i)
 quote (VBytesType n) =
   return (BytesType n)
 quote (VNum n) =
   return (Num n)
-quote (VPi x v v') = do
-  t <- quote v
-  t' <- quote =<< v' (VNormal (NFree x))
-  return (Pi x t t')
+quote (VPi x v v' _) =
+  Pi x <$> quote v <*> return v'
 quote (VNormal n) =
   quoteNormal n
   where
@@ -85,7 +86,7 @@ quote (VNormal n) =
     quoteNormal (NApp n v) =
       App <$> quoteNormal n <*> quote v
 
-eval :: MonadQues m => Env m -> VContext m -> Term -> m (Value m)
+eval :: MonadQues m => Env -> VContext -> Term -> m (Value)
 eval _ ctx (Local x) =
   case lookup x ctx of
     Just v ->
@@ -98,8 +99,8 @@ eval env ctx (Global x) =
       return (VNormal (NDataType x))
     Just (DDataCons _) ->
       return (VNormal (NDataCons x))
-    Just (DMatchFunction (Just [([], f)]) _ _) ->
-      f []
+    Just (DMatchFunction (Just [([], f, env')]) _ _) ->
+      eval env' [] f
     Just (DMatchFunction _ _ _) ->
       return (VNormal (NGlobal x))
     Nothing -> do
@@ -117,28 +118,29 @@ eval _ _ (BinOp op) =
   return (VNormal (NBinOp op))
 eval _ _ (UnOp op) =
   return (VNormal (NUnOp op))
-eval env ctx (Pi x r s) =
-  VPi x <$> eval env ctx r <*> return (\v -> eval env ((x, v) : ctx) s)
+eval env ctx (Pi x r s) = do
+  r' <- eval env ctx r
+  return (VPi x r' s (Closure env ctx))
 eval env ctx (App e e') = do
   v <- eval env ctx e
   v' <- eval env ctx e'
   case v of
-    VLam _ f ->
-      f v'
+    VLam x body (Closure env' ctx') ->
+      eval env' ((x, v') : ctx') body
     VNormal n ->
       uncurry apply (flattenNormal (NApp n v'))
   where
-    flattenNormal :: Normal m -> (Normal m, [Value m])
+    flattenNormal :: Normal -> (Normal, [Value])
     flattenNormal =
       flattenNormal' []
       where
-        flattenNormal' :: [Value m] -> Normal m -> (Normal m, [Value m])
+        flattenNormal' :: [Value] -> Normal -> (Normal, [Value])
         flattenNormal' as (NApp f a) =
           flattenNormal' (a:as) f
         flattenNormal' as f =
           (f, as)
 
-    --apply :: Normal m -> [Value m] -> m (Value m)
+    apply :: MonadQues m => Normal -> [Value] -> m (Value)
     apply (NBinOp Add) [VNum x, VNum y] = do
       return (VNum (x + y))
     apply (NBinOp Sub) [VNum x, VNum y] = do
@@ -152,11 +154,11 @@ eval env ctx (App e e') = do
               matchedEq
                 = join
                 $ find (\x -> case x of Just _ -> True; _ -> False)
-                $ map (\(p, body) -> do s <- matchEquation p args; return (s, body)) equations
+                $ map (\(p, body, env') -> do s <- matchEquation p args; return (s, body, env')) equations
             in
               case matchedEq of
-                Just (s, t) ->
-                  t s
+                Just (s, t, env') ->
+                  eval env' s t
                 Nothing ->
                   apply (NApp (NGlobal name) a) as
           else do
@@ -172,7 +174,7 @@ eval env ctx (App e e') = do
     apply f [] =
       return (VNormal f)
 
-    match :: Pattern -> Value m -> Maybe [(String, Value m)]
+    match :: Pattern -> Value -> Maybe [(String, Value)]
     match (Binding n) t =
       Just [(n, t)]
     match (Inaccessible _) _ =
@@ -198,11 +200,11 @@ eval env ctx (App e e') = do
     match (MatchApp _ _) _ =
       Nothing
 
-    matchEquation :: [Pattern] -> [Value m] -> Maybe [(String, Value m)]
+    matchEquation :: [Pattern] -> [Value] -> Maybe [(String, Value)]
     matchEquation =
       matchEquation' []
       where
-        matchEquation' :: [(String, Value m)] -> [Pattern] -> [Value m] -> Maybe [(String, Value m)]
+        matchEquation' :: [(String, Value)] -> [Pattern] -> [Value] -> Maybe [(String, Value)]
         matchEquation' l (p:ps) (v:vs) = do
           l' <- match p v
           matchEquation' (l ++ l') ps vs
@@ -215,6 +217,6 @@ eval env ctx (App e e') = do
 eval env ctx (Ann e _) =
   eval env ctx e
 eval env ctx (Lam x e) =
-  return (VLam x (\v -> eval env ((x, v) : ctx) e))
+  return (VLam x e (Closure env ctx))
 eval env ctx (Loc loc t) =
   eval env ctx t `locatedAt` loc

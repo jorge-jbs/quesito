@@ -20,15 +20,15 @@ import Control.Monad (unless)
 import Control.Monad.State (get)
 import Data.Default
 
-type TContext m =
+type TContext =
   [ ( String -- ^ var
-    , Value m  -- ^ type
+    , Value  -- ^ type
     , Ann.Term  -- ^ annotated type
     )
   ]
 
-type Env m =
-  Map.Map String (Def m, Ann.Term)
+type Env =
+  Map.Map String (Def, Ann.Term)
 
 data Options
   = Options
@@ -43,11 +43,11 @@ instance Default Options where
 
 typeInfAnn
   :: MonadQues m
-  => Env m
-  -> TContext m
+  => Env
+  -> TContext
   -> Term
   -> m
-       ( Value m
+       ( Value
        , Ann.Term  -- ^ Anntated input term
        )
 typeInfAnn = typeInfAnn' def
@@ -56,11 +56,11 @@ typeInfAnn = typeInfAnn' def
 typeInfAnn'
   :: MonadQues m
   => Options
-  -> Env m
-  -> TContext m
+  -> Env
+  -> TContext
   -> Term
   -> m
-       ( Value m
+       ( Value
        , Ann.Term  -- ^ Anntated input term
        )
 typeInfAnn' opts env ctx (Local x) =
@@ -96,10 +96,12 @@ typeInfAnn' opts _ _ (BytesType n) =
 typeInfAnn' opts _ _ (Num n) = do
   loc <- getLocation
   throwError ("Cannot infer byte size of number " ++ show n ++ ": " ++ pprint loc)
-typeInfAnn' opts _ _ (BinOp op) =
-  return (VPi "" (VBytesType 4) (\_ -> return (VPi "" (VBytesType 4) (const (return (VBytesType 4))))), Ann.BinOp op)
-typeInfAnn' opts _ _ (UnOp op) =
-  return (VPi "" (VBytesType 4) (const (return (VBytesType 4))), Ann.UnOp op)
+typeInfAnn' opts _ _ (BinOp op) = do
+  ty <- eval (Map.empty) [] (Pi "" (BytesType 4) (Pi "" (BytesType 4) (BytesType 4)))
+  return (ty, Ann.BinOp op)
+typeInfAnn' opts _ _ (UnOp op) = do
+  ty <- eval (Map.empty) [] (Pi "" (BytesType 4) (BytesType 4))
+  return (ty, Ann.UnOp op)
 typeInfAnn' opts env ctx (Pi x e f) = do
   (ty, _) <- typeInfAnn' opts env ctx e
   case ty of
@@ -124,10 +126,10 @@ typeInfAnn' opts env ctx (App e f) = do
   (s, annE) <- typeInfAnn' opts env ctx e
   annS <- snd <$> (typeInfAnn' opts env ctx =<< quote s)
   case s of
-    VPi _ t t' -> do
+    VPi v t t' (Closure env' ctx') -> do
       (annF, annT) <- typeCheckAnn' opts env ctx f t
       f' <- eval (Map.map fst env) [] f
-      x <- t' f'
+      x <- eval env' ((v, f') : ctx') t'
       return (x, Ann.App annE annS annF annT)
     _ -> do
       loc <- getLocation
@@ -150,10 +152,10 @@ typeInfAnn' opts env ctx (Loc loc t) = do
 
 typeCheckAnn
   :: MonadQues m
-  => Env m
-  -> TContext m
+  => Env
+  -> TContext
   -> Term  -- ^ expr
-  -> Value m  -- ^ type
+  -> Value  -- ^ type
   -> m
        ( Ann.Term  -- ^ annotated expr
        , Ann.Term  -- ^ annotated type
@@ -163,10 +165,10 @@ typeCheckAnn = typeCheckAnn' def
 typeCheckAnn'
   :: MonadQues m
   => Options
-  -> Env m
-  -> TContext m
+  -> Env
+  -> TContext
   -> Term  -- ^ expr
-  -> Value m  -- ^ type
+  -> Value  -- ^ type
   -> m
        ( Ann.Term  -- ^ annotated expr
        , Ann.Term  -- ^ annotated type
@@ -174,9 +176,9 @@ typeCheckAnn'
 typeCheckAnn' opts env ctx t@(Local v) ty | inferVars opts = do
   (_, annTy) <- typeInfAnn' opts env ctx =<< quote ty
   return (Ann.Local v annTy, annTy)
-typeCheckAnn' opts env ctx (Lam x e) (VPi x' v w) = do
+typeCheckAnn' opts env ctx (Lam x e) (VPi x' v w (Closure env' ctx')) = do
   tell ("typeInfAnn' opts Lam: " ++ show e)
-  w' <- w (VNormal (NFree x))
+  w' <- eval env' ctx' w
   (_, annV) <- typeInfAnn' opts env ctx =<< quote v
   (annE, annW') <- typeCheckAnn' opts env ((x, v, annV) : ctx) e w'
   return (Ann.Lam x annV annE annW', Ann.Pi x' annV annW')
