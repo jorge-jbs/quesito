@@ -10,12 +10,24 @@ module Quesito.TT
   , flattenApp
   , BinOp(..)
   , UnOp(..)
+  , Def(..)
+  , Flags(..)
+  , Pattern(..)
+  , Env
+  , lookupEnv
+  , emptyEnv
+  , envKeys
+  , AnnEnv
+  , lookupAnnEnv
+  , dropAnn
+  , emptyAnnEnv
+  , annEnvKeys
   )
   where
 
-import Quesito
-
 import Prelude hiding (print)
+
+import Quesito
 
 data Term
   = Local String
@@ -172,3 +184,74 @@ flattenApp =
       flattenApp' as a
     flattenApp' as f =
       f:as
+
+data Def
+  = PatternMatchingDef
+      String  -- ^ name
+      [([Pattern], Term)]  -- ^ equations
+      Type  -- ^ type
+      Flags
+  | TypeDef
+      String  -- ^ name
+      Type  -- ^ type
+      [(String, Term)]  -- ^ constructors
+  deriving Show
+
+getNames :: Def -> [String]
+getNames (PatternMatchingDef n _ _ _) =
+  [n]
+getNames (TypeDef n _ conss) =
+  n : map fst conss
+
+data Pattern
+  = Binding String
+  | Inaccessible Term
+  | NumPat Int
+  | Constructor String
+  | PatApp Pattern Pattern
+  deriving Show
+
+newtype Flags =
+  Flags
+    Bool  -- ^ total
+  deriving Show
+
+newtype Env = Env [Def]
+
+emptyEnv :: Env
+emptyEnv = Env []
+
+lookupEnv :: String -> Env -> Maybe (Def, Env)
+lookupEnv _ (Env []) =
+  Nothing
+lookupEnv k (Env (def:env))
+  | k `elem` getNames def =
+      Just (def, Env env)
+  | otherwise =
+      lookupEnv k (Env env)
+
+newtype AnnEnv ann = AnnEnv [(Def, ann)]
+
+emptyAnnEnv :: AnnEnv ann
+emptyAnnEnv = AnnEnv []
+
+envKeys :: Env -> [String]
+envKeys (Env env) =
+  foldl (++) [] $ map getNames env
+
+lookupAnnEnv :: String -> AnnEnv ann -> Maybe (Def, ann, AnnEnv ann)
+lookupAnnEnv _ (AnnEnv []) =
+  Nothing
+lookupAnnEnv k (AnnEnv ((def, ann):env))
+  | k `elem` getNames def =
+      Just (def, ann, AnnEnv env)
+  | otherwise =
+      lookupAnnEnv k (AnnEnv env)
+
+dropAnn :: AnnEnv ann -> Env
+dropAnn (AnnEnv env) =
+  Env $ map fst env
+
+annEnvKeys :: AnnEnv ann -> [String]
+annEnvKeys (AnnEnv env) =
+  foldl (++) [] $ map (getNames . fst) env

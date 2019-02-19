@@ -1,7 +1,7 @@
 module Quesito.LC.TopLevel where
 
 import Quesito.LC
-import Quesito.TT.Eval (Flags)
+import Quesito.TT (Flags)
 
 data Pattern
   = Binding String

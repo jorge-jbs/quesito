@@ -1,11 +1,10 @@
 module Quesito.TT.TopLevel where
 
 import qualified Data.Map as Map
-import Data.Default
 
 import Quesito
-import Quesito.TT
-import Quesito.TT.Eval hiding (Env, Def)
+import Quesito.TT hiding (Env)
+import Quesito.TT.Eval hiding (Def)
 import qualified Quesito.TT.Eval as Eval
 import Quesito.TT.TypeAnn
 import qualified Quesito.Ann as Ann
@@ -14,14 +13,6 @@ import qualified Quesito.LC.TopLevel as LC
 
 import Control.Monad (when)
 
-data Def
-  = PatternMatchingDef String [(Term, Term)] Term Flags
-  | TypeDef
-      String  -- ^ name
-      Type  -- ^ Type
-      [(String, Term)]  -- ^ Constructors
-  deriving Show
-
 getNames :: Def -> [String]
 getNames (PatternMatchingDef name _ _ _) =
   [name]
@@ -29,6 +20,8 @@ getNames (TypeDef name _ conss) =
   name : map fst conss
 
 convertDef :: MonadQues m => Env -> Def -> m (LC.Def, Env)
+convertDef = undefined
+{-
 convertDef env (PatternMatchingDef name equations ty flags) = do
   tell ("Checking pattern matching function declaration " ++ name)
   (tyTy, annTy) <- typeInfAnn env [] ty
@@ -86,8 +79,8 @@ convertDef env (PatternMatchingDef name equations ty flags) = do
       | elem x vars =
         return (Binding x)
       | otherwise =
-        case Map.lookup x env of
-          Just (DDataCons _, _) ->
+        case lookupEnv x env of
+          Just (TypeDef n _ _, _) | x == n ->
             return (Constructor x)
           Just _ | not normalized ->
             return (Inaccessible (Local x))
@@ -180,7 +173,7 @@ convertDef env (PatternMatchingDef name equations ty flags) = do
       tell ("Successful")
       return (vars', ps, rhsLc)
 
-    evalEquation :: Eval.Def -> [Pattern] -> Term -> ([Pattern], Term, Map.Map String Eval.Def)
+    evalEquation :: Def -> [Pattern] -> Term -> ([Pattern], Term, Map.Map String Def)
     evalEquation recur lhs' rhs =
       (lhs', rhs, Map.insert name recur (Map.map fst env))
 convertDef env (TypeDef name ty conss) = do
@@ -207,3 +200,4 @@ convertDef env (TypeDef name ty conss) = do
     )
     (zip conss conss')
   return (LC.TypeDef name (map (\(x, y, _) -> (x, y)) conss'), Map.union conss'' env')
+-}

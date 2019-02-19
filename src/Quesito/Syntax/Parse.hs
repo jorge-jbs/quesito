@@ -2,7 +2,7 @@ module Quesito.Syntax.Parse (Quesito.Syntax.Parse.parse) where
 
 import Quesito
 import Quesito.Syntax
-import Quesito.TT.Eval (Flags(..))
+import Quesito.TT (Flags(..))
 
 import Control.Monad (when)
 import Data.Functor.Identity (Identity)

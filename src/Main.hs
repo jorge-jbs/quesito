@@ -2,6 +2,7 @@ module Main where
 
 import Quesito
 import Quesito.LC.CodeGen
+import Quesito.TT (emptyAnnEnv)
 import Quesito.TT.TopLevel as TT (convertDef)
 import Quesito.Syntax as Syn (getNames, convertDef)
 import Quesito.Syntax.Parse (parse)
@@ -29,7 +30,7 @@ main = do
               (decl', env') <- TT.convertDef env decl
               return (decl' : decls, env')
           )
-          ([], Map.empty)
+          ([], emptyAnnEnv)
           declarations
         return (buildModuleT (fromString "main") (evalStateT (mapM defCodeGen decls) Map.empty))
   putStrLn w

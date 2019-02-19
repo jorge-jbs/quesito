@@ -6,36 +6,13 @@ import Quesito
 import Quesito.TT
 
 import Data.List (find)
-import qualified Data.Map as Map
 import Control.Monad (join)
-
-data Flags =
-  Flags
-    { total :: Bool
-    }
-  deriving Show
-
-data Def
-  = DDataType Value
-  | DDataCons Value
-  | DMatchFunction (Maybe [([Pattern], Term, Env)]) Value Flags
-
-data Pattern
-  = Binding String
-  | Inaccessible Term
-  | NumPat Int
-  | Constructor String
-  | MatchApp Pattern Pattern
-  deriving Show
 
 type TContext =
   [(String, Value)]
 
 type VContext =
   TContext
-
-type Env =
-  Map.Map String Def
 
 data Value
   = VLam String Term Closure
@@ -94,18 +71,18 @@ eval _ ctx (Local x) =
     Nothing ->
      return (VNormal (NFree x))
 eval env ctx (Global x) =
-  case Map.lookup x env of
-    Just (DDataType _) ->
+  case lookupEnv x env of
+    Just (TypeDef n _ _, _) | x == n ->
       return (VNormal (NDataType x))
-    Just (DDataCons _) ->
+    Just (TypeDef {}, _) ->  -- x `elem` map fst conss
       return (VNormal (NDataCons x))
-    Just (DMatchFunction (Just [([], f, env')]) _ _) ->
+    Just (PatternMatchingDef _ [([], f)] _ _, env') ->
       eval env' [] f
-    Just (DMatchFunction _ _ _) ->
+    Just (PatternMatchingDef {}, _) ->
       return (VNormal (NGlobal x))
     Nothing -> do
       loc <- getLocation
-      tell ("env: " ++ show (Map.keys env))
+      tell ("env: " ++ show (envKeys env))
       tell ("ctx: " ++ show (map fst ctx))
       throwError ("Unknown global variable at " ++ pprint loc ++ ": " ++ x)
 eval _ _ (Type lvl) =
@@ -149,24 +126,24 @@ eval env ctx (App e e') = do
       return (VNum (x - y))
     apply (NGlobal name) args@(a:as) = do
       loc <- getLocation
-      case Map.lookup name env of
-        Just (DMatchFunction (Just equations) _ flags) ->
-          if total flags then
+      case lookupEnv name env of
+        Just (PatternMatchingDef _ equations _ (Flags total), env') ->
+          if total then
             let
               matchedEq
                 = join
                 $ find (\x -> case x of Just _ -> True; _ -> False)
-                $ map (\(p, body, env') -> do s <- matchEquation p args; return (s, body, env')) equations
+                $ map (\(p, body) -> do s <- matchEquation p args; return (s, body)) equations
             in
               case matchedEq of
-                Just (s, t, env') ->
+                Just (s, t) ->
                   eval env' s t
                 Nothing ->
                   apply (NApp (NGlobal name) a) as
           else do
             apply (NApp (NGlobal name) a) as
-        Just (DMatchFunction Nothing _ _) ->
-          apply (NApp (NGlobal name) a) as
+        --Just (DMatchFunction Nothing _ _) ->
+          --apply (NApp (NGlobal name) a) as
         Just _ ->
           throwError ("Variable should have been evaluated at " ++ pprint loc ++ ": " ++ name)
         Nothing ->
@@ -195,11 +172,11 @@ eval env ctx (App e e') = do
         Nothing
     match (Constructor _) _ =
       Nothing
-    match (MatchApp p p') (VNormal (NApp t t')) = do
+    match (PatApp p p') (VNormal (NApp t t')) = do
       l <- match p (VNormal t)
       l' <- match p' t'
       return (l ++ l')
-    match (MatchApp _ _) _ =
+    match (PatApp _ _) _ =
       Nothing
 
     matchEquation :: [Pattern] -> [Value] -> Maybe [(String, Value)]

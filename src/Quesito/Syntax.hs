@@ -8,8 +8,7 @@ module Quesito.Syntax
 
 import Quesito
 import qualified Quesito.TT as TT
-import qualified Quesito.TT.TopLevel as TT
-import Quesito.TT.Eval (Flags)
+import Quesito.TT (Flags)
 
 data Term
   = Var String
@@ -95,7 +94,7 @@ convertDef :: [String] -> Def -> Ques TT.Def
 convertDef env (PatternMatchingDef name equations ty flags) = do
   equations' <- equationsM'
   ty' <- convert (name:env) ty
-  return (TT.PatternMatchingDef name equations' ty' flags)
+  return (TT.PatternMatchingDef name (undefined equations') ty' flags)
   where
     equationsM' = flip mapM equations $ \(lhs, rhs) -> do
       lhs' <- convert (name:env) lhs

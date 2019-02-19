@@ -10,12 +10,11 @@ module Quesito.TT.TypeAnn
   where
 
 import Quesito
-import Quesito.TT
-import Quesito.TT.Eval hiding (Env, TContext)
+import Quesito.TT hiding (Env)
+import Quesito.TT.Eval hiding (TContext)
 import qualified Quesito.Ann as Ann
 
 import Data.List (find)
-import qualified Data.Map as Map
 import Control.Monad (unless)
 import Data.Default
 
@@ -26,8 +25,7 @@ type TContext =
     )
   ]
 
-type Env =
-  Map.Map String (Def, Ann.Term)
+type Env = AnnEnv Ann.Term
 
 data Options
   = Options
@@ -47,10 +45,9 @@ typeInfAnn
   -> Term
   -> m
        ( Value
-       , Ann.Term  -- ^ Anntated input term
+       , Ann.Term  -- ^ annotated input term
        )
 typeInfAnn = typeInfAnn' def
-
 
 typeInfAnn'
   :: MonadQues m
@@ -60,7 +57,7 @@ typeInfAnn'
   -> Term
   -> m
        ( Value
-       , Ann.Term  -- ^ Anntated input term
+       , Ann.Term  -- ^ annotated input term
        )
 typeInfAnn' _ env ctx (Local x) =
   case find (\(x', _, _) -> x == x') ctx of
@@ -68,24 +65,25 @@ typeInfAnn' _ env ctx (Local x) =
       return (ty, Ann.Local x annTy)
     Nothing -> do
       loc <- getLocation
-      tell (show $ Map.keys env)
+      tell (show $ annEnvKeys env)
       tell (show $ map (\(v, _, _) -> v) ctx)
       throwError ("Local variable not found at " ++ pprint loc ++ ": " ++ x)
 typeInfAnn' opts env ctx (Global x) =
-  case Map.lookup x env of
-    Just (DDataType ty, _) -> do
-      qty <- quote ty
-      (_, tyAnn) <- typeInfAnn' opts env ctx qty
-      return (ty, Ann.Global x tyAnn)
-    Just (DDataCons ty, _) -> do
-      qty <- quote ty
-      (_, tyAnn) <- typeInfAnn' opts env ctx qty
-      return (ty, Ann.Global x tyAnn)
-    Just (DMatchFunction _ ty _, annTy) ->
-      return (ty, Ann.Global x annTy)
+  case lookupAnnEnv x env of
+    Just (TypeDef n ty _, _, env') | x == n -> do
+      (_, tyAnn) <- typeInfAnn' opts env ctx ty
+      ty' <- eval (dropAnn env') [] ty
+      return (ty', Ann.Global x tyAnn)
+    Just (TypeDef _ ty _, _, env') -> do
+      (_, tyAnn) <- typeInfAnn' opts env ctx ty
+      ty' <- eval (dropAnn env') [] ty
+      return (ty', Ann.Global x tyAnn)
+    Just (PatternMatchingDef _ _ ty _, annTy, env') -> do
+      ty' <- eval (dropAnn env') [] ty
+      return (ty', Ann.Global x annTy)
     Nothing -> do
       loc <- getLocation
-      tell ("env: " ++ show (Map.keys env))
+      tell ("env: " ++ show (annEnvKeys env))
       tell ("ctx: " ++ show (map (\(v, _, _) -> v) ctx))
       throwError ("Global variable not found at " ++ pprint loc ++ ": " ++ x)
 typeInfAnn' _ _ _ (Type i) =
@@ -96,16 +94,16 @@ typeInfAnn' _ _ _ (Num n) = do
   loc <- getLocation
   throwError ("Cannot infer byte size of number " ++ show n ++ ": " ++ pprint loc)
 typeInfAnn' _ _ _ (BinOp op) = do
-  ty <- eval (Map.empty) [] (Pi "" (BytesType 4) (Pi "" (BytesType 4) (BytesType 4)))
+  ty <- eval emptyEnv [] (Pi "" (BytesType 4) (Pi "" (BytesType 4) (BytesType 4)))
   return (ty, Ann.BinOp op)
 typeInfAnn' _ _ _ (UnOp op) = do
-  ty <- eval (Map.empty) [] (Pi "" (BytesType 4) (BytesType 4))
+  ty <- eval emptyEnv [] (Pi "" (BytesType 4) (BytesType 4))
   return (ty, Ann.UnOp op)
 typeInfAnn' opts env ctx (Pi x e f) = do
   (ty, _) <- typeInfAnn' opts env ctx e
   case ty of
     VType i -> do
-      e' <- eval (Map.map fst env) [] e
+      e' <- eval (dropAnn env) [] e
       annE <- snd <$> typeInfAnn' opts env ctx e
       (t', annF) <-
         typeInfAnn' opts
@@ -127,7 +125,7 @@ typeInfAnn' opts env ctx (App e f) = do
   case s of
     VPi v t t' (Closure env' ctx') -> do
       (annF, annT) <- typeCheckAnn' opts env ctx f t
-      f' <- eval (Map.map fst env) [] f
+      f' <- eval (dropAnn env) [] f
       x <- eval env' ((v, f') : ctx') t'
       return (x, Ann.App annE annS annF annT)
     _ -> do
@@ -138,7 +136,7 @@ typeInfAnn' opts env ctx (Ann e ty) = do
   (tyTy, _) <- typeInfAnn' opts env ctx ty
   case tyTy of
     VType _ -> do
-      ty' <- eval (Map.map fst env) [] ty
+      ty' <- eval (dropAnn env) [] ty
       (annE, _) <- typeCheckAnn' opts env ctx e ty'
       return (ty', annE)
     _ ->
