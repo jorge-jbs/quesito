@@ -40,7 +40,7 @@ sizeOf ty = L.withContext $ \ctx -> L.runEncodeAST ctx $ do
 
 type CodeGenState = Map.Map String Int
 
-defCodeGen :: (L.MonadModuleBuilder m, MonadIO m, MonadFix m, MonadState CodeGenState m) => Decl -> m ()
+defCodeGen :: (L.MonadModuleBuilder m, MonadIO m, MonadFix m, MonadState CodeGenState m) => Def -> m ()
 defCodeGen (PatternMatchingDecl name equations args retTy _) = do
   let argsTypes = map (\ty -> (typeToLType ty, L.NoParameterName)) args
   _ <- L.function

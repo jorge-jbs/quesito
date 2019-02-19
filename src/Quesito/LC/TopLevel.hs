@@ -11,7 +11,7 @@ data Pattern
   | Constructor String [Pattern]
   deriving Show
 
-data Decl
+data Def
   = PatternMatchingDecl
       String  -- ^ name
       [([(String, Type)], [Pattern], Term)]  -- ^ equations

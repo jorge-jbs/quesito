@@ -1,6 +1,6 @@
 module Quesito.Syntax
   ( Term(..)
-  , Definition(..)
+  , Def(..)
   , getNames
   , convertDef
   )
@@ -21,7 +21,7 @@ data Term
   | Loc Location Term
   deriving Show
 
-data Definition
+data Def
   = PatternMatchingDef
       String  -- ^ name
       [(Term, Term)] -- ^ equations
@@ -33,7 +33,7 @@ data Definition
       [(String, Term)]  -- ^ constructors
   deriving Show
 
-getNames :: Definition -> [String]
+getNames :: Def -> [String]
 getNames (PatternMatchingDef name _ _ _) =
   [name]
 getNames (TypeDef name _ conss) =
@@ -91,7 +91,7 @@ convert env (Ann t ty) =
 convert env (Loc loc t) =
   TT.Loc loc <$> convert env t `locatedAt` loc
 
-convertDef :: [String] -> Definition -> Ques TT.Decl
+convertDef :: [String] -> Def -> Ques TT.Def
 convertDef env (PatternMatchingDef name equations ty flags) = do
   equations' <- equationsM'
   ty' <- convert (name:env) ty

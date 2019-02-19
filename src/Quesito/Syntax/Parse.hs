@@ -101,8 +101,8 @@ annotation semicolon = do
   when semicolon (char ';' >> return ())
   return (name, ty)
 
-typeDefinition :: Parser Definition
-typeDefinition = do
+typeDef :: Parser Def
+typeDef = do
   spaces
   _ <- string "data"
   _ <- many1 space
@@ -155,8 +155,8 @@ patternMatchingCaseParser = do
     findName _=
       Nothing
 
-patternMatchingDefinition :: Parser Definition
-patternMatchingDefinition = do
+patternMatchingDef :: Parser Def
+patternMatchingDef = do
   spaces
   isTotal <- isJust <$> optionMaybe (string "#total")
   spaces
@@ -166,15 +166,15 @@ patternMatchingDefinition = do
   spaces
   return (PatternMatchingDef name defs ty (Flags isTotal))
 
-definitions :: Parser [Definition]
+definitions :: Parser [Def]
 definitions = do
-  maybeDefinition <- optionMaybe (try patternMatchingDefinition <|> typeDefinition)
-  case maybeDefinition of
+  maybeDef <- optionMaybe (try patternMatchingDef <|> typeDef)
+  case maybeDef of
     Just decl ->
       (decl :) <$> definitions
     Nothing ->
       eof >> return []
 
-parse :: String -> Either ParseError [Definition]
+parse :: String -> Either ParseError [Def]
 parse =
   runParser definitions () ""

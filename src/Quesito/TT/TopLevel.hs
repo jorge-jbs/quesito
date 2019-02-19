@@ -5,7 +5,8 @@ import Data.Default
 
 import Quesito
 import Quesito.TT
-import Quesito.TT.Eval hiding (Env)
+import Quesito.TT.Eval hiding (Env, Def)
+import qualified Quesito.TT.Eval as Eval
 import Quesito.TT.TypeAnn
 import qualified Quesito.Ann as Ann
 import qualified Quesito.LC as LC
@@ -13,7 +14,7 @@ import qualified Quesito.LC.TopLevel as LC
 
 import Control.Monad (when)
 
-data Decl
+data Def
   = PatternMatchingDecl String [(Term, Term)] Term Flags
   | TypeDecl
       String  -- ^ name
@@ -21,13 +22,13 @@ data Decl
       [(String, Term)]  -- ^ Constructors
   deriving Show
 
-getNames :: Decl -> [String]
+getNames :: Def -> [String]
 getNames (PatternMatchingDecl name _ _ _) =
   [name]
 getNames (TypeDecl name _ conss) =
   name : map fst conss
 
-ttDeclToLcDecl :: MonadQues m => Env -> Decl -> m (LC.Decl, Env)
+ttDeclToLcDecl :: MonadQues m => Env -> Def -> m (LC.Def, Env)
 ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = do
   tell ("Checking pattern matching function declaration " ++ name)
   (tyTy, annTy) <- typeInfAnn env [] ty
@@ -179,7 +180,7 @@ ttDeclToLcDecl env (PatternMatchingDecl name equations ty flags) = do
       tell ("Successful")
       return (vars', ps, rhsLc)
 
-    evalEquation :: Def -> [Pattern] -> Term -> ([Pattern], Term, Map.Map String Def)
+    evalEquation :: Eval.Def -> [Pattern] -> Term -> ([Pattern], Term, Map.Map String Eval.Def)
     evalEquation recur lhs' rhs =
       (lhs', rhs, Map.insert name recur (Map.map fst env))
 ttDeclToLcDecl env (TypeDecl name ty conss) = do
