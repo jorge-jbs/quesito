@@ -2,8 +2,8 @@ module Main where
 
 import Quesito
 import Quesito.LC.CodeGen
-import Quesito.TT.TopLevel (ttDeclToLcDecl)
-import Quesito.Syntax (getNames, convertDef)
+import Quesito.TT.TopLevel as TT (convertDef)
+import Quesito.Syntax as Syn (getNames, convertDef)
 import Quesito.Syntax.Parse (parse)
 
 import Control.Monad.State (evalStateT)
@@ -22,11 +22,11 @@ main = do
       = either (error . show) id
       $ parse input
   let (m, w) = runQues $ do
-        declarations <- snd <$> foldlM (\(env, decls) def -> do decl <- convertDef env def; return (getNames def ++ env, decls ++ [decl])) ([], []) definitions
+        declarations <- snd <$> foldlM (\(env, decls) def -> do decl <- Syn.convertDef env def; return (getNames def ++ env, decls ++ [decl])) ([], []) definitions
         mapM_ (tell . show) declarations
         decls <- reverse . fst <$> foldlM
           (\(decls, env) decl -> do
-              (decl', env') <- ttDeclToLcDecl env decl
+              (decl', env') <- TT.convertDef env decl
               return (decl' : decls, env')
           )
           ([], Map.empty)

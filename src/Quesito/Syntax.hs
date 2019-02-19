@@ -95,7 +95,7 @@ convertDef :: [String] -> Def -> Ques TT.Def
 convertDef env (PatternMatchingDef name equations ty flags) = do
   equations' <- equationsM'
   ty' <- convert (name:env) ty
-  return (TT.PatternMatchingDecl name equations' ty' flags)
+  return (TT.PatternMatchingDef name equations' ty' flags)
   where
     equationsM' = flip mapM equations $ \(lhs, rhs) -> do
       lhs' <- convert (name:env) lhs
@@ -107,4 +107,4 @@ convertDef env (TypeDef name ty constructors) = do
       t' <- convert (name:env) t
       return (name', t')
     )
-  return (TT.TypeDecl name ty' constructors')
+  return (TT.TypeDef name ty' constructors')

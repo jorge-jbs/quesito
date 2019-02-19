@@ -12,13 +12,13 @@ data Pattern
   deriving Show
 
 data Def
-  = PatternMatchingDecl
+  = PatternMatchingDef
       String  -- ^ name
       [([(String, Type)], [Pattern], Term)]  -- ^ equations
       [Type]  -- ^ arguments types
       Type  -- ^ return type
       Flags
-  | TypeDecl
+  | TypeDef
       String  -- ^ name
       [(String, Type)]  -- ^ constructors
   deriving Show

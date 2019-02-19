@@ -41,7 +41,7 @@ sizeOf ty = L.withContext $ \ctx -> L.runEncodeAST ctx $ do
 type CodeGenState = Map.Map String Int
 
 defCodeGen :: (L.MonadModuleBuilder m, MonadIO m, MonadFix m, MonadState CodeGenState m) => Def -> m ()
-defCodeGen (PatternMatchingDecl name equations args retTy _) = do
+defCodeGen (PatternMatchingDef name equations args retTy _) = do
   let argsTypes = map (\ty -> (typeToLType ty, L.NoParameterName)) args
   _ <- L.function
     (L.mkName name)
@@ -110,7 +110,7 @@ defCodeGen (PatternMatchingDecl name equations args retTy _) = do
       L.ret =<< codeGen boundArgs t
       return n
 
-defCodeGen (TypeDecl name cons) = do
+defCodeGen (TypeDef name cons) = do
   let flattened = map (flatten . snd) cons
   let getConsLTypes = map getConsLType (map fst flattened)
   maxSize <- liftIO (maximum <$> mapM sizeOf getConsLTypes)
