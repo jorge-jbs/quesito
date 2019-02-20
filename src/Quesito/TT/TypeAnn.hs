@@ -70,16 +70,22 @@ typeInfAnn' _ env ctx (Local x) =
       throwError ("Local variable not found at " ++ pprint loc ++ ": " ++ x)
 typeInfAnn' opts env ctx (Global x) =
   case lookupAnnEnv x env of
-    Just (TypeDef n ty _, _, env') | x == n -> do
+    Just (TypeDef n ty _, _) | x == n -> do
       (_, tyAnn) <- typeInfAnn' opts env ctx ty
-      ty' <- eval (dropAnn env') [] ty
+      ty' <- eval (dropAnn env) [] ty
       return (ty', Ann.Global x tyAnn)
-    Just (TypeDef _ ty _, _, env') -> do
-      (_, tyAnn) <- typeInfAnn' opts env ctx ty
-      ty' <- eval (dropAnn env') [] ty
-      return (ty', Ann.Global x tyAnn)
-    Just (PatternMatchingDef _ _ ty _, annTy, env') -> do
-      ty' <- eval (dropAnn env') [] ty
+    Just (TypeDef _ _ conss, _) ->
+      case lookup x conss of
+        Just ty -> do
+          (_, tyAnn) <- typeInfAnn' opts env ctx ty
+          ty' <- eval (dropAnn env) [] ty
+          return (ty', Ann.Global x tyAnn)
+        Nothing -> do
+          tell ("env: " ++ show (annEnvKeys env))
+          tell ("ctx: " ++ show (map (\(v, _, _) -> v) ctx))
+          throwError "Internal error"
+    Just (PatternMatchingDef _ _ ty _, annTy) -> do
+      ty' <- eval (dropAnn env) [] ty
       return (ty', Ann.Global x annTy)
     Nothing -> do
       loc <- getLocation

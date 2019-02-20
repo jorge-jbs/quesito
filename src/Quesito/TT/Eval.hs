@@ -72,13 +72,13 @@ eval _ ctx (Local x) =
      return (VNormal (NFree x))
 eval env ctx (Global x) =
   case lookupEnv x env of
-    Just (TypeDef n _ _, _) | x == n ->
+    Just (TypeDef n _ _) | x == n ->
       return (VNormal (NDataType x))
-    Just (TypeDef {}, _) ->  -- x `elem` map fst conss
+    Just (TypeDef {}) ->  -- x `elem` map fst conss
       return (VNormal (NDataCons x))
-    Just (PatternMatchingDef _ [([], f)] _ _, env') ->
-      eval env' [] f
-    Just (PatternMatchingDef {}, _) ->
+    Just (PatternMatchingDef _ [([], f)] _ _) ->
+      eval env [] f
+    Just (PatternMatchingDef {}) ->
       return (VNormal (NGlobal x))
     Nothing -> do
       loc <- getLocation
@@ -127,7 +127,7 @@ eval env ctx (App e e') = do
     apply (NGlobal name) args@(a:as) = do
       loc <- getLocation
       case lookupEnv name env of
-        Just (PatternMatchingDef _ equations _ (Flags total), env') ->
+        Just (PatternMatchingDef _ equations _ (Flags total)) ->
           if total then
             let
               matchedEq
@@ -137,10 +137,10 @@ eval env ctx (App e e') = do
             in
               case matchedEq of
                 Just (s, t) ->
-                  eval env' s t
+                  eval env s t
                 Nothing ->
                   apply (NApp (NGlobal name) a) as
-          else do
+          else
             apply (NApp (NGlobal name) a) as
         --Just (DMatchFunction Nothing _ _) ->
           --apply (NApp (NGlobal name) a) as

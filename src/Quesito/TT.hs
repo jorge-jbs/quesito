@@ -17,15 +17,21 @@ module Quesito.TT
   , lookupEnv
   , emptyEnv
   , envKeys
+  , envInsert
+  , envAppend
   , AnnEnv
   , lookupAnnEnv
   , dropAnn
   , emptyAnnEnv
   , annEnvKeys
+  , annEnvInsert
+  , annEnvAppend
+  , annEnvToList
   )
   where
 
 import Prelude hiding (print)
+import Data.List (find)
 
 import Quesito
 
@@ -221,16 +227,12 @@ newtype Env = Env [Def]
 emptyEnv :: Env
 emptyEnv = Env []
 
-lookupEnv :: String -> Env -> Maybe (Def, Env)
-lookupEnv _ (Env []) =
-  Nothing
-lookupEnv k (Env (def:env))
-  | k `elem` getNames def =
-      Just (def, Env env)
-  | otherwise =
-      lookupEnv k (Env env)
+lookupEnv :: String -> Env -> Maybe (Def)
+lookupEnv k (Env env) =
+  find (elem k . getNames) env
 
 newtype AnnEnv ann = AnnEnv [(Def, ann)]
+  deriving Show
 
 emptyAnnEnv :: AnnEnv ann
 emptyAnnEnv = AnnEnv []
@@ -239,14 +241,17 @@ envKeys :: Env -> [String]
 envKeys (Env env) =
   foldl (++) [] $ map getNames env
 
-lookupAnnEnv :: String -> AnnEnv ann -> Maybe (Def, ann, AnnEnv ann)
-lookupAnnEnv _ (AnnEnv []) =
-  Nothing
-lookupAnnEnv k (AnnEnv ((def, ann):env))
-  | k `elem` getNames def =
-      Just (def, ann, AnnEnv env)
-  | otherwise =
-      lookupAnnEnv k (AnnEnv env)
+envInsert :: Def -> Env -> Env
+envInsert d (Env env) =
+  Env (d : env)
+
+envAppend :: Env -> Env -> Env
+envAppend (Env env1) (Env env2) =
+  Env (env1 ++ env2)
+
+lookupAnnEnv :: String -> AnnEnv ann -> Maybe (Def, ann)
+lookupAnnEnv k (AnnEnv env) =
+  find (elem k . getNames . fst) env
 
 dropAnn :: AnnEnv ann -> Env
 dropAnn (AnnEnv env) =
@@ -255,3 +260,14 @@ dropAnn (AnnEnv env) =
 annEnvKeys :: AnnEnv ann -> [String]
 annEnvKeys (AnnEnv env) =
   foldl (++) [] $ map (getNames . fst) env
+
+annEnvInsert :: Def -> ann -> AnnEnv ann -> AnnEnv ann
+annEnvInsert d ann (AnnEnv env) =
+  AnnEnv ((d, ann) : env)
+
+annEnvAppend :: AnnEnv ann -> AnnEnv ann -> AnnEnv ann
+annEnvAppend (AnnEnv env1) (AnnEnv env2) =
+  AnnEnv (env1 ++ env2)
+
+annEnvToList :: AnnEnv ann -> [(Def, ann)]
+annEnvToList (AnnEnv env) = env
