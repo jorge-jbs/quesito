@@ -1,7 +1,8 @@
 module Quesito.Ann where
 
 import Quesito
-import Quesito.TT (BinOp(..), UnOp(..))
+import Quesito.TT (BinOp(..), UnOp(..), Flags)
+import Quesito.Env (Definition(..))
 import qualified Quesito.TT as TT
 
 data Term
@@ -11,14 +12,42 @@ data Term
   | BytesType Int
   | BinOp BinOp
   | UnOp UnOp
-  | Num { num :: Int, bytes :: Int }
+  | Num
+      Int -- ^ literal
+      Int -- ^ bytes
   | Pi String Type Type
   | App Term Type Term Type
-  | Lam String Term Term Type
+  | Lam String Type Term Type
   | Loc Location Term
   deriving Show
 
 type Type = Term
+
+data Def
+  = PatternMatchingDef
+      String  -- ^ name
+      [([(String, Type)], [Pattern], Term)]  -- ^ equations
+      Type  -- ^ type
+      Flags
+  | TypeDef
+      String  -- ^ name
+      Type  -- ^ type
+      [(String, Term)]  -- ^ constructors
+  deriving Show
+
+instance Definition Def where
+  getNames (PatternMatchingDef n _ _ _) =
+    [n]
+  getNames (TypeDef n _ conss) =
+    n : map fst conss
+
+data Pattern
+  = Binding String
+  | Inaccessible Term
+  | NumPat Int
+  | Constructor String
+  | PatApp Pattern Pattern
+  deriving Show
 
 downgrade :: Term -> TT.Term
 downgrade (Local v _) =

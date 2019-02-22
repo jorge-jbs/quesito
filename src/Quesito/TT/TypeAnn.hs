@@ -11,8 +11,9 @@ module Quesito.TT.TypeAnn
 
 import Quesito
 import Quesito.TT hiding (Env)
-import Quesito.TT.Eval hiding (TContext)
+import Quesito.Ann.Eval hiding (TContext, Env)
 import qualified Quesito.Ann as Ann
+import qualified Quesito.Env as Env
 
 import Data.List (find)
 import Control.Monad (unless)
@@ -25,7 +26,7 @@ type TContext =
     )
   ]
 
-type Env = AnnEnv Ann.Term
+type Env = Env.Env Ann.Def
 
 data Options
   = Options
@@ -65,31 +66,29 @@ typeInfAnn' _ env ctx (Local x) =
       return (ty, Ann.Local x annTy)
     Nothing -> do
       loc <- getLocation
-      tell (show $ annEnvKeys env)
+      tell (show $ Env.keys env)
       tell (show $ map (\(v, _, _) -> v) ctx)
       throwError ("Local variable not found at " ++ pprint loc ++ ": " ++ x)
 typeInfAnn' opts env ctx (Global x) =
-  case lookupAnnEnv x env of
-    Just (TypeDef n ty _, _) | x == n -> do
-      (_, tyAnn) <- typeInfAnn' opts env ctx ty
-      ty' <- eval (dropAnn env) [] ty
-      return (ty', Ann.Global x tyAnn)
-    Just (TypeDef _ _ conss, _) ->
+  case Env.lookup x env of
+    Just (Ann.TypeDef n annTy _) | x == n -> do
+      ty' <- eval env [] annTy
+      return (ty', Ann.Global x annTy)
+    Just (Ann.TypeDef _ _ conss) ->
       case lookup x conss of
-        Just ty -> do
-          (_, tyAnn) <- typeInfAnn' opts env ctx ty
-          ty' <- eval (dropAnn env) [] ty
-          return (ty', Ann.Global x tyAnn)
+        Just annTy -> do
+          ty' <- eval env [] annTy
+          return (ty', Ann.Global x annTy)
         Nothing -> do
-          tell ("env: " ++ show (annEnvKeys env))
+          tell ("env: " ++ show (Env.keys env))
           tell ("ctx: " ++ show (map (\(v, _, _) -> v) ctx))
           throwError "Internal error"
-    Just (PatternMatchingDef _ _ ty _, annTy) -> do
-      ty' <- eval (dropAnn env) [] ty
+    Just (Ann.PatternMatchingDef _ _ annTy _) -> do
+      ty' <- eval env [] annTy
       return (ty', Ann.Global x annTy)
     Nothing -> do
       loc <- getLocation
-      tell ("env: " ++ show (annEnvKeys env))
+      tell ("env: " ++ show (Env.keys env))
       tell ("ctx: " ++ show (map (\(v, _, _) -> v) ctx))
       throwError ("Global variable not found at " ++ pprint loc ++ ": " ++ x)
 typeInfAnn' _ _ _ (Type i) =
@@ -100,16 +99,16 @@ typeInfAnn' _ _ _ (Num n) = do
   loc <- getLocation
   throwError ("Cannot infer byte size of number " ++ show n ++ ": " ++ pprint loc)
 typeInfAnn' _ _ _ (BinOp op) = do
-  ty <- eval emptyEnv [] (Pi "" (BytesType 4) (Pi "" (BytesType 4) (BytesType 4)))
+  ty <- eval Env.empty [] (Ann.Pi "" (Ann.BytesType 4) (Ann.Pi "" (Ann.BytesType 4) (Ann.BytesType 4)))
   return (ty, Ann.BinOp op)
 typeInfAnn' _ _ _ (UnOp op) = do
-  ty <- eval emptyEnv [] (Pi "" (BytesType 4) (BytesType 4))
+  ty <- eval Env.empty [] (Ann.Pi "" (Ann.BytesType 4) (Ann.BytesType 4))
   return (ty, Ann.UnOp op)
 typeInfAnn' opts env ctx (Pi x e f) = do
-  (ty, _) <- typeInfAnn' opts env ctx e
+  (ty, annE) <- typeInfAnn' opts env ctx e
   case ty of
     VType i -> do
-      e' <- eval (dropAnn env) [] e
+      e' <- eval env [] annE
       annE <- snd <$> typeInfAnn' opts env ctx e
       (t', annF) <-
         typeInfAnn' opts
@@ -127,11 +126,11 @@ typeInfAnn' opts env ctx (Pi x e f) = do
       throwError ("2: " ++ pprint loc)
 typeInfAnn' opts env ctx (App e f) = do
   (s, annE) <- typeInfAnn' opts env ctx e
-  annS <- snd <$> (typeInfAnn' opts env ctx =<< quote s)
+  annS <- quote s
   case s of
     VPi v t t' (Closure env' ctx') -> do
       (annF, annT) <- typeCheckAnn' opts env ctx f t
-      f' <- eval (dropAnn env) [] f
+      f' <- eval env [] annF
       x <- eval env' ((v, f') : ctx') t'
       return (x, Ann.App annE annS annF annT)
     _ -> do
@@ -139,10 +138,10 @@ typeInfAnn' opts env ctx (App e f) = do
       qs <- quote s
       throwError ("Applying to non-function at " ++ pprint loc ++ ": " ++ show qs)
 typeInfAnn' opts env ctx (Ann e ty) = do
-  (tyTy, _) <- typeInfAnn' opts env ctx ty
+  (tyTy, annTy) <- typeInfAnn' opts env ctx ty
   case tyTy of
     VType _ -> do
-      ty' <- eval (dropAnn env) [] ty
+      ty' <- eval env [] annTy
       (annE, _) <- typeCheckAnn' opts env ctx e ty'
       return (ty', annE)
     _ ->
@@ -177,12 +176,12 @@ typeCheckAnn'
        , Ann.Term  -- ^ annotated type
        )
 typeCheckAnn' opts env ctx (Local v) ty | inferVars opts = do
-  (_, annTy) <- typeInfAnn' opts env ctx =<< quote ty
+  annTy <- quote ty
   return (Ann.Local v annTy, annTy)
 typeCheckAnn' opts env ctx (Lam x e) (VPi x' v w (Closure env' ctx')) = do
   tell ("typeInfAnn' opts Lam: " ++ show e)
   w' <- eval env' ctx' w
-  (_, annV) <- typeInfAnn' opts env ctx =<< quote v
+  annV <- quote v
   (annE, annW') <- typeCheckAnn' opts env ((x, v, annV) : ctx) e w'
   return (Ann.Lam x annV annE annW', Ann.Pi x' annV annW')
 typeCheckAnn' _ _ _ (Lam _ _) _ = do
@@ -217,10 +216,9 @@ typeCheckAnn' opts env ctx (Loc loc t) ty = do
 typeCheckAnn' opts env ctx t ty = do
   (ty', annT) <- typeInfAnn' opts env ctx t
   qty <- quote ty
-  (_, annTy) <- typeInfAnn' opts env ctx qty
   qty' <- quote ty'
   loc <- getLocation
   unless
-    (deBruijnize qty == deBruijnize qty')
+    (ty == ty')
     (throwError ("Type mismatch at " ++ pprint loc ++ ". Expected " ++ show qty ++ " and got " ++ show qty'))
-  return (annT, annTy)
+  return (annT, qty)

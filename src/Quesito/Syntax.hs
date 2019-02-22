@@ -10,9 +10,9 @@ import Data.Default
 
 import Quesito
 import qualified Quesito.TT as TT hiding (Env)
-import qualified Quesito.TT.Eval as TT
 import qualified Quesito.TT.TypeAnn as TT
 import qualified Quesito.Ann as Ann
+import qualified Quesito.Ann.Eval as Ann
 import Quesito.TT (Flags)
 
 data Term
@@ -95,7 +95,9 @@ convert env (Ann t ty) =
 convert env (Loc loc t) =
   TT.Loc loc <$> convert env t `locatedAt` loc
 
-convertDef :: TT.Env -> Def -> Ques (TT.Def, Ann.Term)
+convertDef :: TT.Env -> Def -> Ques TT.Def
+convertDef = undefined
+{-
 convertDef env (PatternMatchingDef name equations ty flags) = do
   tell ("Checking pattern matching function definition " ++ name ++ " " ++ show (TT.annEnvKeys env))
   ty' <- convert (name : TT.annEnvKeys env) ty
@@ -171,3 +173,4 @@ termToPattern _ (TT.Lam _ _) = do
   throwError ("Can't pattern match on lambda expressions (at " ++ pprint loc ++ ")")
 termToPattern env (TT.Loc loc t) =
   termToPattern env t `locatedAt` loc
+-}

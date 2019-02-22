@@ -4,9 +4,8 @@ import qualified Data.Map as Map
 
 import Quesito
 import Quesito.TT hiding (Env)
-import Quesito.TT.Eval hiding (Def)
-import qualified Quesito.TT.Eval as Eval
 import Quesito.TT.TypeAnn
+import Quesito.Ann.Eval as Eval
 import qualified Quesito.Ann as Ann
 import qualified Quesito.LC as LC
 import qualified Quesito.LC.TopLevel as LC
@@ -19,7 +18,7 @@ getNames (PatternMatchingDef name _ _ _) =
 getNames (TypeDef name _ conss) =
   name : map fst conss
 
-convertDef :: MonadQues m => Env -> Def -> m (LC.Def, Env)
+convertDef :: MonadQues m => Eval.Env -> Def -> m (LC.Def, Eval.Env)
 convertDef = undefined
 {-
 convertDef env (PatternMatchingDef name equations ty flags) = do

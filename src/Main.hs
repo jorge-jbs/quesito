@@ -2,8 +2,9 @@ module Main where
 
 import Quesito
 import Quesito.LC.CodeGen
-import Quesito.TT (emptyAnnEnv, annEnvInsert, annEnvToList)
+import qualified Quesito.TT as TT
 import Quesito.TT.TopLevel as TT (convertDef)
+import qualified Quesito.Env as Env
 import Quesito.Syntax as Syn (getNames, convertDef)
 import Quesito.Syntax.Parse (parse)
 
@@ -23,15 +24,16 @@ main = do
       = either (error . show) id
       $ parse input
   let (m, w) = runQues $ do
-        declarations <- foldlM (\env def -> do (def', annTy) <- Syn.convertDef env def; return (annEnvInsert def' annTy env)) emptyAnnEnv definitions
+        --declarations <- foldlM (\env def -> do def' <- Syn.convertDef env def; return (Env.insert def' env)) emptyAnnEnv definitions
+        let declarations = undefined :: [TT.Def]
         tell $ show declarations
         decls <- reverse . fst <$> foldlM
           (\(decls, env) decl -> do
               (decl', env') <- TT.convertDef env decl
               return (decl' : decls, env')
           )
-          ([], emptyAnnEnv)
-          (map fst $ annEnvToList declarations)
+          ([], Env.empty)
+          declarations
         return (buildModuleT (fromString "main") (evalStateT (mapM defCodeGen decls) Map.empty))
   putStrLn w
   case m of
