@@ -132,7 +132,7 @@ typeInfAnn' opts env ctx (App e f) = do
       (annF, annT) <- typeCheckAnn' opts env ctx f t
       f' <- eval env [] annF
       x <- eval env' ((v, f') : ctx') t'
-      return (x, Ann.App annE annS annF annT)
+      return (x, Ann.App annE annF)
     _ -> do
       loc <- getLocation
       qs <- quote s
@@ -183,7 +183,7 @@ typeCheckAnn' opts env ctx (Lam x e) (VPi x' v w (Closure env' ctx')) = do
   w' <- eval env' ctx' w
   annV <- quote v
   (annE, annW') <- typeCheckAnn' opts env ((x, v, annV) : ctx) e w'
-  return (Ann.Lam x annV annE annW', Ann.Pi x' annV annW')
+  return (Ann.Lam x annV annE, Ann.Pi x' annV annW')
 typeCheckAnn' _ _ _ (Lam _ _) _ = do
   loc <- getLocation
   throwError ("6: " ++ pprint loc)

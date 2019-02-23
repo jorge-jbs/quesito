@@ -19,7 +19,7 @@ type VContext =
   TContext
 
 data Value
-  = VLam String Type Term Type Closure
+  = VLam String Type Term Closure
   | VType Int
   | VBytesType Int
   | VNum Int Int
@@ -33,7 +33,7 @@ data Normal
   | NDataCons String Type
   | NBinOp BinOp
   | NUnOp UnOp
-  | NApp Normal Type Value Type
+  | NApp Normal Value
 
 instance Eq Value where
   (==) = undefined
@@ -42,8 +42,8 @@ data Closure
   = Closure Env VContext
 
 quote :: MonadQues m => Value -> m Term
-quote (VLam x ty body retTy _) =
-  return (Lam x ty body retTy)
+quote (VLam x ty body _) =
+  return (Lam x ty body)
 quote (VType i) =
   return (Type i)
 quote (VBytesType n) =
@@ -67,8 +67,8 @@ quote (VNormal n) =
       return (BinOp op)
     quoteNormal (NUnOp op) =
       return (UnOp op)
-    quoteNormal (NApp m ty1 v ty2) =
-      App <$> quoteNormal m <*> pure ty1 <*> quote v <*> pure ty2
+    quoteNormal (NApp m v) =
+      App <$> quoteNormal m <*> quote v
 
 eval :: MonadQues m => Env -> VContext -> Term -> m Value
 eval _ ctx (Local x ty) =
@@ -105,14 +105,14 @@ eval _ _ (UnOp op) =
 eval env ctx (Pi x r s) = do
   r' <- eval env ctx r
   return (VPi x r' s (Closure env ctx))
-eval env ctx (App e _ e' _) = do
-  v <- eval env ctx e
-  v' <- eval env ctx e'
-  case v of
-    VLam x _ body _ (Closure env' ctx') ->
-      eval env' ((x, v') : ctx') body
+eval env ctx (App r s) = do
+  r' <- eval env ctx r
+  s' <- eval env ctx s
+  case r' of
+    VLam x _ body (Closure env' ctx') ->
+      eval env' ((x, s') : ctx') body
     VNormal n ->
-      uncurry apply (flattenNormal (NApp n undefined v' undefined))
+      uncurry apply (flattenNormal (NApp n s'))
     _ ->
       undefined
   where
@@ -121,12 +121,12 @@ eval env ctx (App e _ e' _) = do
       flattenNormal' []
       where
         flattenNormal' :: [Value] -> Normal -> (Normal, [Value])
-        flattenNormal' as (NApp f _ a _) =
+        flattenNormal' as (NApp f a) =
           flattenNormal' (a:as) f
         flattenNormal' as f =
           (f, as)
 
-    apply :: MonadQues m => Normal -> [Value] -> m (Value)
+    apply :: MonadQues m => Normal -> [Value] -> m Value
     apply (NBinOp Add) [VNum x b, VNum y _] = do
       return (VNum (x + y) b)
     apply (NBinOp Sub) [VNum x b, VNum y _] = do
@@ -146,9 +146,9 @@ eval env ctx (App e _ e' _) = do
                 Just (s, t) ->
                   eval env s t
                 Nothing ->
-                  apply (NApp (NGlobal name undefined) undefined a undefined) as
+                  apply (NApp (NGlobal name undefined) a) as
           else
-            apply (NApp (NGlobal name undefined) undefined a undefined) as
+            apply (NApp (NGlobal name undefined) a) as
         --Just (DMatchFunction Nothing _ _) ->
           --apply (NApp (NGlobal name) a) as
         Just _ ->
@@ -156,7 +156,7 @@ eval env ctx (App e _ e' _) = do
         Nothing ->
           throwError ("Unknown global variable at " ++ pprint loc ++ ": " ++ name)
     apply f (a:as) =
-      apply (NApp f undefined a undefined) as
+      apply (NApp f a) as
     apply f [] =
       return (VNormal f)
 
@@ -179,7 +179,7 @@ eval env ctx (App e _ e' _) = do
         Nothing
     match (Constructor _) _ =
       Nothing
-    match (PatApp p p') (VNormal (NApp t _ t' _)) = do
+    match (PatApp p p') (VNormal (NApp t t')) = do
       l <- match p (VNormal t)
       l' <- match p' t'
       return (l ++ l')
@@ -200,7 +200,5 @@ eval env ctx (App e _ e' _) = do
           Nothing
         matchEquation' _ _ [] =
           Nothing
-eval env ctx (Lam x ty e retTy) =
-  return (VLam x ty e retTy (Closure env ctx))
-eval env ctx (Loc loc t) =
-  eval env ctx t `locatedAt` loc
+eval env ctx (Lam x ty e) =
+  return (VLam x ty e (Closure env ctx))
