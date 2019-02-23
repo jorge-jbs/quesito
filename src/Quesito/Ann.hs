@@ -1,6 +1,5 @@
 module Quesito.Ann where
 
-import Quesito
 import Quesito.TT (BinOp(..), UnOp(..), Flags)
 import Quesito.Env (Definition(..))
 import qualified Quesito.TT as TT
@@ -119,3 +118,10 @@ flattenApp =
       flattenApp' (a:as) f
     flattenApp' as f =
       f:as
+
+flattenPi :: Type -> ([Type], Type)
+flattenPi (Pi _ ty1 ty2) =
+  let (args, ret) = flattenPi ty2
+  in (ty1 : args, ret)
+flattenPi t =
+  ([], t)

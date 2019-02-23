@@ -6,13 +6,9 @@ module Quesito.Syntax
   )
   where
 
-import Data.Default
-
 import Quesito
-import qualified Quesito.TT as TT hiding (Env)
+import qualified Quesito.TT as TT
 import qualified Quesito.TT.TypeAnn as TT
-import qualified Quesito.Ann as Ann
-import qualified Quesito.Ann.Eval as Ann
 import Quesito.TT (Flags)
 
 data Term

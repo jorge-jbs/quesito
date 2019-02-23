@@ -35,6 +35,12 @@ data Normal
   | NUnOp UnOp
   | NApp Normal Value
 
+isType :: Value -> Bool
+isType (VType _) =
+  True
+isType _ =
+  False
+
 instance Eq Value where
   (==) = undefined
 
@@ -140,11 +146,11 @@ eval env ctx (App r s) = do
               matchedEq
                 = join
                 $ find (\x -> case x of Just _ -> True; _ -> False)
-                $ map (\(_, p, body) -> do s <- matchEquation p args; return (s, body)) equations
+                $ map (\(_, p, body) -> do x <- matchEquation p args; return (x, body)) equations
             in
               case matchedEq of
-                Just (s, t) ->
-                  eval env s t
+                Just (ctx', t) ->
+                  eval env ctx' t
                 Nothing ->
                   apply (NApp (NGlobal name undefined) a) as
           else

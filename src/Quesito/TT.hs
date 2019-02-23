@@ -17,7 +17,6 @@ module Quesito.TT
   where
 
 import Prelude hiding (print)
-import Data.List (find)
 
 import Quesito
 
@@ -188,12 +187,6 @@ data Def
       Type  -- ^ type
       [(String, Term)]  -- ^ constructors
   deriving Show
-
-getNames :: Def -> [String]
-getNames (PatternMatchingDef n _ _ _) =
-  [n]
-getNames (TypeDef n _ conss) =
-  n : map fst conss
 
 data Pattern
   = Binding String

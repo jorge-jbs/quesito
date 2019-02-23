@@ -10,7 +10,7 @@ module Quesito.TT.TypeAnn
   where
 
 import Quesito
-import Quesito.TT hiding (Env)
+import Quesito.TT
 import Quesito.Ann.Eval hiding (TContext, Env)
 import qualified Quesito.Ann as Ann
 import qualified Quesito.Env as Env
@@ -69,7 +69,7 @@ typeInfAnn' _ env ctx (Local x) =
       tell (show $ Env.keys env)
       tell (show $ map (\(v, _, _) -> v) ctx)
       throwError ("Local variable not found at " ++ pprint loc ++ ": " ++ x)
-typeInfAnn' opts env ctx (Global x) =
+typeInfAnn' _ env ctx (Global x) =
   case Env.lookup x env of
     Just (Ann.TypeDef n annTy _) | x == n -> do
       ty' <- eval env [] annTy
@@ -109,7 +109,6 @@ typeInfAnn' opts env ctx (Pi x e f) = do
   case ty of
     VType i -> do
       e' <- eval env [] annE
-      annE <- snd <$> typeInfAnn' opts env ctx e
       (t', annF) <-
         typeInfAnn' opts
           env
@@ -126,10 +125,9 @@ typeInfAnn' opts env ctx (Pi x e f) = do
       throwError ("2: " ++ pprint loc)
 typeInfAnn' opts env ctx (App e f) = do
   (s, annE) <- typeInfAnn' opts env ctx e
-  annS <- quote s
   case s of
     VPi v t t' (Closure env' ctx') -> do
-      (annF, annT) <- typeCheckAnn' opts env ctx f t
+      (annF, _) <- typeCheckAnn' opts env ctx f t
       f' <- eval env [] annF
       x <- eval env' ((v, f') : ctx') t'
       return (x, Ann.App annE annF)
@@ -175,7 +173,7 @@ typeCheckAnn'
        ( Ann.Term  -- ^ annotated expr
        , Ann.Term  -- ^ annotated type
        )
-typeCheckAnn' opts env ctx (Local v) ty | inferVars opts = do
+typeCheckAnn' opts _ _ (Local v) ty | inferVars opts = do
   annTy <- quote ty
   return (Ann.Local v annTy, annTy)
 typeCheckAnn' opts env ctx (Lam x e) (VPi x' v w (Closure env' ctx')) = do

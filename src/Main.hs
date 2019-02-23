@@ -4,6 +4,8 @@ import Quesito
 import Quesito.LC.CodeGen
 import qualified Quesito.TT as TT
 import Quesito.TT.TopLevel as TT (typeAnn)
+import qualified Quesito.Ann as Ann
+import qualified Quesito.LC.TopLevel as LC
 import qualified Quesito.Env as Env
 import Quesito.Syntax as Syn (getNames, desugarDef)
 import Quesito.Syntax.Parse (parse)
@@ -25,15 +27,16 @@ main = do
       $ parse input
   let (m, w) = runQues $ do
         --declarations <- foldlM (\env def -> do def' <- Syn.desugar env def; return (Env.insert def' env)) emptyAnnEnv definitions
-        let declarations = undefined :: [TT.Def]
-        tell $ show declarations
-        decls <- reverse . fst <$> foldlM
-          (\(decls, env) decl -> do
-              (decl', env') <- TT.typeAnn env decl
-              return (decl' : decls, env')
+        let ttDefs = undefined :: [TT.Def]
+        tell $ show ttDefs
+        annDefs <- foldlM
+          (\annDefs ttDef -> do
+              annDef <- TT.typeAnn annDefs ttDef
+              return (Env.insert annDef annDefs)
           )
-          ([], Env.empty)
-          declarations
+          Env.empty
+          ttDefs
+        let decls = undefined :: [LC.Def]
         return (buildModuleT (fromString "main") (evalStateT (mapM defCodeGen decls) Map.empty))
   putStrLn w
   case m of
