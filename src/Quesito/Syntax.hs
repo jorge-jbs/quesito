@@ -2,7 +2,7 @@ module Quesito.Syntax
   ( Term(..)
   , Def(..)
   , getNames
-  , convertDef
+  , desugarDef
   )
   where
 
@@ -43,8 +43,8 @@ getNames (PatternMatchingDef name _ _ _) =
 getNames (TypeDef name _ conss) =
   name : map fst conss
 
-convert :: [String] -> Term -> Ques TT.Term
-convert env (Var v)
+desugar :: [String] -> Term -> Ques TT.Term
+desugar env (Var v)
   | v `elem` env =
       return (TT.Global v)
   | otherwise =
@@ -67,45 +67,45 @@ convert env (Var v)
       "not"  -> return (TT.UnOp TT.Not)
       _ ->
         return (TT.Local v)
-convert _ (Num n) =
+desugar _ (Num n) =
   return (TT.Num n)
-convert _ (App (Var "Bytes") [Num n]) =
+desugar _ (App (Var "Bytes") [Num n]) =
   return (TT.BytesType n)
-convert _ (App (Var "Bytes") _) = do
+desugar _ (App (Var "Bytes") _) = do
   loc <- getLocation
   throwError ("Type error on Bytes at " ++ pprint loc)
-convert _ (App (Var "Type") [Num n]) =
+desugar _ (App (Var "Type") [Num n]) =
   return (TT.Type n)
-convert _ (App (Var "Type") _) = do
+desugar _ (App (Var "Type") _) = do
   loc <- getLocation
   throwError ("Type error on Type at " ++ pprint loc)
-convert env (App t args) =
-  foldl TT.App <$> convert env t <*> mapM (convert env) args
-convert env (Lam v body) =
-  TT.Lam v <$> convert env body
-convert env (Arrow (Ann (Var v) ty1) ty2) =
-  TT.Pi v <$> convert env ty1 <*> convert env ty2
-convert _ (Arrow (Ann _ _) _) = do
+desugar env (App t args) =
+  foldl TT.App <$> desugar env t <*> mapM (desugar env) args
+desugar env (Lam v body) =
+  TT.Lam v <$> desugar env body
+desugar env (Arrow (Ann (Var v) ty1) ty2) =
+  TT.Pi v <$> desugar env ty1 <*> desugar env ty2
+desugar _ (Arrow (Ann _ _) _) = do
   loc <- getLocation
   throwError ("Type annotation not allowed here " ++ pprint loc)
-convert env (Arrow ty1 ty2) =
-  TT.Pi "" <$> convert env ty1 <*> convert env ty2
-convert env (Ann t ty) =
-  TT.Ann <$> convert env t <*> convert env ty
-convert env (Loc loc t) =
-  TT.Loc loc <$> convert env t `locatedAt` loc
+desugar env (Arrow ty1 ty2) =
+  TT.Pi "" <$> desugar env ty1 <*> desugar env ty2
+desugar env (Ann t ty) =
+  TT.Ann <$> desugar env t <*> desugar env ty
+desugar env (Loc loc t) =
+  TT.Loc loc <$> desugar env t `locatedAt` loc
 
-convertDef :: TT.Env -> Def -> Ques TT.Def
-convertDef = undefined
+desugarDef :: TT.Env -> Def -> Ques TT.Def
+desugarDef = undefined
 {-
-convertDef env (PatternMatchingDef name equations ty flags) = do
+desugarDef env (PatternMatchingDef name equations ty flags) = do
   tell ("Checking pattern matching function definition " ++ name ++ " " ++ show (TT.annEnvKeys env))
-  ty' <- convert (name : TT.annEnvKeys env) ty
+  ty' <- desugar (name : TT.annEnvKeys env) ty
   (_, annTy) <- TT.typeInfAnn env [] ty'
   -- TODO check type
   equations' <- flip mapM equations $ \(lhs, rhs) -> do
-      lhs' <- convert (name : TT.annEnvKeys env) lhs
-      rhs' <- convert (name : TT.annEnvKeys env) rhs
+      lhs' <- desugar (name : TT.annEnvKeys env) lhs
+      rhs' <- desugar (name : TT.annEnvKeys env) rhs
       pats <- mapM (termToPattern env) (tail $ TT.flattenApp lhs')
       let env' = TT.annEnvInsert (TT.PatternMatchingDef name [] ty' (TT.Flags False)) annTy env
       (lhsTy, annLhs) <- TT.typeInfAnn' (def { TT.inferVars = True }) env' [] lhs'
@@ -122,13 +122,13 @@ convertDef env (PatternMatchingDef name equations ty flags) = do
       (++) <$> findVars s <*> findVars t
     findVars _ =
       return []
-convertDef env (TypeDef name ty constructors) = do
+desugarDef env (TypeDef name ty constructors) = do
   tell ("Checking type definition " ++ name ++ " " ++ show (TT.annEnvKeys env))
-  ty' <- convert (TT.annEnvKeys env) ty
+  ty' <- desugar (TT.annEnvKeys env) ty
   (_, annTy) <- TT.typeInfAnn env [] ty'
   -- TODO check type
   constructors' <- flip mapM constructors (\(name', t) -> do
-      t' <- convert (name : TT.annEnvKeys env) t
+      t' <- desugar (name : TT.annEnvKeys env) t
       _ <- TT.typeInfAnn (TT.annEnvInsert (TT.TypeDef name ty' []) annTy env) [] t'
       return (name', t')
     )

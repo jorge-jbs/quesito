@@ -18,10 +18,10 @@ getNames (PatternMatchingDef name _ _ _) =
 getNames (TypeDef name _ conss) =
   name : map fst conss
 
-convertDef :: MonadQues m => Eval.Env -> Def -> m (LC.Def, Eval.Env)
-convertDef = undefined
+typeAnn :: MonadQues m => Eval.Env -> Def -> m (LC.Def, Eval.Env)
+typeAnn = undefined
 {-
-convertDef env (PatternMatchingDef name equations ty flags) = do
+typeAnn env (PatternMatchingDef name equations ty flags) = do
   tell ("Checking pattern matching function declaration " ++ name)
   (tyTy, annTy) <- typeInfAnn env [] ty
   when
@@ -175,7 +175,7 @@ convertDef env (PatternMatchingDef name equations ty flags) = do
     evalEquation :: Def -> [Pattern] -> Term -> ([Pattern], Term, Map.Map String Def)
     evalEquation recur lhs' rhs =
       (lhs', rhs, Map.insert name recur (Map.map fst env))
-convertDef env (TypeDef name ty conss) = do
+typeAnn env (TypeDef name ty conss) = do
   (_, _) <- typeInfAnn env [] ty
   ty' <- eval (Map.map fst env) [] ty
   when
