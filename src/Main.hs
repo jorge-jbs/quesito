@@ -2,8 +2,10 @@ module Main where
 
 import Quesito
 import Quesito.LC.CodeGen
-import Quesito.TT.TopLevel (ttDeclToLcDecl)
-import Quesito.Syntax (getNames, convertDef)
+import Quesito.TT.TopLevel as TT (typeAnn)
+import qualified Quesito.Ann.TopLevel as Ann
+import qualified Quesito.Env as Env
+import Quesito.Syntax as Syn
 import Quesito.Syntax.Parse (parse)
 
 import Control.Monad.State (evalStateT)
@@ -22,16 +24,17 @@ main = do
       = either (error . show) id
       $ parse input
   let (m, w) = runQues $ do
-        declarations <- snd <$> foldlM (\(env, decls) def -> do decl <- convertDef env def; return (getNames def ++ env, decls ++ [decl])) ([], []) definitions
-        mapM_ (tell . show) declarations
-        decls <- reverse . fst <$> foldlM
-          (\(decls, env) decl -> do
-              (decl', env') <- ttDeclToLcDecl env decl
-              return (decl' : decls, env')
+        ttDefs <- foldlM (\env def -> do def' <- Syn.desugarDef env def; return (Env.insert def' env)) Env.empty definitions
+        tell $ show ttDefs
+        annDefs <- foldlM
+          (\annDefs ttDef -> do
+              annDef <- TT.typeAnn annDefs ttDef
+              return (Env.insert annDef annDefs)
           )
-          ([], Map.empty)
-          declarations
-        return (buildModuleT (fromString "main") (evalStateT (mapM defCodeGen decls) Map.empty))
+          Env.empty
+          ttDefs
+        lcDefs <- mapM Ann.convert annDefs
+        return (buildModuleT (fromString "main") (evalStateT (mapM defCodeGen lcDefs) Map.empty))
   putStrLn w
   case m of
     Right m' ->

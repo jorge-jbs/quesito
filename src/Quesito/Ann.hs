@@ -1,7 +1,7 @@
 module Quesito.Ann where
 
-import Quesito
-import Quesito.TT (BinOp(..), UnOp(..))
+import Quesito.TT (BinOp(..), UnOp(..), Flags)
+import Quesito.Env (Definition(..))
 import qualified Quesito.TT as TT
 
 data Term
@@ -11,14 +11,41 @@ data Term
   | BytesType Int
   | BinOp BinOp
   | UnOp UnOp
-  | Num { num :: Int, bytes :: Int }
+  | Num
+      Int -- ^ literal
+      Int -- ^ bytes
   | Pi String Type Type
-  | App Term Type Term Type
-  | Lam String Term Term Type
-  | Loc Location Term
+  | App Term Term
+  | Lam String Type Term
   deriving Show
 
 type Type = Term
+
+data Def
+  = PatternMatchingDef
+      String  -- ^ name
+      [([(String, Type)], [Pattern], Term)]  -- ^ equations
+      Type  -- ^ type
+      Flags
+  | TypeDef
+      String  -- ^ name
+      Type  -- ^ type
+      [(String, Term)]  -- ^ constructors
+  deriving Show
+
+instance Definition Def where
+  getNames (PatternMatchingDef n _ _ _) =
+    [n]
+  getNames (TypeDef n _ conss) =
+    n : map fst conss
+
+data Pattern
+  = Binding String
+  | Inaccessible Term
+  | NumPat Int Int
+  | Constructor String
+  | PatApp Pattern Pattern
+  deriving Show
 
 downgrade :: Term -> TT.Term
 downgrade (Local v _) =
@@ -37,12 +64,10 @@ downgrade (Num n _) =
   TT.Num n
 downgrade (Pi v s t) =
   TT.Pi v (downgrade s) (downgrade t)
-downgrade (App s _ t _) =
+downgrade (App s t) =
   TT.App (downgrade s) (downgrade t)
-downgrade (Lam v _ t _) =
+downgrade (Lam v _ t) =
   TT.Lam v (downgrade t)
-downgrade (Loc loc t) =
-  TT.Loc loc (downgrade t)
 
 substLocal :: String -> Term -> Term -> Term
 substLocal name term (Local name' ty) =
@@ -57,15 +82,13 @@ substLocal name term (Pi name' t t') =
     Pi name' t t'
   else
     Pi name' (substLocal name term t) (substLocal name term t')
-substLocal name term (App t tTy t' tTy') =
-  App (substLocal name term t) (substLocal name term tTy) (substLocal name term t') (substLocal name term tTy')
-substLocal name term (Lam name' ty t tTy) =
+substLocal name term (App t t') =
+  App (substLocal name term t) (substLocal name term t')
+substLocal name term (Lam name' ty t) =
   if name == name' then
-    Lam name' ty t tTy
+    Lam name' ty t
   else
-    Lam name' (substLocal name term ty) (substLocal name term t) (substLocal name term tTy)
-substLocal name term (Loc loc t) =
-  Loc loc (substLocal name term t)
+    Lam name' (substLocal name term ty) (substLocal name term t)
 substLocal _ _ t =
   t
 
@@ -79,12 +102,10 @@ substGlobal _ _ (Local name' ty) =
   Local name' ty
 substGlobal name term (Pi name' t t') =
   Pi name' (substGlobal name term t) (substGlobal name term t')
-substGlobal name term (App t tTy t' tTy') =
-  App (substGlobal name term t) (substGlobal name term tTy) (substGlobal name term t') (substGlobal name term tTy')
-substGlobal name term (Lam name' ty t tTy) =
-  Lam name' (substGlobal name term ty) (substGlobal name term t) (substGlobal name term tTy)
-substGlobal name term (Loc loc t) =
-  Loc loc (substGlobal name term t)
+substGlobal name term (App t t') =
+  App (substGlobal name term t) (substGlobal name term t')
+substGlobal name term (Lam name' ty t) =
+  Lam name' (substGlobal name term ty) (substGlobal name term t)
 substGlobal _ _ t =
   t
 
@@ -93,9 +114,14 @@ flattenApp =
   flattenApp' []
   where
     flattenApp' :: [Term] -> Term -> [Term]
-    flattenApp' as (App f _ a _) =
+    flattenApp' as (App f a) =
       flattenApp' (a:as) f
-    flattenApp' as (Loc _ a) =
-      flattenApp' as a
     flattenApp' as f =
       f:as
+
+flattenPi :: Type -> ([Type], Type)
+flattenPi (Pi _ ty1 ty2) =
+  let (args, ret) = flattenPi ty2
+  in (ty1 : args, ret)
+flattenPi t =
+  ([], t)

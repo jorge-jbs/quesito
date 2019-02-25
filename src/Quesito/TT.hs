@@ -10,12 +10,16 @@ module Quesito.TT
   , flattenApp
   , BinOp(..)
   , UnOp(..)
+  , Def(..)
+  , Flags(..)
+  , Pattern(..)
   )
   where
 
-import Quesito
-
 import Prelude hiding (print)
+
+import Quesito
+import Quesito.Env (Definition(..))
 
 data Term
   = Local String
@@ -172,3 +176,34 @@ flattenApp =
       flattenApp' as a
     flattenApp' as f =
       f:as
+
+data Def
+  = PatternMatchingDef
+      String  -- ^ name
+      [(Term, Term)]  -- ^ equations
+      Type  -- ^ type
+      Flags
+  | TypeDef
+      String  -- ^ name
+      Type  -- ^ type
+      [(String, Term)]  -- ^ constructors
+  deriving Show
+
+instance Definition Def where
+  getNames (PatternMatchingDef n _ _ _) =
+    [n]
+  getNames (TypeDef n _ conss) =
+    n : map fst conss
+
+data Pattern
+  = Binding String
+  | Inaccessible Term
+  | NumPat Int
+  | Constructor String
+  | PatApp Pattern Pattern
+  deriving Show
+
+newtype Flags =
+  Flags
+    Bool  -- ^ total
+  deriving Show

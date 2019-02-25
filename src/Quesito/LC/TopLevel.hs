@@ -1,7 +1,10 @@
 module Quesito.LC.TopLevel where
 
 import Quesito.LC
-import Quesito.TT.Eval (Flags)
+import Quesito.TT (Flags)
+import qualified Quesito.Env as Env
+
+type Env = Env.Env Def
 
 data Pattern
   = Binding String
@@ -11,14 +14,14 @@ data Pattern
   | Constructor String [Pattern]
   deriving Show
 
-data Decl
-  = PatternMatchingDecl
+data Def
+  = PatternMatchingDef
       String  -- ^ name
       [([(String, Type)], [Pattern], Term)]  -- ^ equations
       [Type]  -- ^ arguments types
       Type  -- ^ return type
       Flags
-  | TypeDecl
+  | TypeDef
       String  -- ^ name
       [(String, Type)]  -- ^ constructors
   deriving Show

@@ -36,7 +36,7 @@ cnvBody (Ann.Num n bytes') =
   return (Lit n bytes')
 cnvBody (Ann.Pi _ _ _) =
   throwError "Can't convert Pi type to a Lambda-Calculus expression"
-cnvBody t@(Ann.App _ _ _ _) =
+cnvBody t@(Ann.App _ _) =
   case headAndArgs t of
     (Ann.Global v ty, args) ->
       App v <$> cnvType ty <*> mapM cnvBody args
@@ -52,20 +52,16 @@ cnvBody t@(Ann.App _ _ _ _) =
     headAndArgs =
       headAndArgs' []
       where
-        headAndArgs' args (Ann.App t' _ arg _) =
+        headAndArgs' args (Ann.App t' arg) =
           headAndArgs' (arg : args) t'
-        headAndArgs' args (Ann.Loc _ t') =
-          headAndArgs' args t'
         headAndArgs' args t' =
           (t', args)
-cnvBody (Ann.Lam _ _ _ _) =
+cnvBody (Ann.Lam _ _ _) =
   throwError "Can't convert Lambda expression to a Lambda-Calculus expression"
 cnvBody (Ann.BinOp _) =
   throwError "Can't convert binary operation  to a Lambda-Calculus expression"
 cnvBody (Ann.UnOp _) =
   throwError "Can't convert operation to a Lambda-Calculus expression"
-cnvBody (Ann.Loc _ t) =
-  cnvBody t
 
 cnvGType :: MonadQues m => Ann.Type -> m GType
 cnvGType (Ann.Global v _) =
@@ -74,8 +70,6 @@ cnvGType (Ann.Type _) =
   throwError "WIP 3" -- return (Type lvl)
 cnvGType (Ann.BytesType n) =
   return (BytesType n)
-cnvGType (Ann.Loc _ t) =
-  cnvGType t
 cnvGType _ =
   throwError "Can't convert arbitrary expressions to Lambda-Calculus ground types"
 
@@ -90,7 +84,5 @@ cnvType (Ann.BytesType n) =
   return (GroundType (BytesType n))
 cnvType (Ann.Pi v t t') =
   Pi v <$> cnvGType t <*> cnvType t'
-cnvType (Ann.Loc _ t) =
-  cnvType t
 cnvType _ =
   throwError "Can't convert arbitrary expressions to Lambda-Calculus types"
