@@ -44,34 +44,34 @@ isType _ =
 data Closure
   = Closure Env VContext
 
-quote :: MonadQues m => Value -> m Term
+quote :: Value -> Term
 quote (VLam x ty body _) =
-  return (Lam x ty body)
+  Lam x ty body
 quote (VType i) =
-  return (Type i)
+  Type i
 quote (VBytesType n) =
-  return (BytesType n)
+  BytesType n
 quote (VNum n b) =
-  return (Num n b)
+  Num n b
 quote (VPi x v v' _) =
-  Pi x <$> quote v <*> return v'
+  Pi x (quote v) v'
 quote (VNormal n) =
   quoteNormal n
   where
     quoteNormal (NFree x ty) =
-      return (Local x ty)
+      Local x ty
     quoteNormal (NGlobal x ty) =
-      return (Global x ty)
+      Global x ty
     quoteNormal (NDataType x ty) =
-      return (Global x ty)
+      Global x ty
     quoteNormal (NDataCons x ty) =
-      return (Global x ty)
+      Global x ty
     quoteNormal (NBinOp op) =
-      return (BinOp op)
+      BinOp op
     quoteNormal (NUnOp op) =
-      return (UnOp op)
+      UnOp op
     quoteNormal (NApp m v) =
-      App <$> quoteNormal m <*> quote v
+      App (quoteNormal m) (quote v)
 
 eval :: MonadQues m => Env -> VContext -> Term -> m Value
 eval _ ctx (Local x ty) =

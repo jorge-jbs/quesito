@@ -133,7 +133,7 @@ typeInfAnn' opts env ctx (App e f) = do
       return (x, Ann.App annE annF)
     _ -> do
       loc <- getLocation
-      qs <- quote s
+      let qs = quote s
       throwError ("Applying to non-function at " ++ pprint loc ++ ": " ++ show qs)
 typeInfAnn' opts env ctx (Ann e ty) = do
   (tyTy, annTy) <- typeInfAnn' opts env ctx ty
@@ -174,12 +174,12 @@ typeCheckAnn'
        , Ann.Term  -- ^ annotated type
        )
 typeCheckAnn' opts _ _ (Local v) ty | inferVars opts = do
-  annTy <- quote ty
+  let annTy = quote ty
   return (Ann.Local v annTy, annTy)
 typeCheckAnn' opts env ctx (Lam x e) (VPi x' v w (Closure env' ctx')) = do
   tell ("typeInfAnn' opts Lam: " ++ show e)
   w' <- eval env' ctx' w
-  annV <- quote v
+  let annV = quote v
   (annE, annW') <- typeCheckAnn' opts env ((x, v, annV) : ctx) e w'
   return (Ann.Lam x annV annE, Ann.Pi x' annV annW')
 typeCheckAnn' _ _ _ (Lam _ _) _ = do
@@ -206,15 +206,15 @@ typeCheckAnn' opts env ctx t (VType j) = do
 
     v -> do
       loc <- getLocation
-      qv <- quote v
+      let qv = quote v
       throwError ("Expected type at " ++ pprint loc ++ " and got: " ++ show qv)
 typeCheckAnn' opts env ctx (Loc loc t) ty = do
   tell ("typeInfAnn' opts Loc: " ++ show t)
   typeCheckAnn' opts env ctx t ty `locatedAt` loc
 typeCheckAnn' opts env ctx t ty = do
   (ty', annT) <- typeInfAnn' opts env ctx t
-  qty <- quote ty
-  qty' <- quote ty'
+  let qty = quote ty
+      qty' = quote ty'
   loc <- getLocation
   unless
     (deBruijnize (Ann.downgrade qty) == deBruijnize (Ann.downgrade qty'))
