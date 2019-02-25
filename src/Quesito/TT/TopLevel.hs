@@ -1,6 +1,6 @@
 module Quesito.TT.TopLevel where
 
-import Control.Monad (when)
+import Control.Monad (when, forM)
 import Data.Default
 
 import Quesito
@@ -20,11 +20,7 @@ typeAnn :: MonadQues m => TypeAnn.Env -> Def -> m Ann.Def
 typeAnn env (PatternMatchingDef name equations ty flags) = do
   (tyTy, ty') <- typeInfAnn env [] ty
   when (not $ isType tyTy) (throwError ("The kind of " ++ name ++ " is not Type."))
-  equations' <- mapM (\(lhs, rhs) -> typeAnnEquation ty' lhs rhs) equations
-  return (Ann.PatternMatchingDef name equations' ty' flags)
-  where
-    typeAnnEquation :: MonadQues m => Ann.Term -> Term -> Term -> m ([(String, Ann.Type)], [Ann.Pattern], Ann.Term)
-    typeAnnEquation ty' lhs rhs = do
+  equations' <- forM equations (\(lhs, rhs) -> do
       case flattenApp lhs of
         Global name' : _ | name == name' ->
           return ()
@@ -32,11 +28,13 @@ typeAnn env (PatternMatchingDef name equations ty flags) = do
           throwError ("Left hand side of equation (" ++ name ++ ") malformed")
       let env' = Env.insert (Ann.PatternMatchingDef name [] ty' (Flags False)) env
       (lhsTy, lhs') <- typeInfAnn' (def { inferVars = True }) env' [] lhs
-      pats <- mapM termToPattern (tail $ flattenApp lhs)
+      pats <- mapM termToPattern (tail $ Ann.flattenApp lhs')
       let vars = findVars lhs'
       (rhs', _) <- typeCheckAnn env' [] rhs lhsTy
       return (vars, pats, rhs')
-
+    )
+  return (Ann.PatternMatchingDef name equations' ty' flags)
+  where
     findVars :: Ann.Term -> [(String, Ann.Type)]
     findVars (Ann.Local v varTy) = do
       [(v, varTy)]
@@ -45,45 +43,40 @@ typeAnn env (PatternMatchingDef name equations ty flags) = do
     findVars _ =
       []
 
-    termToPattern :: MonadQues m => Term -> m Ann.Pattern
-    termToPattern (Local x) =
+    termToPattern :: MonadQues m => Ann.Term -> m Ann.Pattern
+    termToPattern (Ann.Local x _) =
       return (Ann.Binding x)
-    termToPattern (Global x) =
+    termToPattern (Ann.Global x _) =
       case Env.lookup x env of
         Just (Ann.TypeDef _ _ conss) | x `elem` map fst conss ->
           return (Ann.Constructor x)
         _ -> do
           loc <- getLocation
           throwError ("Free variable at " ++ pprint loc ++ ".")
-    termToPattern (App l r) = do
+    termToPattern (Ann.App l r) = do
       l' <- termToPattern l
       r' <- termToPattern r
       return (Ann.PatApp l' r')
-    termToPattern (Num x) =
-      return (Ann.NumPat x)
-    termToPattern (BinOp _) = do
+    termToPattern (Ann.Num x b) =
+      return (Ann.NumPat x b)
+    termToPattern (Ann.BinOp _) = do
       loc <- getLocation
       throwError ("Can't pattern match on type built-in operations (at " ++ pprint loc ++ ")")
-    termToPattern (UnOp _) = do
+    termToPattern (Ann.UnOp _) = do
       loc <- getLocation
       throwError ("Can't pattern match on type built-in operations (at " ++ pprint loc ++ ")")
-    termToPattern (Type _) = do
+    termToPattern (Ann.Type _) = do
       loc <- getLocation
       throwError ("Can't pattern match on type universes (at " ++ pprint loc ++ ")")
-    termToPattern (BytesType _) = do
+    termToPattern (Ann.BytesType _) = do
       loc <- getLocation
       throwError ("Can't pattern match on bytes types (at " ++ pprint loc ++ ")")
-    termToPattern (Pi _ _ _) = do
+    termToPattern (Ann.Pi _ _ _) = do
       loc <- getLocation
       throwError ("Can't pattern match on function spaces (at " ++ pprint loc ++ ")")
-    termToPattern (Ann _ _) = do
-      loc <- getLocation
-      throwError ("Can't pattern match on type annotations (at " ++ pprint loc ++ ")")
-    termToPattern (Lam _ _) = do
+    termToPattern (Ann.Lam _ _ _) = do
       loc <- getLocation
       throwError ("Can't pattern match on lambda expressions (at " ++ pprint loc ++ ")")
-    termToPattern (Loc loc t) =
-      termToPattern t `locatedAt` loc
 typeAnn env (TypeDef name ty conss) = do
   (tyTy, ty') <- typeInfAnn env [] ty
   when (not $ isType tyTy) (throwError ("The kind of " ++ name ++ " is not Type."))

@@ -42,7 +42,7 @@ instance Definition Def where
 data Pattern
   = Binding String
   | Inaccessible Term
-  | NumPat Int
+  | NumPat Int Int
   | Constructor String
   | PatApp Pattern Pattern
   deriving Show

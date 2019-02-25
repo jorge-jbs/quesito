@@ -1,3 +1,5 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving, DeriveTraversable #-}
+
 module Quesito.Env
   ( Definition(..)
   , Env
@@ -13,6 +15,7 @@ class Definition def where
   getNames :: def -> [String]
 
 newtype Env a = Env { unEnv :: [a] }
+  deriving (Show, Functor, Foldable, Traversable)
 
 empty :: Env a
 empty = Env []
@@ -27,11 +30,8 @@ keys =
 
 insert :: a -> Env a -> Env a
 insert d (Env env) =
-  Env (d : env)
+  Env (env ++ [d])
 
 append :: Env a -> Env a -> Env a
 append (Env env1) (Env env2) =
   Env (env1 ++ env2)
-
-instance Functor Env where
-  fmap f = Env . fmap f . unEnv

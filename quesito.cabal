@@ -22,6 +22,7 @@ executable quesito
     Quesito,
     Quesito.Ann,
     Quesito.Ann.Eval,
+    Quesito.Ann.TopLevel,
     Quesito.Env,
     Quesito.LC,
     Quesito.LC.CodeGen,

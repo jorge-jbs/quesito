@@ -6,10 +6,12 @@ module Quesito.Syntax
   )
   where
 
+import Control.Monad (forM)
+
 import Quesito
 import qualified Quesito.TT as TT
-import qualified Quesito.TT.TypeAnn as TT
 import Quesito.TT (Flags)
+import qualified Quesito.Env as Env
 
 data Term
   = Var String
@@ -91,82 +93,18 @@ desugar env (Ann t ty) =
 desugar env (Loc loc t) =
   TT.Loc loc <$> desugar env t `locatedAt` loc
 
-desugarDef :: TT.Env -> Def -> Ques TT.Def
-desugarDef = undefined
-{-
+desugarDef :: Env.Env TT.Def -> Def -> Ques TT.Def
 desugarDef env (PatternMatchingDef name equations ty flags) = do
-  tell ("Checking pattern matching function definition " ++ name ++ " " ++ show (TT.annEnvKeys env))
-  ty' <- desugar (name : TT.annEnvKeys env) ty
-  (_, annTy) <- TT.typeInfAnn env [] ty'
-  -- TODO check type
-  equations' <- flip mapM equations $ \(lhs, rhs) -> do
-      lhs' <- desugar (name : TT.annEnvKeys env) lhs
-      rhs' <- desugar (name : TT.annEnvKeys env) rhs
-      pats <- mapM (termToPattern env) (tail $ TT.flattenApp lhs')
-      let env' = TT.annEnvInsert (TT.PatternMatchingDef name [] ty' (TT.Flags False)) annTy env
-      (lhsTy, annLhs) <- TT.typeInfAnn' (def { TT.inferVars = True }) env' [] lhs'
-      vars <- findVars annLhs
-      _ <- TT.typeCheckAnn env' vars rhs' lhsTy
-      return (pats, rhs')
-  return (TT.PatternMatchingDef name equations' ty' flags, annTy)
-  where
-    findVars :: MonadQues m => Ann.Term -> m [(String, TT.Value, Ann.Term)]
-    findVars (Ann.Local v varTy) = do
-      varTy' <- TT.eval (TT.dropAnn env) [] (Ann.downgrade varTy)
-      return [(v, varTy', varTy)]
-    findVars (Ann.App s _ t _) =
-      (++) <$> findVars s <*> findVars t
-    findVars _ =
-      return []
+  ty' <- desugar (name : Env.keys env) ty
+  equations' <- forM equations $ \(lhs, rhs) -> do
+      lhs' <- desugar (name : Env.keys env) lhs
+      rhs' <- desugar (name : Env.keys env) rhs
+      return (lhs', rhs')
+  return (TT.PatternMatchingDef name equations' ty' flags)
 desugarDef env (TypeDef name ty constructors) = do
-  tell ("Checking type definition " ++ name ++ " " ++ show (TT.annEnvKeys env))
-  ty' <- desugar (TT.annEnvKeys env) ty
-  (_, annTy) <- TT.typeInfAnn env [] ty'
-  -- TODO check type
+  ty' <- desugar (Env.keys env) ty
   constructors' <- flip mapM constructors (\(name', t) -> do
-      t' <- desugar (name : TT.annEnvKeys env) t
-      _ <- TT.typeInfAnn (TT.annEnvInsert (TT.TypeDef name ty' []) annTy env) [] t'
+      t' <- desugar (name : Env.keys env) t
       return (name', t')
     )
-  return (TT.TypeDef name ty' constructors', annTy)
-
-termToPattern :: MonadQues m => TT.Env -> TT.Term -> m TT.Pattern
-termToPattern _ (TT.Local x) =
-  return (TT.Binding x)
-termToPattern env (TT.Global x) =
-  case TT.lookupAnnEnv x env of
-    Just (TT.TypeDef _ _ conss, _) | x `elem` map fst conss ->
-      return (TT.Constructor x)
-    _ -> do
-      loc <- getLocation
-      throwError ("Free variable at " ++ pprint loc ++ ".")
-termToPattern env (TT.App l r) = do
-  l' <- termToPattern env l
-  r' <- termToPattern env r
-  return (TT.PatApp l' r')
-termToPattern _ (TT.Num x) =
-  return (TT.NumPat x)
-termToPattern _ (TT.BinOp _) = do
-  loc <- getLocation
-  throwError ("Can't pattern match on type built-in operations (at " ++ pprint loc ++ ")")
-termToPattern _ (TT.UnOp _) = do
-  loc <- getLocation
-  throwError ("Can't pattern match on type built-in operations (at " ++ pprint loc ++ ")")
-termToPattern _ (TT.Type _) = do
-  loc <- getLocation
-  throwError ("Can't pattern match on type universes (at " ++ pprint loc ++ ")")
-termToPattern _ (TT.BytesType _) = do
-  loc <- getLocation
-  throwError ("Can't pattern match on bytes types (at " ++ pprint loc ++ ")")
-termToPattern _ (TT.Pi _ _ _) = do
-  loc <- getLocation
-  throwError ("Can't pattern match on function spaces (at " ++ pprint loc ++ ")")
-termToPattern _ (TT.Ann _ _) = do
-  loc <- getLocation
-  throwError ("Can't pattern match on type annotations (at " ++ pprint loc ++ ")")
-termToPattern _ (TT.Lam _ _) = do
-  loc <- getLocation
-  throwError ("Can't pattern match on lambda expressions (at " ++ pprint loc ++ ")")
-termToPattern env (TT.Loc loc t) =
-  termToPattern env t `locatedAt` loc
--}
+  return (TT.TypeDef name ty' constructors')

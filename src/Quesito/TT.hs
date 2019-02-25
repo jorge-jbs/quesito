@@ -19,6 +19,7 @@ module Quesito.TT
 import Prelude hiding (print)
 
 import Quesito
+import Quesito.Env (Definition(..))
 
 data Term
   = Local String
@@ -187,6 +188,12 @@ data Def
       Type  -- ^ type
       [(String, Term)]  -- ^ constructors
   deriving Show
+
+instance Definition Def where
+  getNames (PatternMatchingDef n _ _ _) =
+    [n]
+  getNames (TypeDef n _ conss) =
+    n : map fst conss
 
 data Pattern
   = Binding String

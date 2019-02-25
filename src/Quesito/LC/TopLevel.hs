@@ -2,6 +2,9 @@ module Quesito.LC.TopLevel where
 
 import Quesito.LC
 import Quesito.TT (Flags)
+import qualified Quesito.Env as Env
+
+type Env = Env.Env Def
 
 data Pattern
   = Binding String

@@ -171,12 +171,12 @@ eval env ctx (App r s) = do
       Just [(n, t)]
     match (Inaccessible _) _ =
       Just []
-    match (NumPat n) (VNum n' _) =
+    match (NumPat n _) (VNum n' _) =
       if n < n' then
         Just []
       else
         Nothing
-    match (NumPat _) _ =
+    match (NumPat _ _) _ =
       Nothing
     match (Constructor n) (VNormal (NDataCons n' _)) =
       if n == n' then
