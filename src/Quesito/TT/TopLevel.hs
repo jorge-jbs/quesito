@@ -30,7 +30,8 @@ typeAnn env (PatternMatchingDef name equations ty flags) = do
       (lhsTy, lhs') <- typeInfAnn' (def { inferVars = True }) env' [] lhs
       pats <- mapM termToPattern (tail $ Ann.flattenApp lhs')
       let vars = findVars lhs'
-      (rhs', _) <- typeCheckAnn env' [] rhs lhsTy
+      ctx <- mapM (\(v, vty) -> do vty' <- eval env [] vty; return (v, vty', vty)) vars
+      (rhs', _) <- typeCheckAnn env' ctx rhs lhsTy
       return (vars, pats, rhs')
     )
   return (Ann.PatternMatchingDef name equations' ty' flags)

@@ -41,9 +41,6 @@ isType (VType _) =
 isType _ =
   False
 
-instance Eq Value where
-  (==) = undefined
-
 data Closure
   = Closure Env VContext
 
