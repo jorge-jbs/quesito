@@ -1,46 +1,22 @@
-id : Bytes 1 -> Bytes 1;
-id x = x;
-
-data Bool : Type where {
-  False : Bool;
-  True : Bool;
+data Either : Type where {
+  Left : Bytes 4 -> Either;
+  Right : Bytes 4 -> Either;
 }
 
-fst : Bytes 4 -> Bytes 3 -> Bytes 4;
-fst x y = x;
-
-data Nat : Type where {
-  Zero : Nat;
-  Succ : Bytes 4 -> Nat;
+data Pair : Type where {
+  MkPair : Bytes 4 -> Bytes 4 -> Pair;
 }
 
-snd : Bytes 128 -> Bytes 128 -> Bytes 128;
-snd x y = y;
+either : Either -> Bytes 4;
+either (Left x) = x;
+either (Right x) = x;
 
-stupid : Bytes 4 -> Bytes 4 -> Bytes 4;
-stupid 8 3 = 2;
-stupid x 3 = x;
-stupid x y = stupid y x;
+comp : Either -> Either;
+comp (Left x) = Left (add x x);
+comp (Right x) = Left (mul x x);
 
-decons : Nat -> Bool;
-decons Zero = True;
-decons (Succ 4) = True;
+sum : Pair -> Bytes 4;
+sum (MkPair x y) = add y x;
 
-notB : Bool -> Bool;
-notB True = False;
-notB False = True;
-
-fib : Bytes 4 -> Bytes 4;
-fib 0 = 0;
-fib 1 = 1;
-fib n = add (fib (sub n 1)) (fib (sub n 2));
-
-fib2 : Bytes 4 -> Bytes 4 -> Bytes 4 -> Bytes 4;
-fib2 0 x y = x;
-fib2 n x y = fib2 (sub n 1) y (add x y);
-
-main2 : Bytes 4;
-main2 = fib2 13 0 1;
-
-main : Bool;
-main = notB False;
+main : Bytes 4;
+main = either (comp (Right 3));

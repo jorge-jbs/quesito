@@ -9,7 +9,7 @@ import qualified Quesito.LC as LC
 import qualified Quesito.LC.TopLevel as LC
 import qualified Quesito.TT as TT
 
-import Control.Monad (forM_, void)
+import Control.Monad (forM, forM_, void)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans (lift)
 import Data.Foldable (foldlM)
@@ -86,22 +86,45 @@ defCodeGen (LC.PatternMatchingDef name equations args retTy _) = do
     checkArg (LC.Constructor consName _) op = do
       def <- lift (lookup consName)
       let n = case def of
-            Just (Constructor c) ->
-              getTag c
+            Just (Constructor _ _ tag _) ->
+              tag
             _ ->
               error ""
       m <- L.extractValue op [0]
       L.icmp L.EQ (L.ConstantOperand $ L.Int 32 $ fromIntegral n) m
 
-    bindArg :: (L.MonadIRBuilder m) => LC.Pattern -> L.Operand -> m [(String, L.Operand)]
+    bindArg
+      :: MonadCodeGen m
+      => LC.Pattern
+      -> L.Operand
+      -> L.IRBuilderT m [(String, L.Operand)]
     bindArg (LC.Binding x) op = do
       return [(x, op)]
     bindArg (LC.NumPat _ _) _ = do
       return []
     bindArg (LC.Constructor _ []) _ = do
       return []
-    bindArg (LC.Constructor _ _) _ = do
-      undefined
+    bindArg (LC.Constructor name args) op = do
+      def <- lift $ lookup name
+      case def of
+        Just (Constructor _ retTy _ (FunctionConstructor _ ty)) -> do
+          ptr <- L.alloca retTy Nothing 0
+          L.store ptr 0 op
+          ptr' <- L.bitcast
+            ptr
+            (L.PointerType
+              (L.StructureType
+                False
+                [L.IntegerType 32, ty]
+              )
+              (L.AddrSpace 0)
+            )
+          deptr <- L.load ptr' 0
+          concat <$> forM (zip [0..] args) (\(i, arg) -> do
+              op' <- L.extractValue deptr [1, i]
+              bindArg arg op'
+            )
+        _ -> error ""
 
     genBody :: MonadCodeGen m => [(String, LC.Type)] -> [LC.Pattern] -> LC.Term -> L.IRBuilderT m L.Name
     genBody _ patterns t = do
@@ -125,13 +148,13 @@ defCodeGen (LC.TypeDef name cons) = do
     )
   forM_ (zip4 [0..] getConsLTypes flattened (map fst cons)) (\(n, consLType, (args, retTy), consName) -> do
       if length args == 0 then
-        emptyConstructor consName n
+        emptyConstructor consName (typeToLType retTy) n maxSize
       else
         functionConstructor
           consName
           (map gtypeToLType args)
-          (typeToLType retTy)
           consLType
+          (typeToLType retTy)
           n
           (do
             z <- L.alloca consLType Nothing 0
@@ -184,6 +207,7 @@ codeGen env (LC.BinOp op a b) =
         case op of
           TT.Add -> L.add
           TT.Sub -> L.sub
+          TT.Mul -> L.mul
           _ -> undefined
   in do
     a' <- codeGen env a
