@@ -9,6 +9,11 @@ data Bool : Type where {
 fst : Bytes 4 -> Bytes 3 -> Bytes 4;
 fst x y = x;
 
+data Nat : Type where {
+  Zero : Nat;
+  Succ : Bytes 4 -> Nat;
+}
+
 snd : Bytes 128 -> Bytes 128 -> Bytes 128;
 snd x y = y;
 
@@ -16,6 +21,10 @@ stupid : Bytes 4 -> Bytes 4 -> Bytes 4;
 stupid 8 3 = 2;
 stupid x 3 = x;
 stupid x y = stupid y x;
+
+decons : Nat -> Bool;
+decons Zero = True;
+decons (Succ 4) = True;
 
 notB : Bool -> Bool;
 notB True = False;
