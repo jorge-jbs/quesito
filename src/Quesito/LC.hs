@@ -86,3 +86,11 @@ cnvType (Ann.Pi v t t') =
   Pi v <$> cnvGType t <*> cnvType t'
 cnvType _ =
   throwError "Can't convert arbitrary expressions to Lambda-Calculus types"
+
+flattenPi :: Type -> ([GType], GType)
+flattenPi (GroundType ty) =
+  ([], ty)
+flattenPi (Pi _ ty1 ty2) =
+  (ty1 : args, ret)
+  where
+    (args, ret) = flattenPi ty2
