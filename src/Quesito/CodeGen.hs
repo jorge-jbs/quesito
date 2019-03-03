@@ -5,8 +5,7 @@ module Quesito.CodeGen where
 import Prelude hiding (lookup)
 
 import Quesito.CodeGen.TopLevel
-import qualified Quesito.LC as LC
-import qualified Quesito.LC.TopLevel as LC
+import qualified Quesito.Ann as Ann
 import qualified Quesito.TT as TT
 
 import Control.Monad (forM, forM_, void)
@@ -14,7 +13,6 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans (lift)
 import Data.Foldable (foldlM)
 import Data.List (find, zip4)
-import qualified Data.Map as Map
 import LLVM ()
 import qualified LLVM.AST as L hiding (function)
 import qualified LLVM.AST.AddrSpace as L
@@ -38,12 +36,11 @@ sizeOf ty = L.withContext $ \ctx -> L.runEncodeAST ctx $ do
     (L.defaultDataLayout L.LittleEndian)
     (\dl -> L.getTypeAllocSize dl ty'))
 
-type CodeGenState = Map.Map String Int
-
-defCodeGen :: MonadCodeGen m => LC.Def -> m ()
-defCodeGen (LC.PatternMatchingDef name equations args retTy _) = do
-  args' <- mapM typeToLType args
-  retTy' <- typeToLType retTy
+defGen :: MonadCodeGen m => Ann.Def -> m ()
+defGen (Ann.PatternMatchingDef name equations ty _) = do
+  let (args, retTy) = Ann.flattenPi ty
+  args' <- mapM typeGen args
+  retTy' <- typeGen retTy
   function
     name
     args'
@@ -51,7 +48,7 @@ defCodeGen (LC.PatternMatchingDef name equations args retTy _) = do
     (void $ genEquations args' equations)
   return ()
   where
-    genEquations :: MonadCodeGen m => [L.Type] -> [([(String, LC.Type)], [LC.Pattern], LC.Term)] -> L.IRBuilderT m L.Name
+    genEquations :: MonadCodeGen m => [L.Type] -> [([(String, Ann.Type)], [Ann.Pattern], Ann.Term)] -> L.IRBuilderT m L.Name
     genEquations _ [] =
       L.block <* L.unreachable
     genEquations args' ((_, patterns, body):es) = mdo
@@ -59,33 +56,35 @@ defCodeGen (LC.PatternMatchingDef name equations args retTy _) = do
       lb' <- genEquations args' es
       return lb
 
-    genEquation :: MonadCodeGen m => [L.Type] -> [LC.Pattern] -> LC.Term -> L.Name -> L.IRBuilderT m L.Name
+    genEquation :: MonadCodeGen m => [L.Type] -> [Ann.Pattern] -> Ann.Term -> L.Name -> L.IRBuilderT m L.Name
     genEquation args' patterns body lb = mdo
       n <- L.block
-      b <- genEquationIf args' patterns
+      --(checks, binds) <-
+      xs <-
+        mapM
+          (uncurry patGen)
+          (zip
+            patterns
+            (map
+              (\(i, argTy) -> L.LocalReference argTy (L.UnName i))
+              (zip [0..] args')))
+      b <- foldlM L.and (L.ConstantOperand (L.Int 1 1)) (map fst xs)
       L.condBr b lb' lb
-      lb' <- genBody args' patterns body
+      --lb' <- genBody args' patterns body
+      lb' <- L.block
+      let boundArgs = foldl (++) [] (map snd xs)
+      L.ret =<< codeGen boundArgs body
       return n
 
-    genEquationIf :: MonadCodeGen m => [L.Type] -> [LC.Pattern] -> L.IRBuilderT m L.Operand
-    genEquationIf args' ps = do
-      checks <- mapM
-        (uncurry checkArg)
-        (zip
-          ps
-          (map
-            (\(i, ty) -> L.LocalReference ty (L.UnName i))
-            (zip [0..] args')
-          )
-        )
-      foldlM L.and (L.ConstantOperand (L.Int 1 1)) checks
-
-    checkArg :: MonadCodeGen m => LC.Pattern -> L.Operand -> L.IRBuilderT m L.Operand
-    checkArg (LC.Binding _) _ = do
-      return (L.ConstantOperand (L.Int 1 1))
-    checkArg (LC.NumPat n b) op = do
-      L.icmp L.EQ (L.ConstantOperand (L.Int (fromIntegral (b*8)) (fromIntegral n))) op
-    checkArg (LC.Constructor consName _) op = do
+    patGen :: MonadCodeGen m => Ann.Pattern -> L.Operand -> L.IRBuilderT m (L.Operand, [(String, L.Operand)])
+    patGen (Ann.Binding x) op =
+      return (L.ConstantOperand (L.Int 1 1), [(x, op)])
+    patGen (Ann.Inaccessible _) _ =
+      undefined
+    patGen (Ann.NumPat n b) op = do
+      x <- L.icmp L.EQ (L.ConstantOperand (L.Int (fromIntegral (b*8)) (fromIntegral n))) op
+      return (x, [])
+    patGen (Ann.Constructor consName) op = do
       def <- lift $ lookup consName
       let n = case def of
             Just (Constructor _ _ tag _) ->
@@ -93,52 +92,39 @@ defCodeGen (LC.PatternMatchingDef name equations args retTy _) = do
             _ ->
               error ""
       m <- L.extractValue op [0]
-      L.icmp L.EQ (L.ConstantOperand $ L.Int 32 $ fromIntegral n) m
-
-    bindArg
-      :: MonadCodeGen m
-      => LC.Pattern
-      -> L.Operand
-      -> L.IRBuilderT m [(String, L.Operand)]
-    bindArg (LC.Binding x) op = do
-      return [(x, op)]
-    bindArg (LC.NumPat _ _) _ = do
-      return []
-    bindArg (LC.Constructor _ []) _ = do
-      return []
-    bindArg (LC.Constructor name args) op = do
-      def <- lift $ lookup name
-      case def of
-        Just (Constructor _ retTy _ (FunctionConstructor _ ty)) -> do
-          ptr <- L.alloca retTy Nothing 0
-          L.store ptr 0 op
-          ptr' <- L.bitcast
-            ptr
-            (L.PointerType
-              (L.StructureType
-                False
-                [L.IntegerType 32, ty]
+      b <- L.icmp L.EQ (L.ConstantOperand $ L.Int 32 $ fromIntegral n) m
+      return (b, [])
+    patGen p@(Ann.PatApp _ _) op = case Ann.flattenPatApp p of
+      Ann.Constructor consName : args -> do
+        def <- lift $ lookup consName
+        case def of
+          Just (Constructor _ retTy _ (FunctionConstructor _ consTy)) -> do
+            ptr <- L.alloca retTy Nothing 0
+            L.store ptr 0 op
+            ptr' <- L.bitcast
+              ptr
+              (L.PointerType
+                (L.StructureType
+                  False
+                  [L.IntegerType 32, consTy]
+                )
+                (L.AddrSpace 0)
               )
-              (L.AddrSpace 0)
-            )
-          deptr <- L.load ptr' 0
-          concat <$> forM (zip [0..] args) (\(i, arg) -> do
-              op' <- L.extractValue deptr [1, i]
-              bindArg arg op'
-            )
-        _ -> error ""
-
-    genBody :: MonadCodeGen m => [L.Type] -> [LC.Pattern] -> LC.Term -> L.IRBuilderT m L.Name
-    genBody args' patterns t = do
-      n <- L.block
-      boundArgs <- foldl (++) [] <$> (mapM (uncurry bindArg) (zip patterns
-        (map
-          (\(i, ty) -> L.LocalReference ty (L.UnName i))
-          (zip [0..] args')
-        )))
-      L.ret =<< codeGen boundArgs t
-      return n
-defCodeGen (LC.TypeDef name cons) = do
+            deptr <- L.load ptr' 0
+            gen <- forM (zip [0..] args) (\(i, arg) -> do
+                op' <- L.extractValue deptr [1, i]
+                patGen arg op'
+              )
+            foldlM
+              (\(b1, binds1) (b2, binds2) -> do
+                b <- L.and b1 b2
+                return (b, binds1 ++ binds2)
+              )
+              (L.ConstantOperand (L.Int 1 1), [])
+              gen
+          _ -> error ""
+      _ -> error ""
+defGen (Ann.TypeDef name _ cons) = do
   let flattened = map (flatten . snd) cons
   getConsLTypes <- mapM (getConsLType . fst) flattened
   maxSize <- liftIO (maximum <$> mapM sizeOf getConsLTypes)
@@ -149,8 +135,8 @@ defCodeGen (LC.TypeDef name cons) = do
       [L.IntegerType 32, L.ArrayType maxSize (L.IntegerType 8)]
     )
   forM_ (zip4 [0..] getConsLTypes flattened (map fst cons)) (\(n, consLType, (args, retTy), consName) -> do
-      retTy' <- typeToLType retTy
-      args' <- mapM gtypeToLType args
+      retTy' <- typeGen retTy
+      args' <- mapM typeGen args
       if length args == 0 then
         emptyConstructor consName retTy' n maxSize
       else
@@ -177,16 +163,16 @@ defCodeGen (LC.TypeDef name cons) = do
     )
   return ()
   where
-    flatten :: LC.Type -> ([LC.GType], LC.Type)
-    flatten (LC.Pi _ arg t) =
+    flatten :: Ann.Type -> ([Ann.Type], Ann.Type)
+    flatten (Ann.Pi _ arg t) =
       let (args, retTy) = flatten t
       in (arg : args, retTy)
     flatten t =
       ([], t)
 
-    getConsLType :: MonadCodeGen m => [LC.GType] -> m L.Type
+    getConsLType :: MonadCodeGen m => [Ann.Type] -> m L.Type
     getConsLType tys =
-      L.StructureType False <$> mapM gtypeToLType tys
+      L.StructureType False <$> mapM typeGen tys
 
     constructor :: (MonadCodeGen m) => Word32 -> [L.Type] -> L.Type -> L.IRBuilderT m L.Operand
     constructor _ [] ty =
@@ -195,58 +181,59 @@ defCodeGen (LC.TypeDef name cons) = do
       x <- constructor (n+1) args ty
       L.insertValue x (L.LocalReference arg (L.UnName (fromIntegral $ toInteger n))) [n]
 
-codeGen :: MonadCodeGen m => [(String, L.Operand)] -> LC.Term -> L.IRBuilderT m L.Operand
-codeGen env (LC.Local v ty) =
+codeGen :: MonadCodeGen m => [(String, L.Operand)] -> Ann.Term -> L.IRBuilderT m L.Operand
+codeGen env (Ann.Local v ty) =
   case snd <$> find ((==) v . fst) env of
     Just op ->
       return op
     Nothing -> do
-      ty' <- lift $ gtypeToLType ty
+      ty' <- lift $ typeGen ty
       return $ L.LocalReference ty' $ L.mkName v
-codeGen _ (LC.Global v ty) = do
-  ty' <- lift $ gtypeToLType ty
+codeGen _ (Ann.Global v ty) = do
+  ty' <- lift $ typeGen ty
   L.load
     ( L.ConstantOperand
     $ L.GlobalReference (L.PointerType ty' $ L.AddrSpace 0)
     $ L.mkName v
     )
     0
-codeGen _ (LC.Lit n bytes') =
+codeGen _ (Ann.Num n bytes') =
   return (L.ConstantOperand (L.Int (fromIntegral bytes' * 8) (fromIntegral n)))
-codeGen env (LC.App v ty args) = do
-  ty' <- lift $ typeToLType ty
-  L.call
-    (L.ConstantOperand $ L.GlobalReference ty' $ L.mkName v)
-    =<< mapM (fmap (flip (,) []) . codeGen env) args
-codeGen env (LC.BinOp op a b) =
-  let instr =
-        case op of
-          TT.Add -> L.add
-          TT.Sub -> L.sub
-          TT.Mul -> L.mul
-          _ -> undefined
-  in do
-    a' <- codeGen env a
-    b' <- codeGen env b
-    instr a' b'
-codeGen _ (LC.UnOp TT.Not _) =
+codeGen env t@(Ann.App _ _) = do
+  case Ann.flattenApp t of
+    Ann.Global v ty : args -> do
+      ty' <- lift $ typeGen ty
+      L.call
+        (L.ConstantOperand $ L.GlobalReference ty' $ L.mkName v)
+        =<< mapM (fmap (flip (,) []) . codeGen env) args
+    [Ann.BinOp op, a, b] -> do
+      let instr = case op of
+            TT.Add -> L.add
+            TT.Sub -> L.sub
+            TT.Mul -> L.mul
+            _ -> undefined
+      a' <- codeGen env a
+      b' <- codeGen env b
+      instr a' b'
+    [Ann.UnOp _, _] -> do
+      undefined
+    _ ->
+      error (show t)
+codeGen _ _ =
   undefined
 
-gtypeToLType :: MonadCodeGen m => LC.GType -> m L.Type
-gtypeToLType (LC.BytesType n) =
+typeGen :: MonadCodeGen m => Ann.Type -> m L.Type
+typeGen ty@(Ann.Pi _ _ _) =
+  let (args, ret) = Ann.flattenPi ty
+  in L.FunctionType <$> typeGen ret <*> mapM typeGen args <*> pure False
+typeGen (Ann.BytesType n) =
   return $ L.IntegerType $ fromIntegral (n*8)
-gtypeToLType (LC.TypeVar x) = do
+typeGen (Ann.Global x _) = do
   def <- lookup x
-  let ty = case def of
-        Just (Type _ ty) ->
-          ty
-        _ ->
-          error ""
-  return ty
-
-typeToLType :: MonadCodeGen m => LC.Type -> m L.Type
-typeToLType (LC.GroundType ty) =
-  gtypeToLType ty
-typeToLType ty@(LC.Pi _ _ _) =
-  let (args, ret) = LC.flattenPi ty
-  in L.FunctionType <$> gtypeToLType ret <*> mapM gtypeToLType args <*> pure False
+  return (case def of
+    Just (Type _ ty) ->
+      ty
+    _ ->
+      error "")
+typeGen _ =
+  undefined

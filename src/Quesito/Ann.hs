@@ -47,6 +47,12 @@ data Pattern
   | PatApp Pattern Pattern
   deriving Show
 
+flattenPatApp :: Pattern -> [Pattern]
+flattenPatApp (PatApp r s) =
+  flattenPatApp r ++ [s]
+flattenPatApp t =
+  [t]
+
 downgrade :: Term -> TT.Term
 downgrade (Local v _) =
   TT.Local v

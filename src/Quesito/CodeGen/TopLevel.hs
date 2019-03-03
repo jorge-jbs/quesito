@@ -85,7 +85,7 @@ instance MonadCodeGen CodeGenM where
     modify $ Env.insert $ Type name ty
 
   emptyConstructor name retTy tag maxSize = do
-    L.global
+    _ <- L.global
       (L.mkName name)
       retTy
       (L.Struct (Just (L.mkName name)) False  [L.Int 32 tag, L.Array (L.IntegerType 8) (replicate (fromIntegral maxSize) (L.Int 8 0))])

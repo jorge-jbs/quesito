@@ -4,7 +4,6 @@ import Quesito
 import Quesito.CodeGen
 import Quesito.CodeGen.TopLevel
 import Quesito.TT.TopLevel as TT (typeAnn)
-import qualified Quesito.Ann.TopLevel as Ann
 import qualified Quesito.Env as Env
 import Quesito.Syntax as Syn
 import Quesito.Syntax.Parse (parse)
@@ -38,8 +37,7 @@ main = do
           )
           Env.empty
           ttDefs
-        lcDefs <- mapM Ann.convert annDefs
-        return $ buildModuleT (fromString "main") $ runCodeGen $ mapM defCodeGen lcDefs
+        return $ buildModuleT (fromString "main") $ runCodeGen $ mapM defGen annDefs
   putStrLn w
   case m of
     Right m' ->
