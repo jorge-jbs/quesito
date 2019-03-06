@@ -3,6 +3,7 @@
 module Quesito.CodeGen where
 
 import Prelude hiding (lookup)
+import qualified Prelude
 
 import Quesito.CodeGen.TopLevel
 import qualified Quesito.Ann as Ann
@@ -13,6 +14,7 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans (lift)
 import Data.Foldable (foldlM)
 import Data.List (find, zip4)
+import Data.Maybe (fromJust)
 import LLVM ()
 import qualified LLVM.AST as L hiding (function)
 import qualified LLVM.AST.AddrSpace as L
@@ -29,12 +31,51 @@ import qualified LLVM.IRBuilder.Instruction as L
 import qualified LLVM.IRBuilder.Monad as L
 import GHC.Word (Word32, Word64)
 
+getSize
+  :: MonadCodeGen m
+  => Ann.Type
+  -> L.Operand
+  -> [(String, L.Operand)]
+  -> L.IRBuilderT m L.Operand
+getSize (Ann.BytesType n) _ _ =
+  return $ L.ConstantOperand $ L.Int 32 $ fromIntegral n
+getSize (Ann.Type _) op _ =
+  return $ L.ConstantOperand $ L.Int 32 4  -- function pointer
+getSize (Ann.Local v _) op env = do
+  let f = fromJust $ Prelude.lookup v env
+  f' <- L.bitcast f
+    $ flip L.PointerType (L.AddrSpace 0)
+    $ flip L.PointerType (L.AddrSpace 0)
+    $ L.FunctionType
+          (L.IntegerType 32)
+          [L.PointerType (L.IntegerType 8) (L.AddrSpace 0)]
+          False
+  f'' <- L.load f' 0
+  L.call f'' [(op, [])]
+getSize (Ann.Global v ty) op _ =
+  L.call
+    ( L.ConstantOperand
+    $ L.GlobalReference
+        (L.FunctionType
+          (L.IntegerType 32)
+          [L.PointerType (L.IntegerType 8) (L.AddrSpace 0)]
+          False
+        )
+        (L.mkName v)
+    )
+    [(op, [])]
+getSize (Ann.App t _) op env =
+  getSize t op env
+getSize _ _ _ =
+  undefined
+
 sizeOf :: L.Type -> IO Word64
 sizeOf ty = L.withContext $ \ctx -> L.runEncodeAST ctx $ do
   ty' <- L.encodeM ty
   liftIO (L.withFFIDataLayout
     (L.defaultDataLayout L.LittleEndian)
     (\dl -> L.getTypeAllocSize dl ty'))
+
 
 defGen :: MonadCodeGen m => Ann.Def -> m ()
 defGen (Ann.PatternMatchingDef name equations ty _) = do
@@ -59,7 +100,6 @@ defGen (Ann.PatternMatchingDef name equations ty _) = do
     genEquation :: MonadCodeGen m => [L.Type] -> [Ann.Pattern] -> Ann.Term -> L.Name -> L.IRBuilderT m L.Name
     genEquation args' patterns body lb = mdo
       n <- L.block
-      --(checks, binds) <-
       xs <-
         mapM
           (uncurry patGen)
@@ -70,7 +110,6 @@ defGen (Ann.PatternMatchingDef name equations ty _) = do
               (zip [0..] args')))
       b <- foldlM L.and (L.ConstantOperand (L.Int 1 1)) (map fst xs)
       L.condBr b lb' lb
-      --lb' <- genBody args' patterns body
       lb' <- L.block
       let boundArgs = foldl (++) [] (map snd xs)
       L.ret =<< codeGen boundArgs body
@@ -125,20 +164,32 @@ defGen (Ann.PatternMatchingDef name equations ty _) = do
           _ -> error ""
       _ -> error ""
 defGen (Ann.TypeDef name _ cons) = do
-  let flattened = map (flatten . snd) cons
-  getConsLTypes <- mapM (getConsLType . fst) flattened
-  maxSize <- liftIO (maximum <$> mapM sizeOf getConsLTypes)
+  --let flattened = map (flatten . snd) cons
+  --getConsLTypes <- mapM (getConsLType . fst) flattened
+  --maxSize <- liftIO (maximum <$> mapM sizeOf getConsLTypes)
   typeDef
     name
+    (\op -> mdo
+      tagPtr <- L.bitcast op $ L.PointerType (L.IntegerType 32) (L.AddrSpace 0)
+      tag <- L.load tagPtr 0
+      L.br bl
+      bl <- sizeCons cons op tag 0
+      return ()
+    )
+    {-
     (L.StructureType
       False
       [L.IntegerType 32, L.ArrayType maxSize (L.IntegerType 8)]
     )
+    -}
+    --(fromIntegral maxSize)
+        {-
   forM_ (zip4 [0..] getConsLTypes flattened (map fst cons)) (\(n, consLType, (args, retTy), consName) -> do
       retTy' <- typeGen retTy
       args' <- mapM typeGen args
       if length args == 0 then
-        emptyConstructor consName retTy' n maxSize
+        --emptyConstructor consName retTy' n maxSize
+        return ()
       else
         functionConstructor consName args' consLType retTy' n
           (do
@@ -159,8 +210,10 @@ defGen (Ann.TypeDef name _ cons) = do
             a <- L.load w 0
             L.ret =<< L.insertValue y a [1]
           )
+          return ()
       return ()
     )
+          -}
   return ()
   where
     flatten :: Ann.Type -> ([Ann.Type], Ann.Type)
@@ -180,6 +233,39 @@ defGen (Ann.TypeDef name _ cons) = do
     constructor n (arg:args) ty = do
       x <- constructor (n+1) args ty
       L.insertValue x (L.LocalReference arg (L.UnName (fromIntegral $ toInteger n))) [n]
+
+    sizeCons
+      :: MonadCodeGen m
+      => [(String, Ann.Type)]
+      -> L.Operand
+      -> L.Operand
+      -> Int
+      -> L.IRBuilderT m L.Name
+    sizeCons [] _ _ _ =
+      L.block <* L.unreachable
+    sizeCons ((_, ty):conss') op tag n = mdo
+      bll <- L.block
+      b <- L.icmp L.EQ (L.ConstantOperand $ L.Int 32 $ fromIntegral n) tag
+      L.condBr b bl bl'
+      bl <- L.block
+      op' <- L.gep op [L.ConstantOperand $ L.Int 32 4]
+      L.ret =<< getSizeCons ty op' []
+      bl' <- sizeCons conss' op tag (n+1)
+      return bll
+
+    getSizeCons
+      :: MonadCodeGen m
+      => Ann.Type
+      -> L.Operand
+      -> [(String, L.Operand)]
+      -> L.IRBuilderT m L.Operand
+    getSizeCons (Ann.Pi v ty1 ty2) op env = do
+      size <- getSize ty1 op env
+      op' <- L.gep op [size]
+      size' <- getSizeCons ty2 op' ((v, op):env)
+      L.add size size'
+    getSizeCons _ _ _ =
+      return $ L.ConstantOperand $ L.Int 32 4  -- function pointer
 
 codeGen :: MonadCodeGen m => [(String, L.Operand)] -> Ann.Term -> L.IRBuilderT m L.Operand
 codeGen env (Ann.Local v ty) =
@@ -228,12 +314,25 @@ typeGen ty@(Ann.Pi _ _ _) =
   in L.FunctionType <$> typeGen ret <*> mapM typeGen args <*> pure False
 typeGen (Ann.BytesType n) =
   return $ L.IntegerType $ fromIntegral (n*8)
+typeGen (Ann.Type _) = do
+  return
+    $ flip L.PointerType (L.AddrSpace 0)
+    $ L.FunctionType
+        (L.IntegerType 32)
+        [L.PointerType (L.IntegerType 8) (L.AddrSpace 0)]
+        False
+typeGen (Ann.Local x _) = do
+  return $ L.PointerType (L.IntegerType 8) (L.AddrSpace 0)
+  --undefined
 typeGen (Ann.Global x _) = do
+  return $ L.PointerType (L.IntegerType 8) (L.AddrSpace 0)
+  {-
   def <- lookup x
   return (case def of
     Just (Type _ ty) ->
       ty
     _ ->
       error "")
-typeGen _ =
-  undefined
+      -}
+typeGen t =
+  error $ show t

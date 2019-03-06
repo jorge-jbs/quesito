@@ -9,6 +9,7 @@ import Control.Monad.Fix (MonadFix)
 import Data.Word (Word64)
 
 import qualified LLVM.AST as L hiding (function)
+import qualified LLVM.AST.AddrSpace as L
 import qualified LLVM.AST.Constant as L
 import qualified LLVM.IRBuilder.Module as L
 import qualified LLVM.IRBuilder.Monad as L
@@ -34,7 +35,6 @@ data Def
       Constructor
   | Type
       String  -- ^ name
-      L.Type
   deriving Show
 
 instance Env.Definition Def where
@@ -42,13 +42,13 @@ instance Env.Definition Def where
     [n]
   getNames (Constructor n _ _ _) =
     [n]
-  getNames (Type n _) =
+  getNames (Type n) =
     [n]
 
-class (MonadIO m, MonadFix m) => MonadCodeGen m where
+class (MonadIO m, MonadFix m, L.MonadModuleBuilder m) => MonadCodeGen m where
   lookup :: String -> m (Maybe Def)
   function :: String -> [L.Type] -> L.Type -> L.IRBuilderT m () -> m ()
-  typeDef :: String -> L.Type -> m ()
+  typeDef :: String -> (L.Operand -> L.IRBuilderT m ()) -> m ()
   functionConstructor
     :: String
     -> [L.Type]
@@ -80,15 +80,37 @@ instance MonadCodeGen CodeGenM where
 
   lookup k = Env.lookup k <$> get
 
-  typeDef name ty = do
+  {-
+  typeDef name ty maxSize = do
     _ <- L.typedef (L.mkName name) (Just ty)
-    modify $ Env.insert $ Type name ty
+    _ <- L.global
+      (L.mkName name)
+      (L.IntegerType 32)
+      (L.Int 32 (4 + maxSize))
+    modify $ Env.insert $ Type name $ GroundType ty
+  -}
+
+  typeDef name body = do
+    _ <- L.function
+      (L.mkName name)
+      [(L.PointerType (L.IntegerType 8) (L.AddrSpace 0), L.NoParameterName)]
+      (L.IntegerType 32)
+      (\[op] -> body op)
+    modify $ Env.insert $ Type name
 
   emptyConstructor name retTy tag maxSize = do
     _ <- L.global
       (L.mkName name)
       retTy
-      (L.Struct (Just (L.mkName name)) False  [L.Int 32 tag, L.Array (L.IntegerType 8) (replicate (fromIntegral maxSize) (L.Int 8 0))])
+      (L.Struct
+        (Just $ L.mkName name)
+        False
+        [ L.Int 32 tag
+        , L.Array
+            (L.IntegerType 8)
+            (replicate (fromIntegral maxSize) (L.Int 8 0))
+        ]
+      )
     modify $ Env.insert $ Constructor name retTy tag EmptyConstructor
 
   functionConstructor name argsTys ty retTy tag body = do

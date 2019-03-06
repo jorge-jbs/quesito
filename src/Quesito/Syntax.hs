@@ -35,6 +35,18 @@ data Def
       [(String, Term)]  -- ^ constructors
   deriving Show
 
+remLoc :: Term -> Term
+remLoc (Arrow r s) =
+  Arrow (remLoc r) (remLoc s)
+remLoc (App hd tl) =
+  App (remLoc hd) (map remLoc tl)
+remLoc (Ann r s) =
+  Ann (remLoc r) (remLoc s)
+remLoc (Loc _ t) =
+  remLoc t
+remLoc t =
+  t
+
 getNames :: Def -> [String]
 getNames (PatternMatchingDef name _ _ _) =
   [name]
@@ -81,15 +93,18 @@ desugar env (App t args) =
   foldl TT.App <$> desugar env t <*> mapM (desugar env) args
 desugar env (Lam v body) =
   TT.Lam v <$> desugar env body
-desugar env (Arrow (Ann (Var v) ty1) ty2) =
-  TT.Pi v <$> desugar env ty1 <*> desugar env ty2
-desugar _ (Arrow (Ann _ _) _) = do
-  loc <- getLocation
-  throwError ("Type annotation not allowed here " ++ pprint loc)
 desugar env (Arrow ty1 ty2) =
-  TT.Pi "" <$> desugar env ty1 <*> desugar env ty2
+  case remLoc ty1 of
+    Ann (Var v) ty1' ->
+      TT.Pi v <$> desugar env ty1' <*> desugar env ty2
+    Ann _ _ -> do
+      loc <- getLocation
+      throwError ("Type annotation not allowed here " ++ pprint loc ++ ": " ++ show ty1)
+    _ ->
+      TT.Pi "" <$> desugar env ty1 <*> desugar env ty2
 desugar env (Ann t ty) =
   TT.Ann <$> desugar env t <*> desugar env ty
+
 desugar env (Loc loc t) =
   TT.Loc loc <$> desugar env t `locatedAt` loc
 
