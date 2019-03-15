@@ -323,16 +323,9 @@ typeGen (Ann.Type _) = do
         False
 typeGen (Ann.Local x _) = do
   return $ L.PointerType (L.IntegerType 8) (L.AddrSpace 0)
-  --undefined
 typeGen (Ann.Global x _) = do
   return $ L.PointerType (L.IntegerType 8) (L.AddrSpace 0)
-  {-
-  def <- lookup x
-  return (case def of
-    Just (Type _ ty) ->
-      ty
-    _ ->
-      error "")
-      -}
+typeGen (Ann.App t _) =
+  typeGen t
 typeGen t =
   error $ show t

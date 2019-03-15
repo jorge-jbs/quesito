@@ -25,6 +25,8 @@ executable quesito
     Quesito.CodeGen,
     Quesito.CodeGen.TopLevel,
     Quesito.Env,
+    Quesito.LLTT,
+    Quesito.LLTT.TopLevel,
     Quesito.TT,
     Quesito.TT.TopLevel,
     Quesito.TT.TypeAnn,
