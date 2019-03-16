@@ -39,26 +39,15 @@ import GHC.Word (Word32, Word64)
 
 getSize
   :: L.MonadModuleBuilder m
-  => Ann.Type
+  => LLTT.Type
   -> L.Operand
   -> [(String, L.Operand)]
   -> L.IRBuilderT m L.Operand
-getSize (Ann.BytesType n) _ _ =
+getSize (LLTT.BytesType n) _ _ =
   return $ L.ConstantOperand $ L.Int 32 $ fromIntegral n
-getSize (Ann.Type _) op _ =
+getSize (LLTT.Type _) op _ =
   return $ L.ConstantOperand $ L.Int 32 4  -- function pointer
-getSize (Ann.Local v _) op env = do
-  let f = fromJust $ Prelude.lookup v env
-  f' <- L.bitcast f
-    $ flip L.PointerType (L.AddrSpace 0)
-    $ flip L.PointerType (L.AddrSpace 0)
-    $ L.FunctionType
-        (L.IntegerType 32)
-        [L.PointerType (L.IntegerType 8) (L.AddrSpace 0)]
-        False
-  f'' <- L.load f' 0
-  L.call f'' [(op, [])]
-getSize (Ann.Global v ty) op _ =
+getSize (LLTT.Constant (LLTT.TypeCons v ty)) op env = do
   L.call
     ( L.ConstantOperand
     $ L.GlobalReference
@@ -70,10 +59,33 @@ getSize (Ann.Global v ty) op _ =
         (L.mkName v)
     )
     [(op, [])]
-getSize (Ann.App t _) op env =
-  getSize t op env
-getSize _ _ _ =
-  undefined
+getSize (LLTT.Constant (LLTT.Local v _)) op env = do
+  let f = fromJust $ Prelude.lookup v env
+  f' <- L.bitcast f
+    $ flip L.PointerType (L.AddrSpace 0)
+    $ flip L.PointerType (L.AddrSpace 0)
+    $ L.FunctionType
+        (L.IntegerType 32)
+        [L.PointerType (L.IntegerType 8) (L.AddrSpace 0)]
+        False
+  f'' <- L.load f' 0
+  L.call f'' [(op, [])]
+getSize (LLTT.Constant (LLTT.Global v ty)) op _ =
+  L.call
+    ( L.ConstantOperand
+    $ L.GlobalReference
+        (L.FunctionType
+          (L.IntegerType 32)
+          [L.PointerType (L.IntegerType 8) (L.AddrSpace 0)]
+          False
+        )
+        (L.mkName v)
+    )
+    [(op, [])]
+getSize (LLTT.Call v _) op env =
+  getSize (LLTT.Constant v) op env
+getSize t _ _ =
+  error $ show t
 
 sizeOf :: L.Type -> IO Word64
 sizeOf ty = L.withContext $ \ctx -> L.runEncodeAST ctx $ do
@@ -130,34 +142,26 @@ patGen env (Ann.Constructor consName) op = do
 patGen env p@(Ann.PatApp _ _) op = case Ann.flattenPatApp p of
   Ann.Constructor consName : args -> do
     case Env.lookup consName env of
-      Just (LLTT.ConstructorDef _ ty _) -> do
-        let retTy = undefined ty
-        let consTy = undefined ty
-        ptr <- L.alloca retTy Nothing 0
-        L.store ptr 0 op
-        ptr' <- L.bitcast
-          ptr
-          (L.PointerType
-            (L.StructureType
-              False
-              [L.IntegerType 32, consTy]
-            )
-            (L.AddrSpace 0)
-          )
-        deptr <- L.load ptr' 0
-        gen <- forM (zip [0..] args) (\(i, arg) -> do
-            op' <- L.extractValue deptr [1, i]
-            patGen env arg op'
-          )
-        foldlM
-          (\(b1, binds1) (b2, binds2) -> do
-            b <- L.and b1 b2
-            return (b, binds1 ++ binds2)
-          )
-          (L.ConstantOperand (L.Int 1 1), [])
-          gen
+      Just (LLTT.ConstructorDef _ ty tag) -> do
+        tagPtr <- L.bitcast op $ L.IntegerType 32
+        tagOp <- L.load tagPtr 0
+        b1 <- L.icmp L.EQ (L.ConstantOperand $ L.Int 32 $ fromIntegral tag) tagOp
+        op' <- L.gep op [L.ConstantOperand $ L.Int 32 4]
+        (b2, binds) <- deconstruct env ty args op' []
+        b <- L.and b1 b2
+        return (b, binds)
       _ -> error ""
   _ -> error ""
+
+deconstruct env (LLTT.Pi v ty1 ty2) (arg:args) op sizeEnv = do
+  (b1, binds1) <- patGen env arg op
+  size <- getSize ty1 op sizeEnv
+  op' <- L.gep op [size]
+  (b2, binds2) <- deconstruct env ty2 args op' ((v, op) : sizeEnv)
+  b <- L.and b1 b2
+  return (b, binds1 ++ binds2)
+deconstruct _ _ [] _ _ =
+  return (L.ConstantOperand $ L.Int 1 1, [])
 
 defGen
   :: (L.MonadModuleBuilder m, MonadFix m)
@@ -289,8 +293,8 @@ codeGen _ (LLTT.Constant (LLTT.Global v ty)) = do
     $ L.mkName v
     )
     0
-codeGen _ (LLTT.Constant (LLTT.TypeCons _ _)) =
-  return $ L.ConstantOperand $ L.Int 32 13
+codeGen env (LLTT.Constant (LLTT.TypeCons v ty)) =
+  codeGen env $ LLTT.Constant $ LLTT.Global v ty
 codeGen _ (LLTT.Num n bytes') =
   return (L.ConstantOperand (L.Int (fromIntegral bytes' * 8) (fromIntegral n)))
 codeGen env (LLTT.Call (LLTT.TypeCons v ty) args) =
@@ -330,12 +334,7 @@ typeGen ty@(LLTT.Pi _ _ _) =
 typeGen (LLTT.BytesType n) =
   return $ L.IntegerType $ fromIntegral (n*8)
 typeGen (LLTT.Type _) = do
-  return
-    $ flip L.PointerType (L.AddrSpace 0)
-    $ L.FunctionType
-        (L.IntegerType 32)
-        [L.PointerType (L.IntegerType 8) (L.AddrSpace 0)]
-        False
+  return $ L.IntegerType 32
 typeGen (LLTT.Constant _) = do
   return $ L.PointerType (L.IntegerType 8) (L.AddrSpace 0)
 typeGen (LLTT.Call v _) =
