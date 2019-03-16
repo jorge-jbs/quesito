@@ -4,7 +4,7 @@ data Bool : Type where {
 }
 
 data BoxedBool : Type where {
-  BoxBool : Bool -> Type;
+  BoxBool : Bool -> BoxedBool;
 }
 
 data Boxed : Type -> Type where {
@@ -21,5 +21,5 @@ data Vect : Nat -> Type -> Type where {
   Cons : (a : Type) -> (n : Nat) -> a -> Vect n a -> Vect (Succ n) a;
 }
 
-main : Bytes 4;
-main = 1;
+main : BoxedBool;
+main = BoxBool True;
