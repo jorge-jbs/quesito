@@ -40,8 +40,9 @@ data Def
       [([(String, Type)], [Pattern], [Type])]  -- ^ equations
       Type  -- ^ type
   | ConstructorDef
-      String
-      Type
+      String  -- ^ constructor name
+      Type  -- ^ type name
+      Integer  -- ^ tag
   deriving Show
 
 instance Env.Definition Def where
@@ -49,7 +50,7 @@ instance Env.Definition Def where
     [n]
   getNames (TypeDef n _ _) =
     [n]
-  getNames (ConstructorDef n _) =
+  getNames (ConstructorDef n _ _) =
     [n]
 
 lower :: MonadQues m => Env -> Ann.Term -> m Term
@@ -59,7 +60,7 @@ lower env (Ann.Global v ty) =
   case Env.lookup v env of
     Just (TypeDef n _ _) ->
       Constant . TypeCons v <$> lower env ty
-    Just (ConstructorDef _ _) ->
+    Just (ConstructorDef _ _ _) ->
       Constant . Constructor v <$> lower env ty
     Just (PatternMatchingDef _ _ _) ->
       Constant . Global v <$> lower env ty
@@ -94,3 +95,5 @@ lower env t@(Ann.App _ _) =
       error ""
 lower _ (Ann.Lam _ _ _) =
   throwError "Can't generate lambda expressions"
+
+flattenPi = undefined

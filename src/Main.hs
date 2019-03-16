@@ -3,6 +3,7 @@ module Main where
 import Quesito
 import Quesito.CodeGen
 import Quesito.CodeGen.TopLevel
+import Quesito.LLTT.TopLevel as LLTT (lowerDef)
 import Quesito.TT.TopLevel as TT (typeAnn)
 import qualified Quesito.Env as Env
 import Quesito.Syntax as Syn
@@ -37,7 +38,14 @@ main = do
           )
           Env.empty
           ttDefs
-        return $ buildModuleT (fromString "main") $ runCodeGen $ mapM defGen annDefs
+        llttDefs <- foldlM
+          (\llttDefs annDef -> do
+              llttDef <- LLTT.lowerDef llttDefs annDef
+              return $ Env.append llttDefs $ Env.fromList llttDef
+          )
+          Env.empty
+          annDefs
+        return $ buildModuleT (fromString "main") $ mapM (defGen llttDefs) llttDefs
   putStrLn w
   case m of
     Right m' ->

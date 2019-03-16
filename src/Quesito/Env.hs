@@ -3,7 +3,7 @@
 module Quesito.Env
   ( Definition(..)
   , Env
-  , empty, lookup, keys, insert, append
+  , empty, lookup, keys, insert, append, fromList
   )
   where
 
@@ -35,3 +35,6 @@ insert d (Env env) =
 append :: Env a -> Env a -> Env a
 append (Env env1) (Env env2) =
   Env (env1 ++ env2)
+
+fromList :: [a] -> Env a
+fromList = Env

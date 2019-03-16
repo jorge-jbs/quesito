@@ -20,14 +20,14 @@ lowerDef env (Ann.PatternMatchingDef name equations ty _) = do
 lowerDef env (Ann.TypeDef name ty conss) = do
   ty' <- lower env ty
   conss' <- mapM
-      (\(consName, consTy) ->
-        ConstructorDef consName <$> lower env consTy
+      (\((consName, consTy), tag) ->
+        ConstructorDef consName <$> lower env consTy <*> pure tag
       )
-      conss
+      (zip conss [0..])
   equations <- forM conss (\(_, consTy) -> do
       let (args, retTy) = Ann.flattenPi consTy
           termToPattern' = TT.termToPattern (\x -> case Env.lookup x env of
-              Just (ConstructorDef _ _) ->
+              Just (ConstructorDef _ _ _) ->
                 True
               _ ->
                 False
