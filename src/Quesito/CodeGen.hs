@@ -207,7 +207,13 @@ defGen env (LLTT.PatternMatchingDef name equations ty) = do
               gen
           _ -> error ""
       _ -> error ""
-defGen env (LLTT.TypeDef name _ cons) = do
+defGen env (LLTT.TypeDef name _ _) = do
+  typeDef
+    name
+    (\op -> mdo
+      return ()
+    )
+defGen env (LLTT.ConstructorDef name _ _) = do
   typeDef
     name
     (\op -> mdo

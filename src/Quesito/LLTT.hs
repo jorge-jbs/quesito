@@ -58,14 +58,14 @@ lower env (Ann.Local v ty) =
   Constant . Local v <$> lower env ty
 lower env (Ann.Global v ty) =
   case Env.lookup v env of
-    Just (TypeDef n _ _) ->
+    Just (TypeDef _ _ _) ->
       Constant . TypeCons v <$> lower env ty
     Just (ConstructorDef _ _ _) ->
       Constant . Constructor v <$> lower env ty
     Just (PatternMatchingDef _ _ _) ->
       Constant . Global v <$> lower env ty
-    _ ->
-      error ""
+    Nothing ->
+      throwError ("Variable not found: " ++ v)
 lower _ (Ann.Type i) =
   return $ Type i
 lower _ (Ann.BytesType i) =
@@ -96,4 +96,9 @@ lower env t@(Ann.App _ _) =
 lower _ (Ann.Lam _ _ _) =
   throwError "Can't generate lambda expressions"
 
-flattenPi = undefined
+flattenPi :: Type -> ([Type], Type)
+flattenPi (Pi _ ty1 ty2) =
+  let (args, ret) = flattenPi ty2
+  in (ty1 : args, ret)
+flattenPi t =
+  ([], t)

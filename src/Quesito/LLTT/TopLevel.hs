@@ -18,12 +18,8 @@ lowerDef env (Ann.PatternMatchingDef name equations ty _) = do
   ty' <- lower env ty
   return [PatternMatchingDef name equations' ty']
 lowerDef env (Ann.TypeDef name ty conss) = do
+  tell name
   ty' <- lower env ty
-  conss' <- mapM
-      (\((consName, consTy), tag) ->
-        ConstructorDef consName <$> lower env consTy <*> pure tag
-      )
-      (zip conss [0..])
   equations <- forM conss (\(_, consTy) -> do
       let (args, retTy) = Ann.flattenPi consTy
           termToPattern' = TT.termToPattern (\x -> case Env.lookup x env of
@@ -32,11 +28,17 @@ lowerDef env (Ann.TypeDef name ty conss) = do
               _ ->
                 False
             )
-      args' <- mapM (lower env) args
+      args' <- mapM (lower $ Env.insert (TypeDef name undefined undefined) env) args
       pats <- mapM termToPattern' $ tail $ Ann.flattenApp retTy
       vars <- mapM
           (\(v, vty) -> do vty' <- lower env vty; return (v, vty'))
           $ TT.findVars retTy
       return (vars, pats, args')
     )
+  let env' = Env.insert (TypeDef name equations ty') env
+  conss' <- mapM
+      (\((consName, consTy), tag) ->
+        ConstructorDef consName <$> lower env' consTy <*> pure tag
+      )
+      (zip conss [0..])
   return (TypeDef name equations ty' : conss')
