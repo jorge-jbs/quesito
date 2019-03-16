@@ -38,15 +38,15 @@ import qualified LLVM.IRBuilder.Monad as L
 import GHC.Word (Word32, Word64)
 
 getSize
-  :: L.MonadModuleBuilder m
+  :: (L.MonadModuleBuilder m, L.MonadIRBuilder m)
   => LLTT.Type
   -> L.Operand
   -> [(String, L.Operand)]
-  -> L.IRBuilderT m L.Operand
+  -> m L.Operand
 getSize (LLTT.BytesType n) _ _ =
   return $ L.ConstantOperand $ L.Int 32 $ fromIntegral n
 getSize (LLTT.Type _) op _ =
-  return $ L.ConstantOperand $ L.Int 32 4  -- function pointer
+  return $ L.ConstantOperand $ L.Int 32 4
 getSize (LLTT.Constant (LLTT.TypeCons v ty)) op env = do
   L.call
     ( L.ConstantOperand
@@ -118,11 +118,11 @@ typeDef name body = do
   return ()
 
 patGen
-  :: L.MonadModuleBuilder m
+  :: (L.MonadModuleBuilder m, L.MonadIRBuilder m)
   => LLTT.Env
   -> Ann.Pattern
   -> L.Operand
-  -> L.IRBuilderT m (L.Operand, [(String, L.Operand)])
+  -> m (L.Operand, [(String, L.Operand)])
 patGen _ (Ann.Binding x) op =
   return (L.ConstantOperand (L.Int 1 1), [(x, op)])
 patGen _ (Ann.Inaccessible _) _ =
@@ -131,37 +131,39 @@ patGen _ (Ann.NumPat n b) op = do
   x <- L.icmp L.EQ (L.ConstantOperand (L.Int (fromIntegral (b*8)) (fromIntegral n))) op
   return (x, [])
 patGen env (Ann.Constructor consName) op = do
-  let n = case Env.lookup consName env of
-        Just (LLTT.ConstructorDef _ _ tag) ->
-          tag
+  let tag = case Env.lookup consName env of
+        Just (LLTT.ConstructorDef _ _ tag') ->
+          tag'
         _ ->
           error ""
-  m <- L.extractValue op [0]
-  b <- L.icmp L.EQ (L.ConstantOperand $ L.Int 32 $ fromIntegral n) m
+  tagPtr <- L.bitcast op $ flip L.PointerType (L.AddrSpace 0) $ L.IntegerType 32
+  tagOp <- L.load tagPtr 0
+  b <- L.icmp L.EQ (L.ConstantOperand $ L.Int 32 $ fromIntegral tag) tagOp
   return (b, [])
 patGen env p@(Ann.PatApp _ _) op = case Ann.flattenPatApp p of
   Ann.Constructor consName : args -> do
     case Env.lookup consName env of
       Just (LLTT.ConstructorDef _ ty tag) -> do
-        tagPtr <- L.bitcast op $ L.IntegerType 32
+        tagPtr <-
+          L.bitcast op $ flip L.PointerType (L.AddrSpace 0) $ L.IntegerType 32
         tagOp <- L.load tagPtr 0
         b1 <- L.icmp L.EQ (L.ConstantOperand $ L.Int 32 $ fromIntegral tag) tagOp
         op' <- L.gep op [L.ConstantOperand $ L.Int 32 4]
-        (b2, binds) <- deconstruct env ty args op' []
+        (b2, binds) <- deconstruct ty args op' []
         b <- L.and b1 b2
         return (b, binds)
       _ -> error ""
   _ -> error ""
-
-deconstruct env (LLTT.Pi v ty1 ty2) (arg:args) op sizeEnv = do
-  (b1, binds1) <- patGen env arg op
-  size <- getSize ty1 op sizeEnv
-  op' <- L.gep op [size]
-  (b2, binds2) <- deconstruct env ty2 args op' ((v, op) : sizeEnv)
-  b <- L.and b1 b2
-  return (b, binds1 ++ binds2)
-deconstruct _ _ [] _ _ =
-  return (L.ConstantOperand $ L.Int 1 1, [])
+  where
+    deconstruct (LLTT.Pi v ty1 ty2) (arg:args) op sizeEnv = do
+      (b1, binds1) <- patGen env arg op
+      size <- codeGen sizeEnv ty1
+      op' <- L.gep op [size]
+      (b2, binds2) <- deconstruct ty2 args op' ((v, op) : sizeEnv)
+      b <- L.and b1 b2
+      return (b, binds1 ++ binds2)
+    deconstruct _ [] _ _ =
+      return (L.ConstantOperand $ L.Int 1 1, [])
 
 defGen
   :: (L.MonadModuleBuilder m, MonadFix m)
@@ -274,27 +276,30 @@ defGen _ (LLTT.ConstructorDef name _ _) = do
     )
 
 codeGen
-  :: L.MonadModuleBuilder m
+  :: (L.MonadModuleBuilder m, L.MonadIRBuilder m)
   => [(String, L.Operand)]
   -> LLTT.Term
-  -> L.IRBuilderT m L.Operand
+  -> m L.Operand
 codeGen env (LLTT.Constant (LLTT.Local v ty)) = do
   case snd <$> find ((==) v . fst) env of
     Just op ->
       return op
     Nothing -> do
-      ty' <- lift $ typeGen ty
+      ty' <- typeGen ty
       return $ L.LocalReference ty' $ L.mkName v
 codeGen _ (LLTT.Constant (LLTT.Global v ty)) = do
-  ty' <- lift $ typeGen ty
+  ty' <- typeGen ty
   L.load
     ( L.ConstantOperand
     $ L.GlobalReference (L.PointerType ty' $ L.AddrSpace 0)
     $ L.mkName v
     )
     0
-codeGen env (LLTT.Constant (LLTT.TypeCons v ty)) =
-  codeGen env $ LLTT.Constant $ LLTT.Global v ty
+codeGen _ (LLTT.Constant (LLTT.TypeCons v ty)) = do
+  ty' <- typeGen ty
+  L.call
+    (L.ConstantOperand $ L.GlobalReference (L.FunctionType ty' [] False) $ L.mkName v)
+    []
 codeGen _ (LLTT.Num n bytes') =
   return (L.ConstantOperand (L.Int (fromIntegral bytes' * 8) (fromIntegral n)))
 codeGen env (LLTT.Call (LLTT.TypeCons v ty) args) =

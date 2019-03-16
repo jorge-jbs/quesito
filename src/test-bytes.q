@@ -21,9 +21,5 @@ data Vect : Nat -> Type -> Type where {
   Cons : (a : Type) -> (n : Nat) -> a -> Vect n a -> Vect (Succ n) a;
 }
 
-data Array : Type -> Type where {
-  MkArray : (a : Type) -> (n : Nat) -> Vect n a -> Array a;
-}
-
 main : Bytes 4;
 main = 1;
