@@ -264,20 +264,19 @@ defGen env (LLTT.TypeDef name equations ty) = do
             x' <- codeGen env boundArgs x
             L.add x' acc
           )
-          (L.ConstantOperand $ L.Int 32 0)
+          (L.ConstantOperand $ L.Int 32 4)
           body
       L.ret body'
       return n
 defGen _ (LLTT.ConstructorDef _ _ _) = do
   return ()
 
-construct env op args ty tag = do
-  tagPtr <- L.bitcast op $ L.PointerType (L.IntegerType 8) (L.AddrSpace 0)
-  _ <- L.load tagPtr $ fromIntegral tag
-  op' <- L.gep op [L.ConstantOperand $ L.Int 32 4]
-  construct' env [] ty op' args
+construct1 env ctx (LLTT.Pi v ty1 ty2) (arg:args) = do
+  construct1 env ((v, arg) : ctx) ty2 args
+construct1 env ctx ty _ = do
+  codeGen env ctx ty
 
-construct' env ctx (LLTT.Pi v ty1 ty2) op (arg:args) = do
+construct2 env ctx (LLTT.Pi v ty1 ty2) op (arg:args) = do
   size <- codeGen env ctx ty1
   opPtr <- L.bitcast op $ L.PointerType (L.IntegerType 8) (L.AddrSpace 0)
   argPtr <- L.bitcast arg $ L.PointerType (L.IntegerType 8) (L.AddrSpace 0)
@@ -297,9 +296,9 @@ construct' env ctx (LLTT.Pi v ty1 ty2) op (arg:args) = do
     )
     [(opPtr, []), (argPtr, []), (size, []), (L.ConstantOperand $ L.Int 1 1, [])]
   op' <- L.gep op [size]
-  construct' env ((v, op) : ctx) ty2 op' args
-construct' env ctx ty _ [] = do
-  codeGen env ctx ty
+  construct2 env ((v, op) : ctx) ty2 op' args
+construct2 env ctx ty _ [] =
+  return ()
 
 codeGen
   :: (L.MonadModuleBuilder m, L.MonadIRBuilder m, MonadFix m)
@@ -336,9 +335,13 @@ codeGen env ctx (LLTT.Constant (LLTT.Constructor v ty)) =
 codeGen env ctx (LLTT.Call (LLTT.Constructor v _) args) =
   case Env.lookup v env of
     Just (LLTT.ConstructorDef _ ty tag) -> mdo
-      op <- L.alloca (L.IntegerType 8) (Just size) 0
       args' <- mapM (codeGen env ctx) args
-      size <- construct env op args' ty tag
+      size <- construct1 env ctx ty args'
+      op <- L.alloca (L.IntegerType 8) (Just size) 0
+      tagPtr <- L.bitcast op $ L.PointerType (L.IntegerType 32) (L.AddrSpace 0)
+      _ <- L.store tagPtr 0 $ L.ConstantOperand $ L.Int 32 $ fromIntegral tag
+      op' <- L.gep op [L.ConstantOperand $ L.Int 32 4]
+      construct2 env ctx ty op' args'
       return op
     _ ->
       error ""
