@@ -123,11 +123,11 @@ patGen
   -> Ann.Pattern
   -> L.Operand
   -> L.IRBuilderT m (L.Operand, [(String, L.Operand)])
-patGen env (Ann.Binding x) op =
+patGen _ (Ann.Binding x) op =
   return (L.ConstantOperand (L.Int 1 1), [(x, op)])
-patGen env (Ann.Inaccessible _) _ =
+patGen _ (Ann.Inaccessible _) _ =
   undefined
-patGen env (Ann.NumPat n b) op = do
+patGen _ (Ann.NumPat n b) op = do
   x <- L.icmp L.EQ (L.ConstantOperand (L.Int (fromIntegral (b*8)) (fromIntegral n))) op
   return (x, [])
 patGen env (Ann.Constructor consName) op = do
@@ -266,7 +266,7 @@ defGen env (LLTT.TypeDef name equations ty) = do
           body
       L.ret body'
       return n
-defGen env (LLTT.ConstructorDef name _ _) = do
+defGen _ (LLTT.ConstructorDef name _ _) = do
   typeDef
     name
     (\op -> mdo
@@ -306,7 +306,7 @@ codeGen env (LLTT.Call (LLTT.Global v ty) args) = do
   L.call
     (L.ConstantOperand $ L.GlobalReference ty' $ L.mkName v)
     =<< mapM (fmap (flip (,) []) . codeGen env) args
-codeGen env t@(LLTT.Call _ _) = do
+codeGen _ (LLTT.Call _ _) = do
   error ""
 codeGen env (LLTT.BinOp op a b) = do
   let instr = case op of
@@ -317,11 +317,11 @@ codeGen env (LLTT.BinOp op a b) = do
   a' <- codeGen env a
   b' <- codeGen env b
   instr a' b'
-codeGen env (LLTT.UnOp op a) = do
+codeGen _ (LLTT.UnOp _ _) = do
   undefined
-codeGen env (LLTT.BytesType n) = do
+codeGen _ (LLTT.BytesType n) = do
   return $ L.ConstantOperand $ L.Int 32 $ fromIntegral n
-codeGen env (LLTT.Type _) = do
+codeGen _ (LLTT.Type _) = do
   return $ L.ConstantOperand $ L.Int 32 4
 codeGen _ t =
   error $ show t
