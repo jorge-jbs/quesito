@@ -39,7 +39,6 @@ import GHC.Word (Word32, Word64)
 
 getSize
   :: L.MonadModuleBuilder m
-
   => Ann.Type
   -> L.Operand
   -> [(String, L.Operand)]
@@ -106,6 +105,60 @@ typeDef name body = do
     (\[op] -> body op)
   return ()
 
+patGen
+  :: L.MonadModuleBuilder m
+  => LLTT.Env
+  -> Ann.Pattern
+  -> L.Operand
+  -> L.IRBuilderT m (L.Operand, [(String, L.Operand)])
+patGen env (Ann.Binding x) op =
+  return (L.ConstantOperand (L.Int 1 1), [(x, op)])
+patGen env (Ann.Inaccessible _) _ =
+  undefined
+patGen env (Ann.NumPat n b) op = do
+  x <- L.icmp L.EQ (L.ConstantOperand (L.Int (fromIntegral (b*8)) (fromIntegral n))) op
+  return (x, [])
+patGen env (Ann.Constructor consName) op = do
+  let n = case Env.lookup consName env of
+        Just (LLTT.ConstructorDef _ _ tag) ->
+          tag
+        _ ->
+          error ""
+  m <- L.extractValue op [0]
+  b <- L.icmp L.EQ (L.ConstantOperand $ L.Int 32 $ fromIntegral n) m
+  return (b, [])
+patGen env p@(Ann.PatApp _ _) op = case Ann.flattenPatApp p of
+  Ann.Constructor consName : args -> do
+    case Env.lookup consName env of
+      Just (LLTT.ConstructorDef _ ty _) -> do
+        let retTy = undefined ty
+        let consTy = undefined ty
+        ptr <- L.alloca retTy Nothing 0
+        L.store ptr 0 op
+        ptr' <- L.bitcast
+          ptr
+          (L.PointerType
+            (L.StructureType
+              False
+              [L.IntegerType 32, consTy]
+            )
+            (L.AddrSpace 0)
+          )
+        deptr <- L.load ptr' 0
+        gen <- forM (zip [0..] args) (\(i, arg) -> do
+            op' <- L.extractValue deptr [1, i]
+            patGen env arg op'
+          )
+        foldlM
+          (\(b1, binds1) (b2, binds2) -> do
+            b <- L.and b1 b2
+            return (b, binds1 ++ binds2)
+          )
+          (L.ConstantOperand (L.Int 1 1), [])
+          gen
+      _ -> error ""
+  _ -> error ""
+
 defGen
   :: (L.MonadModuleBuilder m, MonadFix m)
   => LLTT.Env
@@ -145,7 +198,7 @@ defGen env (LLTT.PatternMatchingDef name equations ty) = do
       n <- L.block
       xs <-
         mapM
-          (uncurry patGen)
+          (uncurry $ patGen env)
           (zip
             patterns
             (map
@@ -157,62 +210,58 @@ defGen env (LLTT.PatternMatchingDef name equations ty) = do
       let boundArgs = foldl (++) [] (map snd xs)
       L.ret =<< codeGen boundArgs body
       return n
-
-    patGen :: L.MonadModuleBuilder m => Ann.Pattern -> L.Operand -> L.IRBuilderT m (L.Operand, [(String, L.Operand)])
-
-    patGen (Ann.Binding x) op =
-      return (L.ConstantOperand (L.Int 1 1), [(x, op)])
-    patGen (Ann.Inaccessible _) _ =
-      undefined
-    patGen (Ann.NumPat n b) op = do
-      x <- L.icmp L.EQ (L.ConstantOperand (L.Int (fromIntegral (b*8)) (fromIntegral n))) op
-      return (x, [])
-    patGen (Ann.Constructor consName) op = do
-      let n = case Env.lookup consName env of
-            Just (LLTT.ConstructorDef _ _ tag) ->
-              tag
-            _ ->
-              error ""
-      m <- L.extractValue op [0]
-      b <- L.icmp L.EQ (L.ConstantOperand $ L.Int 32 $ fromIntegral n) m
-      return (b, [])
-    patGen p@(Ann.PatApp _ _) op = case Ann.flattenPatApp p of
-      Ann.Constructor consName : args -> do
-        case Env.lookup consName env of
-          Just (LLTT.ConstructorDef _ ty _) -> do
-            let retTy = undefined ty
-            let consTy = undefined ty
-            ptr <- L.alloca retTy Nothing 0
-            L.store ptr 0 op
-            ptr' <- L.bitcast
-              ptr
-              (L.PointerType
-                (L.StructureType
-                  False
-                  [L.IntegerType 32, consTy]
-                )
-                (L.AddrSpace 0)
-              )
-            deptr <- L.load ptr' 0
-            gen <- forM (zip [0..] args) (\(i, arg) -> do
-                op' <- L.extractValue deptr [1, i]
-                patGen arg op'
-              )
-            foldlM
-              (\(b1, binds1) (b2, binds2) -> do
-                b <- L.and b1 b2
-                return (b, binds1 ++ binds2)
-              )
-              (L.ConstantOperand (L.Int 1 1), [])
-              gen
-          _ -> error ""
-      _ -> error ""
-defGen env (LLTT.TypeDef name _ _) = do
-  typeDef
+defGen env (LLTT.TypeDef name equations ty) = do
+  let (args, retTy) = LLTT.flattenPi ty
+  args' <- mapM typeGen args
+  retTy' <- typeGen retTy
+  function
     name
-    (\op -> mdo
-      return ()
-    )
+    args'
+    retTy'
+    (void $ genEquations args' equations)
+  return ()
+  where
+    genEquations
+      :: (L.MonadModuleBuilder m, MonadFix m)
+      => [L.Type]
+      -> [([(String, LLTT.Type)], [Ann.Pattern], [LLTT.Type])]
+      -> L.IRBuilderT m L.Name
+    genEquations _ [] =
+      L.block <* L.unreachable
+    genEquations args' ((_, patterns, body):es) = mdo
+      lb <- genEquation args' patterns body lb'
+      lb' <- genEquations args' es
+      return lb
+
+    genEquation
+      :: (L.MonadModuleBuilder m, MonadFix m)
+      => [L.Type]
+      -> [Ann.Pattern]
+      -> [LLTT.Type]
+      -> L.Name
+      -> L.IRBuilderT m L.Name
+    genEquation args' patterns body lb = mdo
+      n <- L.block
+      xs <-
+        mapM
+          (uncurry $ patGen env)
+          (zip
+            patterns
+            (map
+              (\(i, argTy) -> L.LocalReference argTy (L.UnName i))
+              (zip [0..] args')))
+      b <- foldlM L.and (L.ConstantOperand (L.Int 1 1)) (map fst xs)
+      L.condBr b lb' lb
+      lb' <- L.block
+      let boundArgs = foldl (++) [] (map snd xs)
+      body' <- foldlM (\acc x -> do
+            x' <- codeGen boundArgs x
+            L.add x' acc
+          )
+          (L.ConstantOperand $ L.Int 32 0)
+          body
+      L.ret body'
+      return n
 defGen env (LLTT.ConstructorDef name _ _) = do
   typeDef
     name
@@ -240,6 +289,8 @@ codeGen _ (LLTT.Constant (LLTT.Global v ty)) = do
     $ L.mkName v
     )
     0
+codeGen _ (LLTT.Constant (LLTT.TypeCons _ _)) =
+  return $ L.ConstantOperand $ L.Int 32 13
 codeGen _ (LLTT.Num n bytes') =
   return (L.ConstantOperand (L.Int (fromIntegral bytes' * 8) (fromIntegral n)))
 codeGen env (LLTT.Call (LLTT.TypeCons v ty) args) =
@@ -264,8 +315,12 @@ codeGen env (LLTT.BinOp op a b) = do
   instr a' b'
 codeGen env (LLTT.UnOp op a) = do
   undefined
-codeGen _ _ =
-  undefined
+codeGen env (LLTT.BytesType n) = do
+  return $ L.ConstantOperand $ L.Int 32 $ fromIntegral n
+codeGen env (LLTT.Type _) = do
+  return $ L.ConstantOperand $ L.Int 32 4
+codeGen _ t =
+  error $ show t
 
 typeGen :: L.MonadModuleBuilder m => LLTT.Type -> m L.Type
 
