@@ -12,14 +12,20 @@ data Boxed : Type -> Type where {
 }
 
 data Nat : Type where {
-  Zero : Nat;
   Succ : Nat -> Nat;
+  Zero : Nat;
 }
 
 data Vect : Nat -> Type -> Type where {
   Nil : (a : Type) -> Vect Zero a;
   Cons : (a : Type) -> (n : Nat) -> a -> Vect n a -> Vect (Succ n) a;
 }
+
+unbox : (a : Type) -> Boxed a -> a;
+unbox a (Box a x) = x;
+
+unboxBool : BoxedBool -> Bool;
+unboxBool (BoxBool x) = x;
 
 main : BoxedBool;
 main = BoxBool True;
