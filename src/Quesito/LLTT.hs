@@ -96,9 +96,89 @@ lower env t@(Ann.App _ _) =
 lower _ (Ann.Lam _ _ _) =
   throwError "Can't generate lambda expressions"
 
+{-
+undo :: Term -> Ann.Term
+undo (Constant (Local v ty)) =
+  Ann.Local v ty
+undo (Constant (TypeCons v ty)) =
+  Ann.Global v ty
+undo (Constant (Constructor v ty)) =
+  Ann.Global v ty
+undo (Constant (Global v ty)) =
+  Ann.Global v ty
+undo (Num n b) =
+  Ann.Num n b
+undo (Pi v ty1 ty2) =
+  Ann.Pi v (undo ty1) (undo ty2)
+undo (Type i) =
+  Ann.Type i
+undo (BytesType n) =
+  Ann.BytesType n
+undo (Call v ts) =
+  foldl Ann.App (undo $ Constant v) ts
+undo (BinOp op r s) =
+  Ann.BinOp op `Ann.App` undo r `Ann.App` undo s
+undo (UnOp UnOp Term) =
+-}
+
+typeOfVar (Local _ ty) = ty
+typeOfVar (TypeCons _ ty) = ty
+typeOfVar (Constructor _ ty) = ty
+typeOfVar (Global _ ty) = ty
+
+nameOfVar (Local v _) = v
+nameOfVar (TypeCons v _) = v
+nameOfVar (Constructor v _) = v
+nameOfVar (Global v _) = v
+
+typeInf :: Term -> Type
+typeInf (Constant v) =
+  typeOfVar v
+typeInf (Type i) =
+  Type (i+1)
+typeInf (BytesType _) =
+  Type 0
+typeInf (BinOp _ _ _) =
+  BytesType 4
+typeInf (UnOp _ _) =
+  BytesType 4
+typeInf (Num n b) =
+  BytesType b
+typeInf (Pi v ty1 ty2) =
+  case (typeInf ty1, typeInf ty2) of
+    (Type i, Type j) ->
+      Type $ max i j
+    _ ->
+      error ""
+typeInf (Call v ts) =
+  case flattenPi $ typeOfVar v of
+    (_, retTy) ->
+      foldl (flip $ subst $ nameOfVar v) retTy ts
+    _ ->
+      error ""
+
 flattenPi :: Type -> ([Type], Type)
 flattenPi (Pi _ ty1 ty2) =
   let (args, ret) = flattenPi ty2
   in (ty1 : args, ret)
 flattenPi t =
   ([], t)
+
+subst :: String -> Term -> Term -> Term
+subst name term (Constant (Local name' ty)) =
+  if name == name' then
+    term
+  else
+    Constant $ Local name' ty
+subst name term (Pi name' t t') =
+  if name == name' then
+    Pi name' t t'
+  else
+    Pi name' (subst name term t) (subst name term t')
+subst name term (Call (Local name' ty) ts) =
+  if name == name' then
+    Call (Local name ty) $ map (subst name term) ts
+  else
+    Call (Local name' ty) $ map (subst name term) ts
+subst _ _ t =
+  t

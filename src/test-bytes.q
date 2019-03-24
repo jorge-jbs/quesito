@@ -27,5 +27,13 @@ fst a b (MkPair a b x y) = x;
 snd : (a : Type) -> (b : Type) -> Pair a b -> b;
 snd a b (MkPair a b x y) = y;
 
-main : BoxedBool;
-main = BoxBool True;
+bool->int : Bool -> Bytes 4;
+bool->int False = 0;
+bool->int True = 1;
+
+not : Bool -> Bool;
+not False = True;
+not True = False;
+
+main : Bytes 4;
+main = bool->int (not (unboxBool (BoxBool True)));

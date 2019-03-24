@@ -5,8 +5,8 @@ import Quesito.Env (Definition(..))
 import qualified Quesito.TT as TT
 
 data Term
-  = Local String Term
-  | Global String Term
+  = Local String Type
+  | Global String Type
   | Type Int
   | BytesType Int
   | BinOp BinOp
@@ -74,6 +74,36 @@ downgrade (App s t) =
   TT.App (downgrade s) (downgrade t)
 downgrade (Lam v _ t) =
   TT.Lam v (downgrade t)
+
+typeInf :: Term -> Type
+typeInf (Local _ ty) =
+  ty
+typeInf (Global _ ty) =
+  ty
+typeInf (Type i) =
+  Type (i+1)
+typeInf (BytesType _) =
+  Type 0
+typeInf (BinOp _) =
+  Pi "" (BytesType 4) $ Pi "" (BytesType 4) (BytesType 4)
+typeInf (UnOp _) =
+  Pi "" (BytesType 4) (BytesType 4)
+typeInf (Num n b) =
+  BytesType b
+typeInf (Pi v ty1 ty2) =
+  case (typeInf ty1, typeInf ty2) of
+    (Type i, Type j) ->
+      Type $ max i j
+    _ ->
+      error ""
+typeInf (App r s) =
+  case typeInf r of
+    Pi v ty1 ty2 ->
+      substLocal v s ty2
+    _ ->
+      error ""
+typeInf (Lam v ty t) =
+  Pi v ty $ typeInf t
 
 substLocal :: String -> Term -> Term -> Term
 substLocal name term (Local name' ty) =

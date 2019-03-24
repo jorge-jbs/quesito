@@ -272,8 +272,10 @@ construct1 env ctx ty _ = do
 
 construct2 env ctx (LLTT.Pi v ty1 ty2) op (arg:args) = do
   size <- codeGen env ctx ty1
-  opPtr <- L.bitcast op $ L.PointerType (L.IntegerType 8) (L.AddrSpace 0)
-  argPtr <- L.bitcast arg $ L.PointerType (L.IntegerType 8) (L.AddrSpace 0)
+  --op_ <- allocaIfSized env op ty1
+  arg_ <- allocaIfSized env arg ty1
+  opPtr <- L.bitcast op $ L.ptr $ L.i8
+  argPtr <- L.bitcast arg_ $ L.ptr $ L.i8
   _ <- L.call
     ( L.ConstantOperand
     $ L.GlobalReference
@@ -295,14 +297,12 @@ construct2 env ctx (LLTT.Pi v ty1 ty2) op (arg:args) = do
 construct2 env ctx ty _ [] =
   return ()
 
-{-
-loadIfSized
+loadIfSized, allocaIfSized
   :: L.MonadIRBuilder m
   => LLTT.Env
   -> L.Operand
   -> LLTT.Type
   -> m L.Operand
-  -}
 loadIfSized env op ty
   | Just _ <- sizeOf env [] ty = do
       let ty' = typeGen env ty
@@ -310,15 +310,15 @@ loadIfSized env op ty
       L.load op' 0
   | otherwise = do
       return op
-  {-
-loadIfSized env op ty
-  | isSized ty = do
+
+allocaIfSized env op ty
+  | Just _ <- sizeOf env [] ty = do
       let ty' = typeGen env ty
-      op' <- L.bitcast op $ L.PointerType ty' $ L.AddrSpace 0
-      L.load op' 0
+      ptr <- L.alloca ty' Nothing 0
+      L.store ptr 0 op
+      return ptr
   | otherwise = do
       return op
-      -}
 
 codeGen
   :: (L.MonadModuleBuilder m, L.MonadIRBuilder m, MonadFix m)
@@ -352,7 +352,7 @@ codeGen env ctx (LLTT.Call (LLTT.TypeCons v ty) args) =
   codeGen env ctx $ LLTT.Call (LLTT.Global v ty) args
 codeGen env ctx (LLTT.Constant (LLTT.Constructor v ty)) =
   codeGen env ctx $ LLTT.Call (LLTT.Constructor v ty) []
-codeGen env ctx (LLTT.Call (LLTT.Constructor v _) args) =
+codeGen env ctx t@(LLTT.Call (LLTT.Constructor v _) args) =
   case Env.lookup v env of
     Just (LLTT.ConstructorDef _ ty tag) -> mdo
       args' <- mapM (codeGen env ctx) args
@@ -362,7 +362,7 @@ codeGen env ctx (LLTT.Call (LLTT.Constructor v _) args) =
       _ <- L.store tagPtr 0 $ L.ConstantOperand $ L.Int 32 $ fromIntegral tag
       op' <- L.gep op [L.ConstantOperand $ L.Int 32 4]
       construct2 env ctx ty op' args'
-      return op
+      loadIfSized env op $ LLTT.typeInf t
     _ ->
       error ""
 codeGen env ctx (LLTT.Call (LLTT.Global v ty) args) = do
