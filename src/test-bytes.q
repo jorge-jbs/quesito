@@ -1,5 +1,5 @@
 data Bool : Type where {
-  False : Bytes 4 -> Bool;
+  False : Bool;
   True : Bool;
 }
 
@@ -11,14 +11,8 @@ data Boxed : Type -> Type where {
   Box : (a : Type) -> a -> Boxed a;
 }
 
-data Nat : Type where {
-  Succ : Nat -> Nat;
-  Zero : Nat;
-}
-
-data Vect : Nat -> Type -> Type where {
-  Nil : (a : Type) -> Vect Zero a;
-  Cons : (a : Type) -> (n : Nat) -> a -> Vect n a -> Vect (Succ n) a;
+data Pair : Type -> Type -> Type where {
+  MkPair : (a : Type) -> (b : Type) -> a -> b -> Pair a b;
 }
 
 unbox : (a : Type) -> Boxed a -> a;
@@ -26,6 +20,12 @@ unbox a (Box a x) = x;
 
 unboxBool : BoxedBool -> Bool;
 unboxBool (BoxBool x) = x;
+
+fst : (a : Type) -> (b : Type) -> Pair a b -> a;
+fst a b (MkPair a b x y) = x;
+
+snd : (a : Type) -> (b : Type) -> Pair a b -> b;
+snd a b (MkPair a b x y) = y;
 
 main : BoxedBool;
 main = BoxBool True;
