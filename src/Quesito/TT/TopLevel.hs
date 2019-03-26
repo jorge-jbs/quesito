@@ -19,12 +19,16 @@ getNames (TypeDef name _ conss) =
 termToPattern :: MonadQues m => (String -> Bool) -> Ann.Term -> m Ann.Pattern
 termToPattern _ (Ann.Local x _) =
   return (Ann.Binding x)
-termToPattern isCons (Ann.Global x _) =
+termToPattern isCons t@(Ann.Global x _) =
   if isCons x then
     return $ Ann.Constructor x
+  else
+    return $ Ann.Inaccessible t
+    {-
   else do
     loc <- getLocation
     throwError ("Free variable at " ++ pprint loc ++ ".")
+    -}
 termToPattern env (Ann.App l r) = do
   l' <- termToPattern env l
   r' <- termToPattern env r

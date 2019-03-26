@@ -19,9 +19,9 @@ data Term
       Int -- ^ literal
       Int -- ^ bytes
   | Pi String Type Type
-  | Type Int
+  | Type
   | BytesType Int
-  | Call Var [Term]
+  | Call Var [Term] Type
   | BinOp BinOp Term Term
   | UnOp UnOp Term
   deriving Show
@@ -67,7 +67,7 @@ lower env (Ann.Global v ty) =
     Nothing ->
       throwError ("Variable not found: " ++ v)
 lower _ (Ann.Type i) =
-  return $ Type i
+  return Type
 lower _ (Ann.BytesType i) =
   return $ BytesType i
 lower _ (Ann.BinOp op) =
@@ -86,9 +86,11 @@ lower env t@(Ann.App _ _) =
       UnOp op <$> lower env a
     hd : tl -> do
       hd' <- lower env hd
+      tl' <- mapM (lower env) tl
+      ty <- lower env $ Ann.typeInf t
       case hd' of
         Constant v ->
-          Call v <$> mapM (lower env) tl
+          return $ Call v tl' ty
         _ ->
           error ""
     [] ->
@@ -131,6 +133,7 @@ nameOfVar (TypeCons v _) = v
 nameOfVar (Constructor v _) = v
 nameOfVar (Global v _) = v
 
+{-
 typeInf :: Term -> Type
 typeInf (Constant v) =
   typeOfVar v
@@ -156,6 +159,7 @@ typeInf (Call v ts) =
       foldl (flip $ subst $ nameOfVar v) retTy ts
     _ ->
       error ""
+      -}
 
 flattenPi :: Type -> ([Type], Type)
 flattenPi (Pi _ ty1 ty2) =
@@ -164,6 +168,7 @@ flattenPi (Pi _ ty1 ty2) =
 flattenPi t =
   ([], t)
 
+{-
 subst :: String -> Term -> Term -> Term
 subst name term (Constant (Local name' ty)) =
   if name == name' then
@@ -175,10 +180,11 @@ subst name term (Pi name' t t') =
     Pi name' t t'
   else
     Pi name' (subst name term t) (subst name term t')
-subst name term (Call (Local name' ty) ts) =
+subst name term (Call (Local name' ty) ts ty) =
   if name == name' then
-    Call (Local name ty) $ map (subst name term) ts
+    Call (Local name ty) (map (subst name term) ts) (subst name term ty)
   else
-    Call (Local name' ty) $ map (subst name term) ts
+    Call (Local name' ty) $ map (subst name term) ts ty
 subst _ _ t =
   t
+  -}

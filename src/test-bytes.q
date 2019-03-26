@@ -31,9 +31,12 @@ bool->int : Bool -> Bytes 4;
 bool->int False = 0;
 bool->int True = 1;
 
+sndBool : (a : Type) -> Pair a Bool -> Bool;
+sndBool a (MkPair a Bool x y) = y;
+
 not : Bool -> Bool;
 not False = True;
 not True = False;
 
 main : Bytes 4;
-main = bool->int (not (unboxBool (BoxBool True)));
+main = bool->int (not (unboxBool (BoxBool False)));

@@ -51,18 +51,11 @@ sizeOf env ctx (LLTT.Constant (LLTT.TypeCons v _)) = do
         )
         0
         equations
-sizeOf _ _ (LLTT.Type _) =
+sizeOf _ _ LLTT.Type =
   Just 4
 sizeOf _ _ (LLTT.BytesType n) = do
   Just n
-sizeOf env ctx (LLTT.Call (LLTT.TypeCons v _) args) = do
-  args' <- mapM (sizeOf env ctx) args
-  def <- Env.lookup v env
-  case def of
-    LLTT.TypeDef _ _ _ ->
-      case Prelude.lookup v ctx of
-        _ -> undefined
-sizeOf env ctx (LLTT.Call (LLTT.TypeCons v _) args) = do
+sizeOf env ctx (LLTT.Call (LLTT.TypeCons v _) args _) = do
   def <- Env.lookup v env
   args' <- mapM (sizeOf env ctx) args
   case def of
@@ -348,11 +341,11 @@ codeGen env _ (LLTT.Constant (LLTT.TypeCons v ty)) = do
     []
 codeGen _ _ (LLTT.Num n bytes') =
   return (L.ConstantOperand (L.Int (fromIntegral bytes' * 8) (fromIntegral n)))
-codeGen env ctx (LLTT.Call (LLTT.TypeCons v ty) args) =
-  codeGen env ctx $ LLTT.Call (LLTT.Global v ty) args
+codeGen env ctx (LLTT.Call (LLTT.TypeCons v ty) args ty') =
+  codeGen env ctx $ LLTT.Call (LLTT.Global v ty) args ty'
 codeGen env ctx (LLTT.Constant (LLTT.Constructor v ty)) =
-  codeGen env ctx $ LLTT.Call (LLTT.Constructor v ty) []
-codeGen env ctx t@(LLTT.Call (LLTT.Constructor v _) args) =
+  codeGen env ctx $ LLTT.Call (LLTT.Constructor v ty) [] ty
+codeGen env ctx t@(LLTT.Call (LLTT.Constructor v _) args ty) =
   case Env.lookup v env of
     Just (LLTT.ConstructorDef _ ty tag) -> mdo
       args' <- mapM (codeGen env ctx) args
@@ -362,15 +355,15 @@ codeGen env ctx t@(LLTT.Call (LLTT.Constructor v _) args) =
       _ <- L.store tagPtr 0 $ L.ConstantOperand $ L.Int 32 $ fromIntegral tag
       op' <- L.gep op [L.ConstantOperand $ L.Int 32 4]
       construct2 env ctx ty op' args'
-      loadIfSized env op $ LLTT.typeInf t
+      loadIfSized env op ty
     _ ->
       error ""
-codeGen env ctx (LLTT.Call (LLTT.Global v ty) args) = do
+codeGen env ctx (LLTT.Call (LLTT.Global v ty) args ty'') = do
   let ty' = typeGen env ty
   L.call
     (L.ConstantOperand $ L.GlobalReference ty' $ L.mkName v)
     =<< mapM (fmap (flip (,) []) . codeGen env ctx) args
-codeGen _ _ (LLTT.Call _ _) = do
+codeGen _ _ (LLTT.Call _ _ _) = do
   error ""
 codeGen env ctx (LLTT.BinOp op a b) = do
   let instr = case op of
@@ -385,7 +378,7 @@ codeGen _ _ (LLTT.UnOp _ _) = do
   undefined
 codeGen _ _ (LLTT.BytesType n) = do
   return $ L.ConstantOperand $ L.Int 32 $ fromIntegral n
-codeGen _ _ (LLTT.Type _) = do
+codeGen _ _ LLTT.Type = do
   return $ L.ConstantOperand $ L.Int 32 4
 codeGen _ _ t =
   error $ show t
@@ -396,7 +389,7 @@ typeGen env ty@(LLTT.Pi _ _ _) =
   in L.FunctionType (typeGen env ret) (map (typeGen env) args) False
 typeGen env (LLTT.BytesType n) =
   L.IntegerType $ fromIntegral (n*8)
-typeGen env (LLTT.Type _) =
+typeGen env LLTT.Type =
   L.IntegerType 32
 typeGen env ty =
   case sizeOf env [] ty of
@@ -404,27 +397,3 @@ typeGen env ty =
       L.ArrayType (fromIntegral n) L.i8
     Nothing ->
       L.ptr L.i8
-{-
-typeGen env (LLTT.Constant _) =
-  L.PointerType (L.IntegerType 8) (L.AddrSpace 0)
-typeGen env (LLTT.Constant (LLTT.TypeCons v _)) =
-  --L.ArrayType undefined L.i8
-  L.PointerType (L.IntegerType 8) (L.AddrSpace 0)
-typeGen env (LLTT.Call v _) =
-  typeGen env $ LLTT.Constant v
-  --L.PointerType (L.IntegerType 8) (L.AddrSpace 0)
-typeGen env t =
-  error $ show t
--}
-
-isSized :: LLTT.Type -> Bool
-isSized (LLTT.Constant (LLTT.Local _ _)) =
-  False
-isSized (LLTT.Pi _ _ _) =
-  undefined  -- lambdas are not yet implemented
-isSized (LLTT.Constant _) =
-  True
-isSized (LLTT.Call v args) =
-  isSized (LLTT.Constant v) && all isSized args
-isSized _ =
-  True
