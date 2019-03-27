@@ -12,8 +12,9 @@ lowerDef :: MonadQues m => Env -> Ann.Def -> m [Def]
 lowerDef env (Ann.PatternMatchingDef name equations ty _) = do
   equations' <- forM equations (\(vars, pats, t) -> do
       vars' <- mapM (\(v, vty) -> do vty' <- lower env vty; return (v, vty')) vars
+      pats' <- mapM (lowerPat env) pats
       t' <- lower env t
-      return (vars', pats, t')
+      return (vars', pats', t')
     )
   ty' <- lower env ty
   return [PatternMatchingDef name equations' ty']
@@ -29,7 +30,7 @@ lowerDef env (Ann.TypeDef name ty conss) = do
                 False
             )
       args' <- mapM (lower $ Env.insert (TypeDef name undefined undefined) env) args
-      pats <- mapM termToPattern' $ tail $ Ann.flattenApp retTy
+      pats <- mapM (\t -> do pat <- termToPattern' t; lowerPat env pat) $ tail $ Ann.flattenApp retTy
       vars <- mapM
           (\(v, vty) -> do vty' <- lower env vty; return (v, vty'))
           $ TT.findVars retTy

@@ -164,7 +164,7 @@ eval env ctx (App r s) = do
       return (VNormal f)
 
     match :: Pattern -> Value -> Maybe [(String, Value)]
-    match (Binding n) t =
+    match (Binding n _) t =
       Just [(n, t)]
     match (Inaccessible _) _ =
       Just []

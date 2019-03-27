@@ -2,7 +2,6 @@ module Quesito.LLTT where
 
 import Quesito
 import Quesito.TT (BinOp(..), UnOp(..))
-import Quesito.Ann (Pattern)
 import qualified Quesito.Ann as Ann
 import qualified Quesito.Env as Env
 
@@ -16,8 +15,8 @@ data Var
 data Term
   = Constant Var
   | Num
-      Int -- ^ literal
-      Int -- ^ bytes
+      Int  -- ^ literal
+      Int  -- ^ bytes
   | Pi String Type Type
   | Type
   | BytesType Int
@@ -29,6 +28,20 @@ data Term
 type Type = Term
 
 type Env = Env.Env Def
+
+type Pattern = Ann.PatternG Term
+
+lowerPat :: MonadQues m => Env -> Ann.Pattern -> m Pattern
+lowerPat env (Ann.Binding v ty) =
+  Ann.Binding v <$> lower env ty
+lowerPat env (Ann.Inaccessible t) =
+  Ann.Inaccessible <$> lower env t
+lowerPat _ (Ann.NumPat n b) =
+  return $ Ann.NumPat n b
+lowerPat _ (Ann.Constructor v) =
+  return $ Ann.Constructor v
+lowerPat env (Ann.PatApp r s) =
+  Ann.PatApp <$> lowerPat env r <*> lowerPat env s
 
 data Def
   = PatternMatchingDef
@@ -87,7 +100,7 @@ lower env t@(Ann.App _ _) =
     hd : tl -> do
       hd' <- lower env hd
       tl' <- mapM (lower env) tl
-      ty <- lower env $ Ann.typeInf t
+      ty <- lower env $ snd $ Ann.flattenPi $ Ann.typeInf t
       case hd' of
         Constant v ->
           return $ Call v tl' ty

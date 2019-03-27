@@ -39,15 +39,17 @@ instance Definition Def where
   getNames (TypeDef n _ conss) =
     n : map fst conss
 
-data Pattern
-  = Binding String
-  | Inaccessible Term
+data PatternG t
+  = Binding String t
+  | Inaccessible t
   | NumPat Int Int
   | Constructor String
-  | PatApp Pattern Pattern
+  | PatApp (PatternG t) (PatternG t)
   deriving Show
 
-flattenPatApp :: Pattern -> [Pattern]
+type Pattern = PatternG Term
+
+flattenPatApp :: PatternG a -> [PatternG a]
 flattenPatApp (PatApp r s) =
   flattenPatApp r ++ [s]
 flattenPatApp t =

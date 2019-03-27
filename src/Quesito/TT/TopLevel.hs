@@ -17,8 +17,8 @@ getNames (TypeDef name _ conss) =
   name : map fst conss
 
 termToPattern :: MonadQues m => (String -> Bool) -> Ann.Term -> m Ann.Pattern
-termToPattern _ (Ann.Local x _) =
-  return (Ann.Binding x)
+termToPattern _ (Ann.Local x ty) =
+  return (Ann.Binding x ty)
 termToPattern isCons t@(Ann.Global x _) =
   if isCons x then
     return $ Ann.Constructor x
