@@ -45,5 +45,14 @@ not : Bool -> Bool;
 not False = True;
 not True = False;
 
+and : Bool -> Bool -> Bool;
+and True True = True;
+and a b = False;
+
+fib : Bytes 4 -> Bytes 4;
+fib 0 = 1;
+fib 1 = 1;
+fib n = add (fib (sub n 1)) (fib (sub n 2));
+
 main : Bytes 4;
-main = bool->int (not (fstBool (PairBool (unboxBool (BoxBool False)) True)));
+main = fib 11;

@@ -100,8 +100,13 @@ patGen env ctx (Ann.Binding x ty) op = do
   return (L.ConstantOperand (L.Int 1 1), [(x, op')])
 patGen _ _ (Ann.Inaccessible _) _ =
   return (L.ConstantOperand (L.Int 1 1), [])
-patGen _ _ (Ann.NumPat n b) op = do
-  x <- L.icmp L.EQ (L.ConstantOperand (L.Int (fromIntegral (b*8)) (fromIntegral n))) op
+patGen env ctx (Ann.NumPat n b) op = do
+  op' <- loadIfSized env ctx op (LLTT.BytesType b)
+  x <-
+    L.icmp
+      L.EQ
+      (L.ConstantOperand (L.Int (fromIntegral (b*8)) (fromIntegral n)))
+      op'
   return (x, [])
 patGen env _ (Ann.Constructor consName) op = do
   let tag = case Env.lookup consName env of
