@@ -409,8 +409,22 @@ codeGen env ctx sizeCtx (LLTT.Call (LLTT.Global v ty) [] ty'') = do
     []
 codeGen env ctx sizeCtx (LLTT.Call (LLTT.Global v ty) args ty'') = do
   let ty' = typeGen env ty
-  mapM (fmap (flip (,) []) . codeGen env ctx sizeCtx) args
-    >>= L.call (L.ConstantOperand $ L.GlobalReference ty' $ L.mkName v)
+  args' <-map (flip (,) []) <$> f args ty
+  L.call (L.ConstantOperand $ L.GlobalReference ty' $ L.mkName v) args'
+  where
+    f [] _ =
+      return []
+    f (a:as) (LLTT.Pi v ty1 ty2) = do
+      a' <- codeGen env ctx sizeCtx a
+      case sizeOf env sizeCtx ty1 of
+        Nothing -> do
+          a'' <- allocaIfSized env sizeCtx a' $ LLTT.typeInf a
+          a''' <- L.bitcast a'' $ L.ptr L.i8
+          as' <- f as ty2
+          return (a''' : as')
+        Just _ -> do
+          as' <- f as ty2
+          return (a' : as')
 codeGen _ _ _ (LLTT.Call _ _ _) = do
   error ""
 codeGen env ctx sizeCtx (LLTT.BinOp op a b) = do

@@ -147,33 +147,23 @@ nameOfVar (TypeCons v _) = v
 nameOfVar (Constructor v _) = v
 nameOfVar (Global v _) = v
 
-{-
 typeInf :: Term -> Type
 typeInf (Constant v) =
   typeOfVar v
-typeInf (Type i) =
-  Type (i+1)
+typeInf Type =
+  Type
 typeInf (BytesType _) =
-  Type 0
+  Type
 typeInf (BinOp _ _ _) =
   BytesType 4
 typeInf (UnOp _ _) =
   BytesType 4
 typeInf (Num n b) =
   BytesType b
-typeInf (Pi v ty1 ty2) =
-  case (typeInf ty1, typeInf ty2) of
-    (Type i, Type j) ->
-      Type $ max i j
-    _ ->
-      error ""
-typeInf (Call v ts) =
-  case flattenPi $ typeOfVar v of
-    (_, retTy) ->
-      foldl (flip $ subst $ nameOfVar v) retTy ts
-    _ ->
-      error ""
-      -}
+typeInf (Pi _ _ _) =
+  Type
+typeInf (Call v ts ty) =
+  ty
 
 flattenPi :: Type -> ([Type], Type)
 flattenPi (Pi _ ty1 ty2) =
@@ -181,24 +171,3 @@ flattenPi (Pi _ ty1 ty2) =
   in (ty1 : args, ret)
 flattenPi t =
   ([], t)
-
-{-
-subst :: String -> Term -> Term -> Term
-subst name term (Constant (Local name' ty)) =
-  if name == name' then
-    term
-  else
-    Constant $ Local name' ty
-subst name term (Pi name' t t') =
-  if name == name' then
-    Pi name' t t'
-  else
-    Pi name' (subst name term t) (subst name term t')
-subst name term (Call (Local name' ty) ts ty) =
-  if name == name' then
-    Call (Local name ty) (map (subst name term) ts) (subst name term ty)
-  else
-    Call (Local name' ty) $ map (subst name term) ts ty
-subst _ _ t =
-  t
-  -}
