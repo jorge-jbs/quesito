@@ -22,7 +22,7 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans (lift)
 import Data.Foldable (foldlM)
 import Data.List (find, zip4)
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, isJust)
 import LLVM ()
 import qualified LLVM.AST as L hiding (function)
 import qualified LLVM.AST.AddrSpace as L
@@ -72,6 +72,9 @@ sizeOf env ctx (LLTT.Call (LLTT.TypeCons v _) args _) = do
         equations
 sizeOf _ _ _ =
   Nothing
+
+isSized env ctx ty =
+  isJust $ sizeOf env ctx ty
 
 function
   :: L.MonadModuleBuilder m
@@ -149,16 +152,24 @@ defGen
   -> LLTT.Def
   -> m ()
 defGen env (LLTT.PatternMatchingDef name equations ty) = do
-  let (args, retTy) = LLTT.flattenPi ty
-      args' = map (typeGen env) args
-      retTy' = typeGen env retTy
   function
     name
-    args'
-    retTy'
+    (if directCall then args' else args' ++ [L.ptr L.i8])
+    (if directCall then retTy' else L.void)
     (void $ genEquations args retTy equations)
   return ()
   where
+    (args, retTy) = LLTT.flattenPi ty
+    args' = map (typeGen env) args
+    retTy' = typeGen env retTy
+    directCall = isSized env [] retTy
+
+    retTySize ctx i (LLTT.Pi v ty1 ty2) = do
+      let ty' = typeGen env ty1
+      retTySize ((v, L.LocalReference ty' $ L.UnName i) : ctx) (i+1) ty2
+    retTySize ctx i _ = do
+      codeGen env ctx [] retTy
+
     sizeCtx :: [(String, Int)]
     sizeCtx =
       getSizeCtx [] ty
@@ -215,9 +226,17 @@ defGen env (LLTT.PatternMatchingDef name equations ty) = do
       L.condBr b lb' lb
       lb' <- L.block
       let boundArgs = foldl (++) [] (map snd xs)
-      --L.ret =<< flip (loadIfSized env) retTy =<< codeGen env boundArgs body
-      L.ret =<< codeGen env boundArgs [] body
+      ret =<< codeGen env boundArgs [] body
       return n
+    ret op
+      | directCall =
+          L.ret op
+      | otherwise = do
+          memcpy
+            (L.LocalReference retTy' $ L.UnName $ fromIntegral $ length args')
+            op
+            =<< retTySize [] 0 ty
+          L.retVoid
 defGen env (LLTT.TypeDef name equations ty) = do
   let (args, retTy) = LLTT.flattenPi ty
       args' = map (typeGen env) args
@@ -285,7 +304,7 @@ defGen env (LLTT.TypeDef name equations ty) = do
       lb' <- L.block
       let boundArgs = foldl (++) [] (map snd xs)
       body' <- foldlM (\acc x -> do
-            x' <- codeGen env boundArgs sizeCtx x
+            x' <- codeGen env boundArgs sizeCtx $ traceShowId x
             L.add x' acc
           )
           (L.ConstantOperand $ L.Int 32 4)
@@ -296,18 +315,34 @@ defGen env (LLTT.ConstructorDef name ty tag) = do
   let (args, retTy) = LLTT.flattenPi ty
       args' = map (typeGen env) args
       retTy' = typeGen env retTy
+      directCall = traceShowId $ isSized env [] retTy
   _ <- L.function
-    (L.mkName name)
-    (map (flip (,) L.NoParameterName) args')
-    retTy'
-    (\args -> do
+    (L.mkName $ traceShowId name)
+    (map (flip (,) L.NoParameterName) args' ++ if directCall then [] else [(L.ptr L.i8, L.NoParameterName)])
+    (if directCall then retTy' else L.void)
+    (\asdf -> do
+      let args = traceShowId $ (if directCall then id else init) asdf
       size <- construct1 env [] [] ty args
       op <- L.alloca L.i8 (Just size) 0
       tagPtr <- L.bitcast op $ L.ptr L.i32
       _ <- L.store tagPtr 0 $ L.ConstantOperand $ L.Int 32 $ fromIntegral tag
       op' <- L.gep op [L.ConstantOperand $ L.Int 32 4]
       construct2 env [] [] ty op' args
-      L.ret =<< loadIfSized env [] op retTy
+      if directCall then
+        L.ret =<< loadIfSized env [] op retTy
+      else do
+        let
+          retTySize ctx i (LLTT.Pi v ty1 ty2) = do
+            let ty' = typeGen env ty1
+            retTySize ((v, L.LocalReference ty' $ L.UnName i) : ctx) (i+1) ty2
+          retTySize ctx i ty = do
+            codeGen env ctx [] $ traceShowId ty
+
+        memcpy
+          (L.LocalReference retTy' $ L.UnName $ fromIntegral $ length args)
+          op
+          =<< retTySize [] 0 ty
+        L.retVoid
     )
   return ()
 
@@ -324,6 +359,13 @@ memcpy orig dest size =
         (L.mkName "llvm.memcpy.p0i8.p0i8.i32")
     )
     [(orig, []), (dest, []), (size, []), (L.ConstantOperand $ L.Int 1 1, [])]
+
+fnType env directCall ty =
+  if directCall then
+    typeGen env ty
+  else
+    let (args, retTy) = LLTT.flattenPi ty
+    in L.FunctionType L.void (map (typeGen env) args ++ [L.ptr L.i8]) False
 
 construct2 env ctx sizeCtx (LLTT.Pi v ty1 ty2) op (arg:args) = do
   size <- codeGen env ctx sizeCtx ty1
@@ -374,7 +416,7 @@ codeGen env ctx sizeCtx (LLTT.Constant (LLTT.Local v ty)) = do
       --loadIfSized env op ty
       return op
     Nothing -> do
-      error ""
+      error (v ++ " : " ++ show ty ++ "; " ++ show ctx)
       let ty' = typeGen env ty
           op = L.LocalReference ty' $ L.mkName v
       --loadIfSized env op ty
@@ -408,23 +450,31 @@ codeGen env ctx sizeCtx (LLTT.Call (LLTT.Global v ty) [] ty'') = do
     $ L.mkName v)
     []
 codeGen env ctx sizeCtx (LLTT.Call (LLTT.Global v ty) args ty'') = do
-  let ty' = typeGen env ty
-  args' <-map (flip (,) []) <$> f args ty
-  L.call (L.ConstantOperand $ L.GlobalReference ty' $ L.mkName v) args'
+  let directCall = isSized env sizeCtx retTy
+      ty' = fnType env directCall ty
+      (_, retTy) = LLTT.flattenPi ty
+  args' <- map (flip (,) []) <$> f args ty
+  let v' = L.ConstantOperand $ L.GlobalReference ty' $ L.mkName v
+  if directCall then
+    L.call v' args'
+  else do
+    size <- codeGen env ctx sizeCtx ty''
+    op <- L.alloca L.i8 (Just size) 0
+    L.call v' (args' ++ [(op, [])])
+    loadIfSized env sizeCtx op ty''
   where
     f [] _ =
       return []
     f (a:as) (LLTT.Pi v ty1 ty2) = do
       a' <- codeGen env ctx sizeCtx a
-      case sizeOf env sizeCtx ty1 of
-        Nothing -> do
-          a'' <- allocaIfSized env sizeCtx a' $ LLTT.typeInf a
-          a''' <- L.bitcast a'' $ L.ptr L.i8
-          as' <- f as ty2
-          return (a''' : as')
-        Just _ -> do
-          as' <- f as ty2
-          return (a' : as')
+      if isSized env sizeCtx ty1 then do
+        as' <- f as ty2
+        return (a' : as')
+      else do
+        a'' <- allocaIfSized env sizeCtx a' $ LLTT.typeInf a
+        a''' <- L.bitcast a'' $ L.ptr L.i8
+        as' <- f as ty2
+        return (a''' : as')
 codeGen _ _ _ (LLTT.Call _ _ _) = do
   error ""
 codeGen env ctx sizeCtx (LLTT.BinOp op a b) = do
@@ -442,8 +492,8 @@ codeGen _ _ _ (LLTT.BytesType n) = do
   return $ L.ConstantOperand $ L.Int 32 $ fromIntegral n
 codeGen _ _ _ LLTT.Type = do
   return $ L.ConstantOperand $ L.Int 32 4
-codeGen _ _ _ t =
-  error $ show t
+codeGen _ ctx _ t =
+  error (show t ++ "; " ++ show ctx)
 
 typeGen :: LLTT.Env -> LLTT.Type -> L.Type
 typeGen env ty@(LLTT.Pi _ _ _) =

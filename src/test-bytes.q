@@ -54,5 +54,5 @@ fib 0 = 1;
 fib 1 = 1;
 fib n = add (fib (sub n 1)) (fib (sub n 2));
 
-main : Bytes 4;
-main = fst (Bytes 4) Bool (MkPair (Bytes 4) Bool 4 True);
+main : Boxed Bool;
+main = Box Bool True;

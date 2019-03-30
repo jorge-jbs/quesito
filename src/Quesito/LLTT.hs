@@ -76,10 +76,7 @@ lower env (Ann.Global v ty) =
     Just (ConstructorDef _ _ _) ->
       Constant . Constructor v <$> lower env ty
     _ ->
-    --Just (PatternMatchingDef _ _ _) ->
       Constant . Global v <$> lower env ty
-    --Nothing ->
-      --throwError ("Variable not found: " ++ v)
 lower _ (Ann.Type i) =
   return Type
 lower _ (Ann.BytesType i) =
