@@ -134,7 +134,8 @@ eval env ctx (App r s) = do
       return (VNum (x + y) b)
     apply (NBinOp Sub) [VNum x b, VNum y _] = do
       return (VNum (x - y) b)
-    apply (NGlobal name _) args@(a:as) = do
+    apply (NGlobal name ty) args@(a:as) = do
+      tell ("Applying " ++ name)
       loc <- getLocation
       case Env.lookup name env of
         Just (PatternMatchingDef _ equations _ (Flags total)) ->
@@ -149,9 +150,9 @@ eval env ctx (App r s) = do
                 Just (ctx', t) ->
                   eval env ctx' t
                 Nothing ->
-                  apply (NApp (NGlobal name undefined) a) as
+                  apply (NApp (NGlobal name ty) a) as
           else
-            apply (NApp (NGlobal name undefined) a) as
+            apply (NApp (NGlobal name ty) a) as
         --Just (DMatchFunction Nothing _ _) ->
           --apply (NApp (NGlobal name) a) as
         Just _ ->
