@@ -63,7 +63,7 @@ sizeOf env ctx (LLTT.Call (LLTT.TypeCons v _) args _) = do
       foldlM
         (\acc (binds, _, tys) -> do
           let ctx' = zipWith (\(v, _) x -> (v, x)) binds args'  -- WRONG
-          size <- foldlM (\acc ty -> (+) acc <$> sizeOf env ctx' ty) 0 tys
+          size <- foldlM (\acc ty -> (+) acc <$> sizeOf env ctx' ty) 4 tys
           return $ max acc size
         )
         0
