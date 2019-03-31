@@ -38,6 +38,8 @@ lowerPat env (Ann.Inaccessible t) =
   Ann.Inaccessible <$> lower env t
 lowerPat _ (Ann.NumPat n b) =
   return $ Ann.NumPat n b
+lowerPat env (Ann.NumSucc p) =
+  Ann.NumSucc <$> lowerPat env p
 lowerPat _ (Ann.Constructor v) =
   return $ Ann.Constructor v
 lowerPat env (Ann.PatApp r s) =
@@ -109,44 +111,15 @@ lower env t@(Ann.App _ _) =
 lower _ (Ann.Lam _ _ _) =
   throwError "Can't generate lambda expressions"
 
-{-
-undo :: Term -> Ann.Term
-undo (Constant (Local v ty)) =
-  Ann.Local v ty
-undo (Constant (TypeCons v ty)) =
-  Ann.Global v ty
-undo (Constant (Constructor v ty)) =
-  Ann.Global v ty
-undo (Constant (Global v ty)) =
-  Ann.Global v ty
-undo (Num n b) =
-  Ann.Num n b
-undo (Pi v ty1 ty2) =
-  Ann.Pi v (undo ty1) (undo ty2)
-undo (Type i) =
-  Ann.Type i
-undo (BytesType n) =
-  Ann.BytesType n
-undo (Call v ts) =
-  foldl Ann.App (undo $ Constant v) ts
-undo (BinOp op r s) =
-  Ann.BinOp op `Ann.App` undo r `Ann.App` undo s
-undo (UnOp UnOp Term) =
--}
-
-typeOfVar (Local _ ty) = ty
-typeOfVar (TypeCons _ ty) = ty
-typeOfVar (Constructor _ ty) = ty
-typeOfVar (Global _ ty) = ty
-
-nameOfVar (Local v _) = v
-nameOfVar (TypeCons v _) = v
-nameOfVar (Constructor v _) = v
-nameOfVar (Global v _) = v
-
 typeInf :: Term -> Type
-typeInf (Constant v) =
-  typeOfVar v
+typeInf (Constant (Local _ ty)) =
+  ty
+typeInf (Constant (TypeCons _ ty)) =
+  ty
+typeInf (Constant (Constructor _ ty)) =
+  ty
+typeInf (Constant (Global _ ty)) =
+  ty
 typeInf Type =
   Type
 typeInf (BytesType _) =

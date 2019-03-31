@@ -24,15 +24,21 @@ termToPattern isCons t@(Ann.Global x _) =
     return $ Ann.Constructor x
   else
     return $ Ann.Inaccessible t
-    {-
-  else do
-    loc <- getLocation
-    throwError ("Free variable at " ++ pprint loc ++ ".")
-    -}
-termToPattern env (Ann.App l r) = do
-  l' <- termToPattern env l
-  r' <- termToPattern env r
-  return (Ann.PatApp l' r')
+termToPattern env t@(Ann.App l r) =
+  case Ann.flattenApp t of
+    [Ann.BinOp Add, x, Ann.Num y _] -> do
+      f x y
+    [Ann.BinOp Add, Ann.Num x _, y] ->
+      f y x
+    _ -> do
+      l' <- termToPattern env l
+      r' <- termToPattern env r
+      return (Ann.PatApp l' r')
+  where
+    f x 0 =
+      termToPattern env x
+    f x y =
+      Ann.NumSucc <$> f x (y-1)
 termToPattern _ (Ann.Num x b) =
   return (Ann.NumPat x b)
 termToPattern _ (Ann.BinOp _) = do

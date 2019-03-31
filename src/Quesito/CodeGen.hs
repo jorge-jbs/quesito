@@ -89,6 +89,15 @@ function name argsTys retTy body = do
     (const body)
   return ()
 
+succPatGen env ctx (Ann.NumSucc p) op i =
+  succPatGen env ctx p op (i+1)
+succPatGen env ctx (Ann.Binding x ty@(LLTT.BytesType b)) op i = do
+  op' <- loadIfSized env ctx op ty
+  op'' <- L.sub op'
+            $ L.ConstantOperand $ L.Int (fromIntegral (b*8)) (fromIntegral i)
+  bl <- L.icmp L.SGE op'' $ L.ConstantOperand $ L.Int (fromIntegral (b*8)) 0
+  return (bl, [(x, op'')])
+
 patGen
   :: (L.MonadModuleBuilder m, L.MonadIRBuilder m, MonadFix m)
   => LLTT.Env
@@ -109,6 +118,8 @@ patGen env ctx (Ann.NumPat n b) op = do
       (L.ConstantOperand (L.Int (fromIntegral (b*8)) (fromIntegral n)))
       op'
   return (x, [])
+patGen env ctx p@(Ann.NumSucc _) op = do
+  succPatGen env ctx p op 0
 patGen env _ (Ann.Constructor consName) op = do
   let tag = case Env.lookup consName env of
         Just (LLTT.ConstructorDef _ _ tag') ->
@@ -131,7 +142,8 @@ patGen env sizeCtx p@(Ann.PatApp _ _) op = case Ann.flattenPatApp p of
         b <- L.and b1 b2
         return (b, binds)
       _ -> error ""
-  _ -> error ""
+  _ -> do
+    return (L.ConstantOperand $ L.Int 1 1, [])
   where
     deconstruct (LLTT.Pi v ty1 ty2) (arg:args) op ctx = do
       size <- codeGen env ctx sizeCtx ty1
@@ -383,27 +395,19 @@ codeGen
 codeGen env ctx sizeCtx (LLTT.Constant (LLTT.Local v ty)) = do
   case snd <$> find ((==) v . fst) ctx of
     Just op ->
-      --loadIfSized env op ty
       return op
     Nothing -> do
-      error (v ++ " : " ++ show ty ++ "; " ++ show ctx)
-      let ty' = typeGen env ty
-          op = L.LocalReference ty' $ L.mkName v
-      --loadIfSized env op ty
-      return op
+      error ""
 codeGen env _ sizeCtx (LLTT.Constant (LLTT.Global v ty)) = do
   let ty' = typeGen env ty
-  L.load
+  L.call
     ( L.ConstantOperand
-    $ L.GlobalReference (L.PointerType ty' $ L.AddrSpace 0)
+    $ L.GlobalReference (L.FunctionType ty' [] False)
     $ L.mkName v
     )
-    0
-codeGen env _ sizeCtx (LLTT.Constant (LLTT.TypeCons v ty)) = do
-  let ty' = typeGen env ty
-  L.call
-    (L.ConstantOperand $ L.GlobalReference (L.FunctionType ty' [] False) $ L.mkName v)
     []
+codeGen env ctx sizeCtx (LLTT.Constant (LLTT.TypeCons v ty)) = do
+  codeGen env ctx sizeCtx (LLTT.Constant (LLTT.Global v ty))
 codeGen _ _ _ (LLTT.Num n bytes') =
   return (L.ConstantOperand (L.Int (fromIntegral bytes' * 8) (fromIntegral n)))
 codeGen env ctx sizeCtx (LLTT.Call (LLTT.TypeCons v ty) args ty') =

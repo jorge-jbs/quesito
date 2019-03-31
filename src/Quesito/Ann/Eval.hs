@@ -115,7 +115,8 @@ eval env ctx (App r s) = do
     VLam x _ body (Closure env' ctx') ->
       eval env' ((x, s') : ctx') body
     VNormal n ->
-      uncurry apply (flattenNormal (NApp n s'))
+      let (x, y) = flattenNormal (NApp n s')
+      in apply x (map simplify y)
     _ ->
       undefined
   where
@@ -135,7 +136,7 @@ eval env ctx (App r s) = do
     apply (NBinOp Sub) [VNum x b, VNum y _] = do
       return (VNum (x - y) b)
     apply (NGlobal name ty) args@(a:as) = do
-      tell ("Applying " ++ name)
+      tell ("Applying " ++ name ++ " with " ++ show (map quote args))
       loc <- getLocation
       case Env.lookup name env of
         Just (PatternMatchingDef _ equations _ (Flags total)) ->
@@ -153,8 +154,6 @@ eval env ctx (App r s) = do
                   apply (NApp (NGlobal name ty) a) as
           else
             apply (NApp (NGlobal name ty) a) as
-        --Just (DMatchFunction Nothing _ _) ->
-          --apply (NApp (NGlobal name) a) as
         Just _ ->
           throwError ("Variable should have been evaluated at " ++ pprint loc ++ ": " ++ name)
         Nothing ->
@@ -164,17 +163,41 @@ eval env ctx (App r s) = do
     apply f [] =
       return (VNormal f)
 
+    simplify :: Value -> Value
+    simplify (VNormal (NApp (NApp (NBinOp Add) x@(VNum _ _)) y)) =
+      simplify (VNormal (NApp (NApp (NBinOp Add) y) x))
+    simplify (VNormal (NApp (NApp (NBinOp Add) x) (VNum 0 _))) =
+      simplify x
+    simplify v =
+      v
+
     match :: Pattern -> Value -> Maybe [(String, Value)]
     match (Binding n _) t =
       Just [(n, t)]
     match (Inaccessible _) _ =
       Just []
     match (NumPat n _) (VNum n' _) =
-      if n < n' then
+      if n == n' then
         Just []
       else
         Nothing
     match (NumPat _ _) _ =
+      Nothing
+    match p'@(NumSucc p) (VNormal (NApp (NApp (NBinOp Add) x) y)) =
+      case (simplify x, simplify y) of
+        (_, VNum 0 _) ->
+          match p' x
+        (VNum 0 _, _) ->
+          match p' y
+        (_, VNum n b) ->
+          match p $ simplify $ VNormal (NApp (NApp (NBinOp Add) x) (VNum (n-1) b))
+        (VNum n b, _) ->
+          match p $ simplify $ VNormal (NApp (NApp (NBinOp Add) (VNum (n-1) b)) y)
+        _ ->
+          Nothing
+    match (NumSucc p) x | VNum n b <- simplify x =
+      match p $ VNum (n-1) b
+    match (NumSucc _) _ =
       Nothing
     match (Constructor n) (VNormal (NDataCons n' _)) =
       if n == n' then

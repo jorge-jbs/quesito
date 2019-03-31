@@ -1,5 +1,6 @@
 module Quesito.Ann where
 
+import Quesito (PPrint(..))
 import Quesito.TT (BinOp(..), UnOp(..), Flags)
 import Quesito.Env (Definition(..))
 import qualified Quesito.TT as TT
@@ -20,6 +21,9 @@ data Term
   deriving Show
 
 type Type = Term
+
+instance PPrint Term where
+  pprint = pprint . downgrade
 
 data Def
   = PatternMatchingDef
@@ -43,6 +47,7 @@ data PatternG t
   = Binding String t
   | Inaccessible t
   | NumPat Int Int
+  | NumSucc (PatternG t)
   | Constructor String
   | PatApp (PatternG t) (PatternG t)
   deriving Show
