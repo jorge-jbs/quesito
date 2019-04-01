@@ -1,12 +1,13 @@
 module Quesito.Ann where
 
+import Quesito (PPrint(..))
 import Quesito.TT (BinOp(..), UnOp(..), Flags)
 import Quesito.Env (Definition(..))
 import qualified Quesito.TT as TT
 
 data Term
-  = Local String Term
-  | Global String Term
+  = Local String Type
+  | Global String Type
   | Type Int
   | BytesType Int
   | BinOp BinOp
@@ -20,6 +21,9 @@ data Term
   deriving Show
 
 type Type = Term
+
+instance PPrint Term where
+  pprint = pprint . downgrade
 
 data Def
   = PatternMatchingDef
@@ -39,13 +43,22 @@ instance Definition Def where
   getNames (TypeDef n _ conss) =
     n : map fst conss
 
-data Pattern
-  = Binding String
-  | Inaccessible Term
+data PatternG t
+  = Binding String t
+  | Inaccessible t
   | NumPat Int Int
+  | NumSucc (PatternG t)
   | Constructor String
-  | PatApp Pattern Pattern
+  | PatApp (PatternG t) (PatternG t)
   deriving Show
+
+type Pattern = PatternG Term
+
+flattenPatApp :: PatternG a -> [PatternG a]
+flattenPatApp (PatApp r s) =
+  flattenPatApp r ++ [s]
+flattenPatApp t =
+  [t]
 
 downgrade :: Term -> TT.Term
 downgrade (Local v _) =
@@ -68,6 +81,36 @@ downgrade (App s t) =
   TT.App (downgrade s) (downgrade t)
 downgrade (Lam v _ t) =
   TT.Lam v (downgrade t)
+
+typeInf :: Term -> Type
+typeInf (Local _ ty) =
+  ty
+typeInf (Global _ ty) =
+  ty
+typeInf (Type i) =
+  Type (i+1)
+typeInf (BytesType _) =
+  Type 0
+typeInf (BinOp _) =
+  Pi "" (BytesType 4) $ Pi "" (BytesType 4) (BytesType 4)
+typeInf (UnOp _) =
+  Pi "" (BytesType 4) (BytesType 4)
+typeInf (Num n b) =
+  BytesType b
+typeInf (Pi v ty1 ty2) =
+  case (typeInf ty1, typeInf ty2) of
+    (Type i, Type j) ->
+      Type $ max i j
+    _ ->
+      error ""
+typeInf (App r s) =
+  case typeInf r of
+    Pi v ty1 ty2 ->
+      substLocal v s ty2
+    _ ->
+      error ""
+typeInf (Lam v ty t) =
+  Pi v ty $ typeInf t
 
 substLocal :: String -> Term -> Term -> Term
 substLocal name term (Local name' ty) =

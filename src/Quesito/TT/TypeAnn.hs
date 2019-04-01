@@ -218,5 +218,5 @@ typeCheckAnn' opts env ctx t ty = do
   loc <- getLocation
   unless
     (deBruijnize (Ann.downgrade qty) == deBruijnize (Ann.downgrade qty'))
-    (throwError ("Type mismatch at " ++ pprint loc ++ ". Expected " ++ show qty ++ " and got " ++ show qty'))
+    (throwError ("Type mismatch at " ++ pprint loc ++ ". Expected " ++ pprint qty ++ " and got " ++ pprint qty'))
   return (annT, qty)

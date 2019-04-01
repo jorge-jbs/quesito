@@ -1,38 +1,58 @@
-data Either : Type where {
-  Left : Bytes 4 -> Either;
-  Right : Bytes 4 -> Either;
-}
-
 data Bool : Type where {
   False : Bool;
   True : Bool;
 }
 
-notB : Bool -> Bool;
-notB True = False;
-notB False = True;
-
 data BoxedBool : Type where {
   BoxBool : Bool -> BoxedBool;
 }
 
-data Pair : Type where {
-  MkPair : Bytes 4 -> Bytes 4 -> Pair;
+data Boxed : Type -> Type where {
+  Box : (a : Type) -> a -> Boxed a;
 }
 
-unbox : BoxedBool -> Bool;
-unbox (BoxBool b) = b;
+unbox : (a : Type) -> Boxed a -> a;
+unbox a (Box a x) = x;
 
-either : Either -> Bytes 4;
-either (Left x) = x;
-either (Right x) = x;
+unboxBool : BoxedBool -> Bool;
+unboxBool (BoxBool x) = x;
 
-comp : Either -> Either;
-comp (Left x) = Left (add x x);
-comp (Right x) = Right (mul x x);
+data Pair : Type -> Type -> Type where {
+  MkPair : (a : Type) -> (b : Type) -> a -> b -> Pair a b;
+}
 
-sum : Pair -> Bytes 4;
-sum (MkPair x y) = add y x;
+data BoolPair : Type where {
+  PairBool : Bool -> Bool -> BoolPair;
+}
 
-main : Bool;
-main = notB (unbox (BoxBool False));
+fst : (a : Type) -> (b : Type) -> Pair a b -> a;
+fst a b (MkPair a b x y) = x;
+
+snd : (a : Type) -> (b : Type) -> Pair a b -> b;
+snd a b (MkPair a b x y) = y;
+
+fstBool : BoolPair -> Bool;
+fstBool (PairBool x y) = x;
+
+sndBool : BoolPair -> Bool;
+sndBool (PairBool x y) = y;
+
+bool->int : Bool -> Bytes 4;
+bool->int False = 0;
+bool->int True = 1;
+
+not : Bool -> Bool;
+not False = True;
+not True = False;
+
+and : Bool -> Bool -> Bool;
+and True True = True;
+and a b = False;
+
+fib : Bytes 4 -> Bytes 4;
+fib 0 = 1;
+fib 1 = 1;
+fib n = add (fib (sub n 1)) (fib (sub n 2));
+
+main : Bytes 4;
+main = bool->int (snd (Bytes 4) Bool (MkPair (Bytes 4) Bool 5 True));
