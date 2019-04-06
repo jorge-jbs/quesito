@@ -95,9 +95,9 @@ typeInf (BinOp _) =
   Pi "" (BytesType 4) $ Pi "" (BytesType 4) (BytesType 4)
 typeInf (UnOp _) =
   Pi "" (BytesType 4) (BytesType 4)
-typeInf (Num _ b) =
+typeInf (Num n b) =
   BytesType b
-typeInf (Pi _ ty1 ty2) =
+typeInf (Pi v ty1 ty2) =
   case (typeInf ty1, typeInf ty2) of
     (Type i, Type j) ->
       Type $ max i j
@@ -105,7 +105,7 @@ typeInf (Pi _ ty1 ty2) =
       error ""
 typeInf (App r s) =
   case typeInf r of
-    Pi v _ ty2 ->
+    Pi v ty1 ty2 ->
       substLocal v s ty2
     _ ->
       error ""

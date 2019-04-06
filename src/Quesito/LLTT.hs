@@ -79,13 +79,13 @@ lower env (Ann.Global v ty) =
       Constant . Constructor v <$> lower env ty
     _ ->
       Constant . Global v <$> lower env ty
-lower _ (Ann.Type _) =
+lower _ (Ann.Type i) =
   return Type
 lower _ (Ann.BytesType i) =
   return $ BytesType i
-lower _ (Ann.BinOp _) =
+lower _ (Ann.BinOp op) =
   error ""
-lower _ (Ann.UnOp _) =
+lower _ (Ann.UnOp op) =
   error ""
 lower _ (Ann.Num n i) =
   return $ Num n i
@@ -128,11 +128,11 @@ typeInf (BinOp _ _ _) =
   BytesType 4
 typeInf (UnOp _ _) =
   BytesType 4
-typeInf (Num _ b) =
+typeInf (Num n b) =
   BytesType b
 typeInf (Pi _ _ _) =
   Type
-typeInf (Call _ _ ty) =
+typeInf (Call v ts ty) =
   ty
 
 flattenPi :: Type -> ([Type], Type)
