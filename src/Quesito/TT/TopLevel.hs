@@ -1,6 +1,6 @@
 module Quesito.TT.TopLevel where
 
-import Control.Monad (when, forM)
+import Control.Monad (when)
 import Data.Default
 
 import Quesito
