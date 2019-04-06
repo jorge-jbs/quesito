@@ -38,6 +38,62 @@ import qualified LLVM.IRBuilder.Module as L
 import qualified LLVM.IRBuilder.Monad as L
 import GHC.Word (Word32, Word64)
 
+match :: LLTT.Pattern -> LLTT.Term -> Maybe [(String, LLTT.Term)]
+match (Ann.Binding n _) t =
+  Just [(n, t)]
+match (Ann.Inaccessible _) _ =
+  Just []
+match (Ann.NumPat n _) (LLTT.Num n' _) =
+  if n == n' then
+    Just []
+  else
+    Nothing
+match (Ann.NumPat _ _) _ =
+  Nothing
+match p'@(Ann.NumSucc p) (LLTT.BinOp TT.Add x y) =
+  case (simplify x, simplify y) of
+    (_, LLTT.Num 0 _) ->
+      match p' x
+    (LLTT.Num 0 _, _) ->
+      match p' y
+    (_, LLTT.Num n b) ->
+      match p $ simplify $ LLTT.BinOp TT.Add x (LLTT.Num (n-1) b)
+    (LLTT.Num n b, _) ->
+      match p $ simplify $ LLTT.BinOp TT.Add (LLTT.Num (n-1) b) y
+    _ ->
+      Nothing
+match (Ann.NumSucc p) x | LLTT.Num n b <- simplify x =
+  match p $ LLTT.Num (n-1) b
+match (Ann.NumSucc _) _ =
+  Nothing
+match (Ann.Constructor n) (LLTT.Constant (LLTT.Constructor n' _)) =
+  if n == n' then
+    Just []
+  else
+    Nothing
+match (Ann.Constructor _) _ =
+  Nothing
+match p@(Ann.PatApp _ _) (LLTT.Call v args _) =
+  case Ann.flattenPatApp p of
+    hd : tl -> do
+      l <- match hd $ LLTT.Constant v
+      l' <- concat <$> zipWithM match tl args
+      return (l ++ l')
+    _ ->
+      Nothing
+match (Ann.PatApp _ _) _ =
+  Nothing
+
+simplify :: LLTT.Term -> LLTT.Term
+simplify (LLTT.BinOp TT.Add (LLTT.Num x b) (LLTT.Num y b')) | b == b' =
+  LLTT.Num (x+y) b
+simplify (LLTT.BinOp TT.Add x@(LLTT.Num _ _) y) =
+  simplify (LLTT.BinOp TT.Add y x)
+simplify (LLTT.BinOp TT.Add x (LLTT.Num 0 _)) =
+  simplify x
+simplify v =
+  v
+
 sizeOf _ ctx (LLTT.Constant (LLTT.Local v _)) =
   Prelude.lookup v ctx
 sizeOf env ctx (LLTT.Constant (LLTT.TypeCons v _)) = do
@@ -61,10 +117,14 @@ sizeOf env ctx (LLTT.Call (LLTT.TypeCons v _) args _) = do
   case def of
     LLTT.TypeDef _ equations _ -> do
       foldlM
-        (\acc (binds, _, tys) -> do
-          let ctx' = zipWith (\(v, _) x -> (v, x)) binds args'  -- WRONG
-          size <- foldlM (\acc ty -> (+) acc <$> sizeOf env ctx' ty) 4 tys
-          return $ max acc size
+        (\acc (binds, pats, tys) -> do
+          case concat <$> zipWithM match pats args of
+            Just ctx'' -> do
+              ctx' <- mapM (\(v, ty) -> do ty' <- sizeOf env [] ty; return (v, ty')) ctx''
+              size <- foldlM (\acc' ty -> (+) acc' <$> sizeOf env ctx' ty) 4 tys
+              return $ max acc size
+            Nothing ->
+              return acc
         )
         0
         equations
@@ -273,7 +333,6 @@ defGen env (LLTT.TypeDef name equations ty) = do
               Nothing ->
                 return $ L.LocalReference ty' $ L.UnName i
               Just n -> do
-                --return $ L.LocalReference ty' $ L.UnName i
                 ptr <- L.alloca ty' Nothing 0
                 L.store ptr 0 $ L.LocalReference ty' $ L.UnName i
                 L.bitcast ptr $ L.ptr $ L.i8

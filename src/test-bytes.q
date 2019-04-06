@@ -54,5 +54,9 @@ fib 0 = 1;
 fib 1 = 1;
 fib n = add (fib (sub n 1)) (fib (sub n 2));
 
+fibb : Bytes 4 -> Bytes 4 -> Bytes 4 -> Bytes 4;
+fibb x y 0 = x;
+fibb x y n = fibb y (add x y) (sub n 1);
+
 main : Bytes 4;
 main = bool->int (snd (Bytes 4) Bool (MkPair (Bytes 4) Bool 5 True));

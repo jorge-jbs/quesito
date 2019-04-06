@@ -4,6 +4,7 @@ import Quesito
 import Quesito.TT (BinOp(..), UnOp(..))
 import qualified Quesito.Ann as Ann
 import qualified Quesito.Env as Env
+import Quesito.Ann.Eval (Value(..), Normal(..))
 
 data Var
   = Local String Type
