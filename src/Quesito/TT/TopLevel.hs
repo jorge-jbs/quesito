@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 module Quesito.TT.TopLevel where
 
 import Control.Monad (when, forM)
@@ -16,7 +17,7 @@ getNames (PatternMatchingDef name _ _ _) =
 getNames (TypeDef name _ conss) =
   name : map fst conss
 
-termToPattern :: MonadQues m => (String -> Bool) -> Ann.Term -> m Ann.Pattern
+termToPattern :: (MonadExcept m, MonadLocatable m) => (String -> Bool) -> Ann.Term -> m Ann.Pattern
 termToPattern _ (Ann.Local x ty) =
   return (Ann.Binding x ty)
 termToPattern isCons t@(Ann.Global x _) =
@@ -61,7 +62,7 @@ termToPattern _ (Ann.Lam _ _ _) = do
   throwError ("Can't pattern match on lambda expressions (at " ++ pprint loc ++ ")")
 
 typeAnnEquation
-  :: MonadQues m
+  :: (MonadLog m, MonadExcept m, MonadLocatable m)
   => TypeAnn.Env
   -> String
   -> Ann.Type
@@ -75,7 +76,7 @@ typeAnnEquation env name ty' lhs rhs = do
     _ ->
       throwError ("Left hand side of equation (" ++ name ++ ") malformed")
   let env' = Env.insert (Ann.PatternMatchingDef name [] ty' (Flags False)) env
-  (lhsTy, lhs') <- typeInfAnn' (def { inferVars = True }) env' [] lhs
+  (lhsTy, lhs') <- typeInfAnn' (def { inferVars = True }) [] lhs `runReaderT` env'
   pats <- mapM (termToPattern (\x -> case Env.lookup x env of
       Just (Ann.TypeDef _ _ conss) | x `elem` map fst conss ->
         True
@@ -83,8 +84,8 @@ typeAnnEquation env name ty' lhs rhs = do
         False
     )) (tail $ Ann.flattenApp lhs')
   let vars = findVars lhs'
-  ctx <- mapM (\(v, vty) -> do vty' <- eval env [] vty; return (v, vty', vty)) vars
-  (rhs', _) <- typeCheckAnn env' ctx rhs lhsTy
+  ctx <- mapM (\(v, vty) -> do vty' <- eval [] vty `runReaderT` env; return (v, vty', vty)) vars
+  (rhs', _) <- typeCheckAnn ctx rhs lhsTy `runReaderT` env'
   return (vars, pats, rhs')
 
 findVars :: Ann.Term -> [(String, Ann.Type)]
@@ -95,17 +96,17 @@ findVars (Ann.App s t) =
 findVars _ =
   []
 
-typeAnn :: MonadQues m => TypeAnn.Env -> Def -> m Ann.Def
+typeAnn :: (MonadLog m, MonadExcept m, MonadLocatable m) => TypeAnn.Env -> Def -> m Ann.Def
 typeAnn env (PatternMatchingDef name equations ty flags) = do
-  (tyTy, ty') <- typeInfAnn env [] ty
+  (tyTy, ty') <- typeInfAnn [] ty `runReaderT` env
   when (not $ isType tyTy) (throwError ("The kind of " ++ name ++ " is not Type."))
   equations' <- mapM (uncurry $ typeAnnEquation env name ty') equations
   return (Ann.PatternMatchingDef name equations' ty' flags)
 typeAnn env (TypeDef name ty conss) = do
-  (tyTy, ty') <- typeInfAnn env [] ty
+  (tyTy, ty') <- typeInfAnn [] ty `runReaderT` env
   when (not $ isType tyTy) (throwError ("The kind of " ++ name ++ " is not Type."))
   conss' <- flip mapM conss (\(name', t) -> do
-      (tTy, t') <- typeInfAnn (Env.insert (Ann.TypeDef name ty' []) env) [] t
+      (tTy, t') <- typeInfAnn [] t `runReaderT` Env.insert (Ann.TypeDef name ty' []) env
       when (not $ isType tTy) (throwError ("The kind of " ++ name' ++ " is not Type."))
       return (name', t')
     )

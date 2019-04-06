@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleContexts #-}
+
 module Quesito.LLTT where
 
 import Quesito
@@ -32,19 +34,19 @@ type Env = Env.Env Def
 
 type Pattern = Ann.PatternG Term
 
-lowerPat :: MonadQues m => Env -> Ann.Pattern -> m Pattern
-lowerPat env (Ann.Binding v ty) =
-  Ann.Binding v <$> lower env ty
-lowerPat env (Ann.Inaccessible t) =
-  Ann.Inaccessible <$> lower env t
-lowerPat _ (Ann.NumPat n b) =
+lowerPat :: (MonadEnv Def m, MonadExcept m) => Ann.Pattern -> m Pattern
+lowerPat (Ann.Binding v ty) =
+  Ann.Binding v <$> lower ty
+lowerPat (Ann.Inaccessible t) =
+  Ann.Inaccessible <$> lower t
+lowerPat (Ann.NumPat n b) =
   return $ Ann.NumPat n b
-lowerPat env (Ann.NumSucc p) =
-  Ann.NumSucc <$> lowerPat env p
-lowerPat _ (Ann.Constructor v) =
+lowerPat (Ann.NumSucc p) =
+  Ann.NumSucc <$> lowerPat p
+lowerPat (Ann.Constructor v) =
   return $ Ann.Constructor v
-lowerPat env (Ann.PatApp r s) =
-  Ann.PatApp <$> lowerPat env r <*> lowerPat env s
+lowerPat (Ann.PatApp r s) =
+  Ann.PatApp <$> lowerPat r <*> lowerPat s
 
 data Def
   = PatternMatchingDef
@@ -69,39 +71,40 @@ instance Env.Definition Def where
   getNames (ConstructorDef n _ _) =
     [n]
 
-lower :: MonadQues m => Env -> Ann.Term -> m Term
-lower env (Ann.Local v ty) =
-  Constant . Local v <$> lower env ty
-lower env (Ann.Global v ty) =
+lower :: (MonadEnv Def m, MonadExcept m) => Ann.Term -> m Term
+lower (Ann.Local v ty) =
+  Constant . Local v <$> lower ty
+lower (Ann.Global v ty) = do
+  env <- ask
   case Env.lookup v env of
     Just (TypeDef _ _ _) ->
-      Constant . TypeCons v <$> lower env ty
+      Constant . TypeCons v <$> lower ty
     Just (ConstructorDef _ _ _) ->
-      Constant . Constructor v <$> lower env ty
+      Constant . Constructor v <$> lower ty
     _ ->
-      Constant . Global v <$> lower env ty
-lower _ (Ann.Type i) =
+      Constant . Global v <$> lower ty
+lower (Ann.Type i) =
   return Type
-lower _ (Ann.BytesType i) =
+lower (Ann.BytesType i) =
   return $ BytesType i
-lower _ (Ann.BinOp op) =
+lower (Ann.BinOp op) =
   error ""
-lower _ (Ann.UnOp op) =
+lower (Ann.UnOp op) =
   error ""
-lower _ (Ann.Num n i) =
+lower (Ann.Num n i) =
   return $ Num n i
-lower env (Ann.Pi v ty1 ty2) =
-  Pi v <$> lower env ty1 <*> lower env ty2
-lower env t@(Ann.App _ _) =
+lower (Ann.Pi v ty1 ty2) =
+  Pi v <$> lower ty1 <*> lower ty2
+lower t@(Ann.App _ _) =
   case Ann.flattenApp t of
     [Ann.BinOp op, a, b] ->
-      BinOp op <$> lower env a <*> lower env b
+      BinOp op <$> lower a <*> lower b
     [Ann.UnOp op, a] ->
-      UnOp op <$> lower env a
+      UnOp op <$> lower a
     hd : tl -> do
-      hd' <- lower env hd
-      tl' <- mapM (lower env) tl
-      ty <- lower env $ snd $ Ann.flattenPi $ Ann.typeInf t
+      hd' <- lower hd
+      tl' <- mapM lower tl
+      ty <- lower $ snd $ Ann.flattenPi $ Ann.typeInf t
       case hd' of
         Constant v ->
           return $ Call v tl' ty
@@ -109,7 +112,7 @@ lower env t@(Ann.App _ _) =
           error ""
     [] ->
       error ""
-lower _ (Ann.Lam _ _ _) =
+lower (Ann.Lam _ _ _) =
   throwError "Can't generate lambda expressions"
 
 typeInf :: Term -> Type

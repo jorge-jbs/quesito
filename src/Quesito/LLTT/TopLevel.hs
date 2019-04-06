@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 module Quesito.LLTT.TopLevel where
 
 import Control.Monad (forM)
@@ -8,19 +9,19 @@ import qualified Quesito.Ann as Ann
 import qualified Quesito.Env as Env
 import qualified Quesito.TT.TopLevel as TT
 
-lowerDef :: MonadQues m => Env -> Ann.Def -> m [Def]
+lowerDef :: (MonadExcept m, MonadLocatable m, MonadLog m) => Env -> Ann.Def -> m [Def]
 lowerDef env (Ann.PatternMatchingDef name equations ty _) = do
   equations' <- forM equations (\(vars, pats, t) -> do
-      vars' <- mapM (\(v, vty) -> do vty' <- lower env vty; return (v, vty')) vars
-      pats' <- mapM (lowerPat env) pats
-      t' <- lower env t
+      vars' <- mapM (\(v, vty) -> do vty' <- lower vty `runReaderT` env; return (v, vty')) vars
+      pats' <- mapM lowerPat pats `runReaderT` env
+      t' <- lower t `runReaderT` env
       return (vars', pats', t')
     )
-  ty' <- lower env ty
+  ty' <- lower ty `runReaderT` env
   return [PatternMatchingDef name equations' ty']
 lowerDef env (Ann.TypeDef name ty conss) = do
   tell name
-  ty' <- lower env ty
+  ty' <- lower ty `runReaderT` env
   equations <- forM conss (\(_, consTy) -> do
       let (args, retTy) = Ann.flattenPi consTy
           termToPattern' = TT.termToPattern (\x -> case Env.lookup x env of
@@ -29,17 +30,19 @@ lowerDef env (Ann.TypeDef name ty conss) = do
               _ ->
                 False
             )
-      args' <- mapM (lower $ Env.insert (TypeDef name undefined undefined) env) args
-      pats <- mapM (\t -> do pat <- termToPattern' t; lowerPat env pat) $ tail $ Ann.flattenApp retTy
+      args' <- mapM lower args `runReaderT` Env.insert (TypeDef name undefined undefined) env
+      pats <- mapM
+          (\t -> do pat <- termToPattern' t; lowerPat pat `runReaderT` env)
+          $ tail $ Ann.flattenApp retTy
       vars <- mapM
-          (\(v, vty) -> do vty' <- lower env vty; return (v, vty'))
+          (\(v, vty) -> do vty' <- lower vty `runReaderT` env; return (v, vty'))
           $ TT.findVars retTy
       return (vars, pats, args')
     )
   let env' = Env.insert (TypeDef name equations ty') env
   conss' <- mapM
       (\((consName, consTy), tag) ->
-        ConstructorDef consName <$> lower env' consTy <*> pure tag
+        ConstructorDef consName <$> lower consTy `runReaderT` env' <*> pure tag
       )
       (zip conss [0..])
   return (TypeDef name equations ty' : conss')
