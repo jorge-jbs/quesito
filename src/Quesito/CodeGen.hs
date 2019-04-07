@@ -242,11 +242,11 @@ defGen env (LLTT.PatternMatchingDef name equations ty) = do
       codeGen env ctx [] retTy
 
     genEquations
-      :: (L.MonadModuleBuilder m, MonadFix m)
+      :: (L.MonadModuleBuilder m, MonadFix m, L.MonadIRBuilder m)
       => [LLTT.Type]
       -> LLTT.Type
       -> [([(String, LLTT.Type)], [LLTT.Pattern], LLTT.Term)]
-      -> L.IRBuilderT m L.Name
+      -> m L.Name
     genEquations _ _ [] =
       L.block <* L.unreachable
     genEquations args retTy ((_, patterns, body):es) = mdo
@@ -255,13 +255,13 @@ defGen env (LLTT.PatternMatchingDef name equations ty) = do
       return lb
 
     genEquation
-      :: (L.MonadModuleBuilder m, MonadFix m)
+      :: (L.MonadModuleBuilder m, MonadFix m, L.MonadIRBuilder m)
       => [LLTT.Type]
       -> LLTT.Type
       -> [LLTT.Pattern]
       -> LLTT.Term
       -> L.Name
-      -> L.IRBuilderT m L.Name
+      -> m L.Name
     genEquation args retTy patterns body lb = mdo
       n <- L.block
       args' <-
@@ -307,10 +307,10 @@ defGen env (LLTT.TypeDef name equations ty) = do
   return ()
   where
     genEquations
-      :: (L.MonadModuleBuilder m, MonadFix m)
+      :: (L.MonadModuleBuilder m, MonadFix m, L.MonadIRBuilder m)
       => [LLTT.Type]
       -> [([(String, LLTT.Type)], [LLTT.Pattern], [LLTT.Type])]
-      -> L.IRBuilderT m L.Name
+      -> m L.Name
     genEquations _ [] =
       L.block <* L.unreachable
     genEquations args ((_, patterns, body):es) = mdo
@@ -319,12 +319,12 @@ defGen env (LLTT.TypeDef name equations ty) = do
       return lb
 
     genEquation
-      :: (L.MonadModuleBuilder m, MonadFix m)
+      :: (L.MonadModuleBuilder m, MonadFix m, L.MonadIRBuilder m)
       => [LLTT.Type]
       -> [LLTT.Pattern]
       -> [LLTT.Type]
       -> L.Name
-      -> L.IRBuilderT m L.Name
+      -> m L.Name
     genEquation args patterns body lb = mdo
       n <- L.block
       args' <-
