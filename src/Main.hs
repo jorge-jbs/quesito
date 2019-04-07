@@ -46,7 +46,7 @@ main = do
           )
           Env.empty
           annDefs
-        return $ buildModuleT (fromString "main") $ do
+        buildModuleT (fromString "main") $ do
           _ <- L.function
             (L.mkName "llvm.memcpy.p0i8.p0i8.i32")
             [ (L.PointerType (L.IntegerType 8) (L.AddrSpace 0), L.NoParameterName)
@@ -60,6 +60,6 @@ main = do
   putStrLn w
   case m of
     Right m' ->
-      putStrLn . unpack . ppllvm =<< m'
+      putStrLn . unpack . ppllvm $ m'
     Left err ->
       putStrLn ("Error compiling: " ++ err)

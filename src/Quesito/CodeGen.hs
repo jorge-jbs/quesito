@@ -1,4 +1,4 @@
-{-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE RecursiveDo, FlexibleContexts #-}
 
 module Quesito.CodeGen where
 
@@ -217,11 +217,12 @@ patGen env sizeCtx p@(Ann.PatApp _ _) op = case Ann.flattenPatApp p of
       return (L.ConstantOperand $ L.Int 1 1, [])
 
 defGen
-  :: (L.MonadModuleBuilder m, MonadFix m)
+  :: (L.MonadModuleBuilder m, MonadFix m, MonadLog m)
   => LLTT.Env
   -> LLTT.Def
   -> m ()
 defGen env (LLTT.PatternMatchingDef name equations ty) = do
+  tell ("defGen " ++ name)
   function
     name
     (if directCall then args' else args' ++ [L.ptr L.i8])
@@ -294,6 +295,7 @@ defGen env (LLTT.PatternMatchingDef name equations ty) = do
             =<< retTySize [] 0 ty
           L.retVoid
 defGen env (LLTT.TypeDef name equations ty) = do
+  tell ("defGen " ++ name)
   let (args, retTy) = LLTT.flattenPi ty
       args' = map (typeGen env) args
       retTy' = typeGen env retTy
@@ -353,6 +355,7 @@ defGen env (LLTT.TypeDef name equations ty) = do
       L.ret body'
       return n
 defGen env (LLTT.ConstructorDef name ty tag) = do
+  tell ("defGen " ++ name)
   let (args, retTy) = LLTT.flattenPi ty
       args' = map (typeGen env) args
       retTy' = typeGen env retTy

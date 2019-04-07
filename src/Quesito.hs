@@ -20,6 +20,7 @@ module Quesito
   where
 
 import Control.Monad.Trans (lift)
+import Control.Monad.Fix (MonadFix)
 import Control.Monad.Reader as R (Reader, ReaderT, MonadReader, runReader, runReaderT, ask)
 import Control.Monad.Writer as W (Writer, MonadWriter, runWriter, tell)
 import Control.Monad.State (StateT, MonadState, evalStateT, get, modify)
@@ -52,7 +53,7 @@ data QuesState
       }
 
 newtype Ques a = Ques { unQues :: StateT QuesState (ExceptT String (Writer [String])) a }
-  deriving (Functor, Applicative, Monad, MonadError String, MonadState QuesState)
+  deriving (Functor, Applicative, Monad, MonadError String, MonadState QuesState, MonadFix)
 
 runQues :: Ques a -> (Either String a, String)
 runQues =
