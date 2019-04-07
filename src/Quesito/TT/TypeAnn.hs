@@ -65,13 +65,13 @@ typeInfAnn' _ ctx (Local x) =
     Just (_, ty, annTy) ->
       return (ty, Ann.Local x annTy)
     Nothing -> do
-      loc <- getLocation
-      env <- ask
+      loc <- askLoc
+      env <- askEnv
       tell (show $ Env.keys env)
       tell (show $ map (\(v, _, _) -> v) ctx)
       throwError ("Local variable not found at " ++ pprint loc ++ ": " ++ x)
 typeInfAnn' _ ctx (Global x) = do
-  env <- ask
+  env <- askEnv
   case Env.lookup x env of
     Just (Ann.TypeDef n annTy _) | x == n -> do
       ty' <- eval [] annTy
@@ -82,7 +82,7 @@ typeInfAnn' _ ctx (Global x) = do
           ty' <- eval [] annTy
           return (ty', Ann.Global x annTy)
         Nothing -> do
-          env <- ask
+          env <- askEnv
           tell ("env: " ++ show (Env.keys env))
           tell ("ctx: " ++ show (map (\(v, _, _) -> v) ctx))
           throwError "Internal error"
@@ -90,8 +90,8 @@ typeInfAnn' _ ctx (Global x) = do
       ty' <- eval [] annTy
       return (ty', Ann.Global x annTy)
     Nothing -> do
-      loc <- getLocation
-      env <- ask
+      loc <- askLoc
+      env <- askEnv
       tell ("env: " ++ show (Env.keys env))
       tell ("ctx: " ++ show (map (\(v, _, _) -> v) ctx))
       throwError ("Global variable not found at " ++ pprint loc ++ ": " ++ x)
@@ -100,7 +100,7 @@ typeInfAnn' _ _ (Type i) =
 typeInfAnn' _ _ (BytesType n) =
   return (VType 0, Ann.BytesType n)
 typeInfAnn' _ _ (Num n) = do
-  loc <- getLocation
+  loc <- askLoc
   throwError ("Cannot infer byte size of number " ++ show n ++ ": " ++ pprint loc)
 typeInfAnn' _ _ (BinOp op) = do
   ty <- eval [] (Ann.Pi "" (Ann.BytesType 4) (Ann.Pi "" (Ann.BytesType 4) (Ann.BytesType 4)))
@@ -118,10 +118,10 @@ typeInfAnn' opts ctx (Pi x e f) = do
         VType j ->
           return (VType (max i j), Ann.Pi x annE annF)
         _ -> do
-          loc <- getLocation
+          loc <- askLoc
           throwError ("1: " ++ pprint loc)
     _ -> do
-      loc <- getLocation
+      loc <- askLoc
       throwError ("2: " ++ pprint loc)
 typeInfAnn' opts ctx (App e f) = do
   (s, annE) <- typeInfAnn' opts ctx e
@@ -132,7 +132,7 @@ typeInfAnn' opts ctx (App e f) = do
       x <- eval ((v, f') : ctx') t'
       return (x, Ann.App annE annF)
     _ -> do
-      loc <- getLocation
+      loc <- askLoc
       let qs = quote s
       throwError ("Applying to non-function at " ++ pprint loc ++ ": " ++ show qs)
 typeInfAnn' opts ctx (Ann e ty) = do
@@ -148,7 +148,7 @@ typeInfAnn' _ _ e@(Lam _ _) =
   throwError ("Can't infer type of lambda expression " ++ show e)
 typeInfAnn' opts ctx (Loc loc t) = do
   tell ("typeInfAnn' opts Loc: " ++ show t)
-  typeInfAnn' opts ctx t `locatedAt` loc
+  typeInfAnn' opts ctx t `withLoc` loc
 
 typeCheckAnn
   :: (MonadLog m, MonadExcept m, MonadEnv Ann.Def m, MonadLocatable m)
@@ -181,13 +181,13 @@ typeCheckAnn' opts ctx (Lam x e) (VPi x' v w (Closure ctx')) = do
   (annE, annW') <- typeCheckAnn' opts ((x, v, annV) : ctx) e w'
   return (Ann.Lam x annV annE, Ann.Pi x' annV annW')
 typeCheckAnn' _ _ (Lam _ _) _ = do
-  loc <- getLocation
+  loc <- askLoc
   throwError ("6: " ++ pprint loc)
 typeCheckAnn' _ _ (Num x) (VBytesType n) =
   if x >= 0 && fromIntegral x < (2^(n*8) :: Integer) then
     return (Ann.Num x n, Ann.BytesType n)
   else do
-    loc <- getLocation
+    loc <- askLoc
     if x < 0 then
       throwError ("Bytes cannot be negative numbers: " ++ pprint loc)
     else
@@ -199,21 +199,21 @@ typeCheckAnn' opts ctx t (VType j) = do
       if i <= j then
         return (annT, Ann.Type j)
       else do
-        loc <- getLocation
+        loc <- askLoc
         throwError ("Incorrect type universe at " ++ pprint loc ++ ". Expected level " ++ show j ++ " and got " ++ show i)
 
     v -> do
-      loc <- getLocation
+      loc <- askLoc
       let qv = quote v
       throwError ("Expected type at " ++ pprint loc ++ " and got: " ++ show qv)
 typeCheckAnn' opts ctx (Loc loc t) ty = do
   tell ("typeInfAnn' opts Loc: " ++ show t)
-  typeCheckAnn' opts ctx t ty `locatedAt` loc
+  typeCheckAnn' opts ctx t ty `withLoc` loc
 typeCheckAnn' opts ctx t ty = do
   (ty', annT) <- typeInfAnn' opts ctx t
   let qty = quote ty
       qty' = quote ty'
-  loc <- getLocation
+  loc <- askLoc
   unless
     (deBruijnize (Ann.downgrade qty) == deBruijnize (Ann.downgrade qty'))
     (throwError ("Type mismatch at " ++ pprint loc ++ ". Expected " ++ pprint qty ++ " and got " ++ pprint qty'))

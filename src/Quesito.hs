@@ -4,16 +4,16 @@ module Quesito
   ( Ques
   , runQues
   , MonadEnv
-  , R.ask
-  , R.runReaderT
+  , askEnv
+  , withEnv
   , MonadExcept
   , throwError
   , catchError
   , Location(..)
   , PPrint(pprint)
   , MonadLocatable
-  , locatedAt
-  , getLocation
+  , askLoc
+  , withLoc
   , MonadLog
   , W.tell
   )
@@ -68,30 +68,36 @@ type MonadExcept m = MonadError QuesError m
 
 type MonadEnv def m = MonadReader (Env.Env def) m
 
+askEnv :: MonadReader r m => m r
+askEnv = R.ask
+
+withEnv :: ReaderT r m a -> r -> m a
+withEnv = R.runReaderT
+
 type MonadLog m = MonadWriter String m
 
 class Monad m => MonadLocatable m where
-  getLocation :: m (Maybe Location)
-  locatedAt :: m a -> Location -> m a
+  askLoc :: m (Maybe Location)
+  withLoc :: m a -> Location -> m a
 
 instance MonadLocatable m => MonadLocatable (ReaderT e m) where
-  getLocation =
-    lift getLocation
+  askLoc =
+    lift askLoc
 
-  locatedAt m loc = do
+  withLoc m loc = do
     e <- ask
     let m' = runReaderT m e
-    lift $ locatedAt m' loc
+    lift $ withLoc m' loc
 
 instance MonadWriter String Ques where
   tell s = Ques $ lift $ lift $ tell [s]
 
 instance MonadLocatable Ques where
-  getLocation =
+  askLoc =
     location <$> get
 
-  locatedAt m loc = do
-    oldLoc <- getLocation
+  withLoc m loc = do
+    oldLoc <- askLoc
     modify (\st -> st { location = Just loc })
     x <- m
     modify (\st -> st { location = oldLoc })

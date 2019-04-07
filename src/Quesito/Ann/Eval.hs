@@ -81,7 +81,7 @@ eval ctx (Local x ty) =
     Nothing ->
      return (VNormal (NFree x ty))
 eval ctx (Global x ty) = do
-  env <- ask
+  env <- askEnv
   case Env.lookup x env of
     Just (TypeDef n _ _) | x == n ->
       return (VNormal (NDataType x ty))
@@ -92,8 +92,8 @@ eval ctx (Global x ty) = do
     Just (PatternMatchingDef {}) ->
       return (VNormal (NGlobal x ty))
     Nothing -> do
-      loc <- getLocation
-      env <- ask
+      loc <- askLoc
+      env <- askEnv
       tell ("env: " ++ show (Env.keys env))
       tell ("ctx: " ++ show (map fst ctx))
       throwError ("Unknown global variable at " ++ pprint loc ++ ": " ++ x)
@@ -143,8 +143,8 @@ eval ctx (App r s) = do
       return (VNum (x - y) b)
     apply (NGlobal name ty) args@(a:as) = do
       tell ("Applying " ++ name ++ " with " ++ show (map quote args))
-      loc <- getLocation
-      env <- ask
+      loc <- askLoc
+      env <- askEnv
       case Env.lookup name env of
         Just (PatternMatchingDef _ equations _ (Flags total)) ->
           if total then

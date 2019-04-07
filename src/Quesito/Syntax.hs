@@ -60,7 +60,7 @@ desugar env (Var v)
   | otherwise =
       case v of
       "Bytes" -> do
-        loc <- getLocation
+        loc <- askLoc
         throwError ("Type error on Bytes at " ++ pprint loc)
       "Type" ->
         return (TT.Type 0)
@@ -82,12 +82,12 @@ desugar _ (Num n) =
 desugar _ (App (Var "Bytes") [Num n]) =
   return (TT.BytesType n)
 desugar _ (App (Var "Bytes") _) = do
-  loc <- getLocation
+  loc <- askLoc
   throwError ("Type error on Bytes at " ++ pprint loc)
 desugar _ (App (Var "Type") [Num n]) =
   return (TT.Type n)
 desugar _ (App (Var "Type") _) = do
-  loc <- getLocation
+  loc <- askLoc
   throwError ("Type error on Type at " ++ pprint loc)
 desugar env (App t args) =
   foldl TT.App <$> desugar env t <*> mapM (desugar env) args
@@ -98,7 +98,7 @@ desugar env (Arrow ty1 ty2) =
     Ann (Var v) ty1' ->
       TT.Pi v <$> desugar env ty1' <*> desugar env ty2
     Ann _ _ -> do
-      loc <- getLocation
+      loc <- askLoc
       throwError ("Type annotation not allowed here " ++ pprint loc ++ ": " ++ show ty1)
     _ ->
       TT.Pi "" <$> desugar env ty1 <*> desugar env ty2
@@ -106,7 +106,7 @@ desugar env (Ann t ty) =
   TT.Ann <$> desugar env t <*> desugar env ty
 
 desugar env (Loc loc t) =
-  TT.Loc loc <$> desugar env t `locatedAt` loc
+  TT.Loc loc <$> desugar env t `withLoc` loc
 
 desugarDef :: Env.Env TT.Def -> Def -> Ques TT.Def
 desugarDef env (PatternMatchingDef name equations ty flags) = do
