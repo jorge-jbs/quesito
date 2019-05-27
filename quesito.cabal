@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                quesito
-version:             0.0.0.0
+version:             0.1.0.0
 synopsis:            Purely functional dependently typed language with safe manual memory management
 -- description:
 homepage:            https://gitlab.com/jorge-jbs/quesito
