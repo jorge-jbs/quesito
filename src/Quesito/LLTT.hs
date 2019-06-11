@@ -63,6 +63,7 @@ data Def
       String  -- ^ constructor name
       Type  -- ^ type name
       Integer  -- ^ tag
+  | ExternDef String Term
   deriving Show
 
 instance Env.Definition Def where
@@ -71,6 +72,8 @@ instance Env.Definition Def where
   getNames (TypeDef n _ _) =
     [n]
   getNames (ConstructorDef n _ _) =
+    [n]
+  getNames (ExternDef n _) =
     [n]
 
 lower :: (MonadEnv Def m, MonadExcept m) => Ann.Term -> m Term

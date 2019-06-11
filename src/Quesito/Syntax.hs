@@ -33,6 +33,7 @@ data Def
       String  -- ^ name
       Term  -- ^ type
       [(String, Term)]  -- ^ constructors
+  | ExternDef String Term Flags
   deriving Show
 
 remLoc :: Term -> Term
@@ -52,6 +53,8 @@ getNames (PatternMatchingDef name _ _ _) =
   [name]
 getNames (TypeDef name _ conss) =
   name : map fst conss
+getNames (ExternDef name _ _) =
+  [name]
 
 desugar :: [String] -> Term -> Ques TT.Term
 desugar env (Var v)
@@ -128,6 +131,9 @@ desugarDef env (PatternMatchingDef name equations ty flags) = do
       rhs' <- desugar (name : Env.keys env) rhs
       return (lhs', rhs')
   return (TT.PatternMatchingDef name equations' ty' flags)
+desugarDef env (ExternDef name ty flags) = do
+  ty' <- desugar (name : Env.keys env) ty
+  return (TT.ExternDef name ty' flags)
 desugarDef env (TypeDef name ty constructors) = do
   ty' <- desugar (Env.keys env) ty
   constructors' <- flip mapM constructors (\(name', t) -> do

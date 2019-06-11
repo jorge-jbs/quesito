@@ -105,6 +105,8 @@ eval ctx (Global x ty) = do
       eval [] f
     Just (PatternMatchingDef {}) ->
       return (VNormal (NGlobal x ty))
+    Just (ExternDef {}) ->
+      return (VNormal (NGlobal x ty))
     Nothing -> do
       loc <- askLoc
       env <- askEnv
@@ -188,6 +190,8 @@ eval ctx (App r s) = do
                   apply (NApp (NGlobal name ty) a) as
           else
             apply (NApp (NGlobal name ty) a) as
+        Just (ExternDef {}) ->
+          apply (NApp (NGlobal name ty) a) as
         Just _ ->
           throwError ("Variable should have been evaluated at " ++ pprint loc ++ ": " ++ name)
         Nothing ->

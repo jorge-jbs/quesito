@@ -46,3 +46,6 @@ lowerDef env (Ann.TypeDef name ty conss) = do
       )
       (zip conss [0..])
   return (TypeDef name equations ty' : conss')
+lowerDef env (Ann.ExternDef name ty _) = do
+  ty' <- lower ty `withEnv` env
+  return [ExternDef name ty']

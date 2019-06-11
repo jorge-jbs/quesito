@@ -391,6 +391,19 @@ defGen env (LLTT.ConstructorDef name ty tag) = do
         L.retVoid
     )
   return ()
+defGen env (LLTT.ExternDef name ty) = do
+  {-
+  let
+    (args, retTy) = LLTT.flattenPi ty
+    args' = map (typeGen env) args
+    retTy' = typeGen env retTy
+  _ <- L.function
+    (L.mkName name)
+    (map (flip (,) L.NoParameterName) args')
+    retTy'
+    (const $ return ())
+  -}
+  return ()
 
 construct1 env ctx sizeCtx (LLTT.Pi v ty1 ty2) (arg:args) = do
   construct1 env ((v, arg) : ctx) sizeCtx ty2 args

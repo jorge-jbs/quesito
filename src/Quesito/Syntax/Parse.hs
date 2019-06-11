@@ -6,7 +6,6 @@ import Quesito.TT (Flags(..))
 
 import Control.Monad (when)
 import Data.Functor.Identity (Identity)
-import Data.Maybe (isJust)
 import Text.Parsec
   ( Parsec, (<|>), try, parserFail, eof, alphaNum, letter, oneOf, space
   , spaces, string, char, getPosition, sourceLine, sourceColumn, runParser
@@ -158,13 +157,18 @@ patternMatchingCaseParser = do
 patternMatchingDef :: Parser Def
 patternMatchingDef = do
   spaces
-  isTotal <- isJust <$> optionMaybe (string "#total")
+  flags <- many (char '#' >> (many alphaNum <* spaces))
+  let isTotal = "total" `elem` flags
+  let isExtern = "extern" `elem` flags
   spaces
   (name, ty) <- annotation True
   spaces
-  defs <- patternMatchingParser name
-  spaces
-  return (PatternMatchingDef name defs ty (Flags isTotal))
+  if not isExtern then do
+    defs <- patternMatchingParser name
+    spaces
+    return (PatternMatchingDef name defs ty (Flags isTotal))
+  else
+    return (ExternDef name ty (Flags isTotal))
 
 definitions :: Parser [Def]
 definitions = do

@@ -44,6 +44,7 @@ data Def
       String  -- ^ name
       Type  -- ^ type
       [(String, Term)]  -- ^ constructors
+  | ExternDef String Term Flags
   deriving Show
 
 instance Definition Def where
@@ -51,6 +52,8 @@ instance Definition Def where
     [n]
   getNames (TypeDef n _ conss) =
     n : map fst conss
+  getNames (ExternDef name _ _) =
+    [name]
 
 data PatternG t
   = Binding String t

@@ -106,6 +106,9 @@ typeInfAnn' _ ctx (Global x) = do
     Just (Ann.PatternMatchingDef _ _ annTy _) -> do
       ty' <- eval [] annTy
       return (ty', Ann.Global x annTy)
+    Just (Ann.ExternDef _ annTy _) -> do
+      ty' <- eval [] annTy
+      return (ty', Ann.Global x annTy)
     Nothing -> do
       loc <- askLoc
       env <- askEnv
@@ -140,7 +143,22 @@ typeInfAnn' _ _ (Num n) = do
   loc <- askLoc
   throwError ("Cannot infer byte size of number " ++ show n ++ ": " ++ pprint loc)
 typeInfAnn' _ _ (BinOp op) = do
-  ty <- eval [] (Ann.Pi "" (Ann.BytesType 4) (Ann.Pi "" (Ann.BytesType 4) (Ann.BytesType 4)))
+  ty <- eval []
+    (Ann.Attr
+      (Ann.Pi
+        ""
+        (Ann.Attr (Ann.BytesType 4) (Ann.AttrLit SharedAttr))
+        (Ann.Attr
+          (Ann.Pi
+            ""
+            (Ann.Attr (Ann.BytesType 4) (Ann.AttrLit SharedAttr))
+            (Ann.Attr (Ann.BytesType 4) (Ann.AttrLit SharedAttr))
+          )
+          (Ann.AttrLit SharedAttr)
+        )
+      )
+      (Ann.AttrLit SharedAttr)
+    )
   return (ty, Ann.BinOp op)
 typeInfAnn' _ _ (UnOp op) = do
   ty <- eval [] (Ann.Pi "" (Ann.BytesType 4) (Ann.BytesType 4))

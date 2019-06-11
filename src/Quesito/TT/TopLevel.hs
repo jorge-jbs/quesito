@@ -117,3 +117,6 @@ typeAnn env (TypeDef name ty conss) = do
       return (name', t')
     )
   return (Ann.TypeDef name ty' conss')
+typeAnn env (ExternDef name ty flags) = do
+  (_, ty') <- typeInfAnn [] (mark ty) `withEnv` env
+  return (Ann.ExternDef name ty' flags)
