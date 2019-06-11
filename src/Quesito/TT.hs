@@ -6,8 +6,8 @@ module Quesito.TT
   , Type
   , mapInLoc
   , remLoc
-  , deBruijnize
   , flattenApp
+  , AttrLit(..)
   , BinOp(..)
   , UnOp(..)
   , Def(..)
@@ -24,7 +24,13 @@ import Quesito.Env (Definition(..))
 data Term
   = Local String
   | Global String
-  | Type Int
+  | BaseType Int
+  | UniquenessAttr
+  | AttrLit AttrLit
+  | Type
+      Int  -- ^ universe
+      Term  -- ^ Uniqueness attribute
+  | Attr Type Term
   | BytesType Int
   | Num Int
   | BinOp BinOp
@@ -37,6 +43,11 @@ data Term
   deriving Show
 
 type Type = Term
+
+data AttrLit
+  = UniqueAttr
+  | SharedAttr
+  deriving (Show, Eq)
 
 data BinOp = Add | Sub | Mul | UDiv | SDiv | And | Or | Xor | Shr | Shl
   deriving Show
@@ -73,8 +84,8 @@ instance PPrint Term where
     "hue"
   pprint (UnOp Not) =
     "not"
-  pprint (Type i) =
-    "(" ++ "Type " ++ show i ++ ")"
+  pprint (Type i u) =
+    "(" ++ "Type " ++ show i ++ " " ++ show u ++ ")"
   pprint (Pi v t t')
     | length v == 0 =
       "(" ++ pprint t ++ " -> " ++ pprint t' ++ ")"
@@ -100,8 +111,8 @@ instance Eq DeBrujnizedTerm where
     v == w
   DBGlobal v == DBGlobal w =
     v == w
-  DBType i == DBType j =
-    i == j
+  DBType i u == DBType j v =
+    i == j && u == v
   DBBytesType n == DBBytesType m =
     n == m
   DBNum x == DBNum y =
@@ -119,7 +130,7 @@ data DeBrujnizedTerm
   = DBBound Int
   | DBFree String
   | DBGlobal String
-  | DBType Int
+  | DBType Int DeBrujnizedTerm
   | DBBytesType Int
   | DBNum Int
   | DBBinOp BinOp
@@ -148,8 +159,8 @@ deBruijnize =
       DBPi (deBruijnize' vars t) (deBruijnize' (n : vars) t')
     deBruijnize' vars (Lam n t) =
       DBLam (deBruijnize' (n : vars) t)
-    deBruijnize' _ (Type i) =
-      DBType i
+    deBruijnize' vars (Type i u) =
+      DBType i $ deBruijnize' vars u
     deBruijnize' _ (BytesType n) =
       DBBytesType n
     deBruijnize' _ (Num n) =

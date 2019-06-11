@@ -9,6 +9,7 @@ module Quesito.Env
 
 import Prelude hiding (lookup)
 
+import Data.Default
 import Data.List (find)
 
 class Definition def where
@@ -19,6 +20,10 @@ newtype Env a = Env { unEnv :: [a] }
 
 empty :: Env a
 empty = Env []
+
+instance Default (Env a) where
+  def =
+    empty
 
 lookup :: Definition a => String -> Env a -> Maybe a
 lookup k =

@@ -4,7 +4,7 @@ module Quesito.Ann.Eval where
   
 import Quesito
 import Quesito.Ann
-import Quesito.TT (BinOp(..), UnOp(..), Flags(..))
+import Quesito.TT (AttrLit(..), BinOp(..), UnOp(..), Flags(..))
 import qualified Quesito.Env as Env
 
 import Data.List (find)
@@ -20,14 +20,17 @@ type VContext =
 
 data Value
   = VLam String Type Term Closure
-  | VType Int
+  | VType Int Value
+  | VBaseType Int
+  | VUniquenessAttr
   | VBytesType Int
   | VNum Int Int
+  | VAttrLit AttrLit
   | VPi String Value Term Closure
   | VNormal Normal
 
 data Normal
-  = NFree String Type
+  = NFree String Type AttrLit
   | NGlobal String Type
   | NDataType String Type
   | NDataCons String Type
@@ -36,7 +39,7 @@ data Normal
   | NApp Normal Value
 
 isType :: Value -> Bool
-isType (VType _) =
+isType (VType _ _) =
   True
 isType _ =
   False
@@ -47,19 +50,23 @@ data Closure
 quote :: Value -> Term
 quote (VLam x ty body _) =
   Lam x ty body
-quote (VType i) =
-  Type i
+quote (VType i u) =
+  Type i $ quote u
+quote (VBaseType i) =
+  BaseType i
 quote (VBytesType n) =
   BytesType n
 quote (VNum n b) =
   Num n b
+quote (VAttrLit u) =
+  AttrLit u
 quote (VPi x v v' _) =
   Pi x (quote v) v'
 quote (VNormal n) =
   quoteNormal n
   where
-    quoteNormal (NFree x ty) =
-      Local x ty
+    quoteNormal (NFree x ty u) =
+      Local x ty u
     quoteNormal (NGlobal x ty) =
       Global x ty
     quoteNormal (NDataType x ty) =
@@ -73,13 +80,15 @@ quote (VNormal n) =
     quoteNormal (NApp m v) =
       App (quoteNormal m) (quote v)
 
-eval :: (MonadLog m, MonadEnv Def m, MonadExcept m, MonadLocatable m) => VContext -> Term -> m Value
-eval ctx (Local x ty) =
+eval
+  :: (MonadLog m, MonadEnv Def m, MonadExcept m, MonadLocatable m)
+  => VContext -> Term -> m Value
+eval ctx (Local x ty u) =
   case lookup x ctx of
     Just v ->
       return v
     Nothing ->
-     return (VNormal (NFree x ty))
+      return (VNormal (NFree x ty u))
 eval ctx (Global x ty) = do
   env <- askEnv
   case Env.lookup x env of
@@ -97,8 +106,14 @@ eval ctx (Global x ty) = do
       tell ("env: " ++ show (Env.keys env))
       tell ("ctx: " ++ show (map fst ctx))
       throwError ("Unknown global variable at " ++ pprint loc ++ ": " ++ x)
-eval _ (Type lvl) =
-  return (VType lvl)
+eval ctx (BaseType i) =
+  return $ VBaseType i
+eval ctx (Type i u) =
+  VType i <$> eval ctx u
+eval ctx UniquenessAttr =
+  return $ VUniquenessAttr
+eval ctx (AttrLit u) =
+  return $ VAttrLit u
 eval _ (BytesType n) =
   return (VBytesType n)
 eval _ (Num n b) =
@@ -152,7 +167,12 @@ eval ctx (App r s) = do
               matchedEq
                 = join
                 $ find (\x -> case x of Just _ -> True; _ -> False)
-                $ map (\(_, p, body) -> do x <- matchEquation p args; return (x, body)) equations
+                $ map
+                    (\(_, p, body) -> do
+                      x <- matchEquation p args
+                      return (x, body)
+                    )
+                    equations
             in
               case matchedEq of
                 Just (ctx', t) ->

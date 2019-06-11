@@ -72,7 +72,7 @@ instance Env.Definition Def where
     [n]
 
 lower :: (MonadEnv Def m, MonadExcept m) => Ann.Term -> m Term
-lower (Ann.Local v ty) =
+lower (Ann.Local v ty _) =
   Constant . Local v <$> lower ty
 lower (Ann.Global v ty) = do
   env <- askEnv
@@ -83,7 +83,7 @@ lower (Ann.Global v ty) = do
       Constant . Constructor v <$> lower ty
     _ ->
       Constant . Global v <$> lower ty
-lower (Ann.Type i) =
+lower (Ann.Type i _) =
   return Type
 lower (Ann.BytesType i) =
   return $ BytesType i

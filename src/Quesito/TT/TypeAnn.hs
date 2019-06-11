@@ -12,7 +12,8 @@ module Quesito.TT.TypeAnn
   where
 
 import Quesito
-import Quesito.TT
+import Quesito.Marked
+import Quesito.TT (AttrLit(..))
 import Quesito.Ann.Eval hiding (TContext, Env)
 import qualified Quesito.Ann as Ann
 import qualified Quesito.Env as Env
@@ -60,10 +61,22 @@ typeInfAnn'
        ( Value
        , Ann.Term  -- ^ annotated input term
        )
-typeInfAnn' _ ctx (Local x) =
+typeInfAnn' _ ctx (Local x u) =
   case find (\(x', _, _) -> x == x') ctx of
-    Just (_, ty, annTy) ->
-      return (ty, Ann.Local x annTy)
+    --Just (_, ty@(VType _ (VAttrLit v)), annTy) ->
+    Just (_, ty, annTy) -> do
+      (tyTy, _) <- typeInfAnn [] $ Ann.downgrade annTy
+      case tyTy of
+        VType _ (VAttrLit v) ->
+          if u == v then
+            return (ty, Ann.Local x annTy u)
+          else do
+            loc <- askLoc
+            throwError ("Uniqueness error at " ++ pprint loc)
+        _ ->
+          throwError "Type of type is not type!"
+    --Just (_, ty, annTy) ->
+      --return (ty, Ann.Local x annTy u)
     Nothing -> do
       loc <- askLoc
       env <- askEnv
@@ -95,10 +108,24 @@ typeInfAnn' _ ctx (Global x) = do
       tell ("env: " ++ show (Env.keys env))
       tell ("ctx: " ++ show (map (\(v, _, _) -> v) ctx))
       throwError ("Global variable not found at " ++ pprint loc ++ ": " ++ x)
-typeInfAnn' _ _ (Type i) =
-  return (VType (i + 1), Ann.Type i)
+typeInfAnn' opts ctx (BaseType i) = do
+  return
+    ( VType (i+1) $ VAttrLit SharedAttr
+    , Ann.Type (i+1) $ Ann.AttrLit SharedAttr
+    )
+typeInfAnn' opts ctx UniquenessAttr = do
+  return
+    ( VType 0 $ VAttrLit SharedAttr
+    , Ann.Type 0 $ Ann.AttrLit SharedAttr
+    )
+typeInfAnn' opts ctx (AttrLit _) = do
+  return (VUniquenessAttr, Ann.UniquenessAttr)
+typeInfAnn' opts ctx (Type i u) = do
+  (_, annU) <- typeInfAnn' opts ctx u
+  u' <- eval [] annU
+  return (VType (i + 1) u', Ann.Type i annU)
 typeInfAnn' _ _ (BytesType n) =
-  return (VType 0, Ann.BytesType n)
+  return (VBaseType 0, Ann.BytesType n)
 typeInfAnn' _ _ (Num n) = do
   loc <- askLoc
   throwError ("Cannot infer byte size of number " ++ show n ++ ": " ++ pprint loc)
@@ -111,12 +138,12 @@ typeInfAnn' _ _ (UnOp op) = do
 typeInfAnn' opts ctx (Pi x e f) = do
   (ty, annE) <- typeInfAnn' opts ctx e
   case ty of
-    VType i -> do
+    VType i _ -> do
       e' <- eval [] annE
       (t', annF) <- typeInfAnn' opts ((x, e', annE) : ctx) f
       case t' of
-        VType j ->
-          return (VType (max i j), Ann.Pi x annE annF)
+        VType j _ ->
+          return (VBaseType (max i j), Ann.Pi x annE annF)
         _ -> do
           loc <- askLoc
           throwError ("1: " ++ pprint loc)
@@ -138,7 +165,7 @@ typeInfAnn' opts ctx (App e f) = do
 typeInfAnn' opts ctx (Ann e ty) = do
   (tyTy, annTy) <- typeInfAnn' opts ctx ty
   case tyTy of
-    VType _ -> do
+    VType _ _ -> do
       ty' <- eval [] annTy
       (annE, _) <- typeCheckAnn' opts ctx e ty'
       return (ty', annE)
@@ -171,9 +198,9 @@ typeCheckAnn'
        ( Ann.Term  -- ^ annotated expr
        , Ann.Term  -- ^ annotated type
        )
-typeCheckAnn' opts _ (Local v) ty | inferVars opts = do
+typeCheckAnn' opts _ (Local v u) ty | inferVars opts = do
   let annTy = quote ty
-  return (Ann.Local v annTy, annTy)
+  return (Ann.Local v annTy u, annTy)
 typeCheckAnn' opts ctx (Lam x e) (VPi x' v w (Closure ctx')) = do
   tell ("typeInfAnn' opts Lam: " ++ show e)
   w' <- eval ctx' w
@@ -192,12 +219,12 @@ typeCheckAnn' _ _ (Num x) (VBytesType n) =
       throwError ("Bytes cannot be negative numbers: " ++ pprint loc)
     else
       throwError ("Number " ++ show x ++ " is larger than byte size (" ++ show n ++ "): " ++ pprint loc)
-typeCheckAnn' opts ctx t (VType j) = do
+typeCheckAnn' opts ctx t (VType j (VAttrLit v)) = do
   (t', annT) <- typeInfAnn' opts ctx t
   case t' of
-    VType i  ->
-      if i <= j then
-        return (annT, Ann.Type j)
+    VType i (VAttrLit u) ->
+      if i <= j && u == v then
+        return (annT, Ann.Type j (Ann.AttrLit v))
       else do
         loc <- askLoc
         throwError ("Incorrect type universe at " ++ pprint loc ++ ". Expected level " ++ show j ++ " and got " ++ show i)

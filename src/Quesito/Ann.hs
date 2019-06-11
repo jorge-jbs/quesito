@@ -1,14 +1,23 @@
 module Quesito.Ann where
 
 import Quesito (PPrint(..))
-import Quesito.TT (BinOp(..), UnOp(..), Flags)
+import Quesito.TT (AttrLit(..), BinOp(..), UnOp(..), Flags)
 import Quesito.Env (Definition(..))
 import qualified Quesito.TT as TT
+import qualified Quesito.Marked as Marked
+import qualified Quesito.Marked.Mark as Marked
 
 data Term
-  = Local String Type
+  = Local String Type AttrLit
   | Global String Type
-  | Type Int
+  | BaseType Int
+  | UniquenessAttr
+  | AttrLit AttrLit
+  -- | Type Int AttrLit
+  | Type
+      Int  -- ^ universe
+      Term  -- ^ uniqueness attribute
+  | Attr Type Term
   | BytesType Int
   | BinOp BinOp
   | UnOp UnOp
@@ -23,7 +32,7 @@ data Term
 type Type = Term
 
 instance PPrint Term where
-  pprint = pprint . downgrade
+  pprint = pprint . Marked.unmark . downgrade
 
 data Def
   = PatternMatchingDef
@@ -60,37 +69,51 @@ flattenPatApp (PatApp r s) =
 flattenPatApp t =
   [t]
 
-downgrade :: Term -> TT.Term
-downgrade (Local v _) =
-  TT.Local v
+downgrade :: Term -> Marked.Term
+downgrade (Local v _ u) =
+  Marked.Local v u
 downgrade (Global v _) =
-  TT.Global v
-downgrade (Type n) =
-  TT.Type n
+  Marked.Global v
+downgrade (Type n u) =
+  Marked.Type n $ downgrade u
 downgrade (BytesType n) =
-  TT.BytesType n
+  Marked.BytesType n
 downgrade (BinOp op) =
-  TT.BinOp op
+  Marked.BinOp op
 downgrade (UnOp op) =
-  TT.UnOp op
+  Marked.UnOp op
 downgrade (Num n _) =
-  TT.Num n
+  Marked.Num n
 downgrade (Pi v s t) =
-  TT.Pi v (downgrade s) (downgrade t)
+  Marked.Pi v (downgrade s) (downgrade t)
 downgrade (App s t) =
-  TT.App (downgrade s) (downgrade t)
+  Marked.App (downgrade s) (downgrade t)
 downgrade (Lam v _ t) =
-  TT.Lam v (downgrade t)
+  Marked.Lam v (downgrade t)
 
 typeInf :: Term -> Type
-typeInf (Local _ ty) =
+typeInf (Local _ ty _) =
   ty
 typeInf (Global _ ty) =
   ty
-typeInf (Type i) =
-  Type (i+1)
+typeInf (Type i _) =
+  Type (i+1) undefined
 typeInf (BytesType _) =
-  Type 0
+  BaseType 0
+typeInf UniquenessAttr =
+  BaseType 0  -- Type 0 ?
+typeInf (BaseType i) =
+  BaseType (i+1)
+typeInf (AttrLit UniqueAttr) =
+  UniquenessAttr
+typeInf (AttrLit SharedAttr) =
+  UniquenessAttr
+typeInf (Attr t u) =
+  case typeInf t of
+    BaseType i ->
+      Type i u
+    _ ->
+      error ""
 typeInf (BinOp _) =
   Pi "" (BytesType 4) $ Pi "" (BytesType 4) (BytesType 4)
 typeInf (UnOp _) =
@@ -99,8 +122,8 @@ typeInf (Num n b) =
   BytesType b
 typeInf (Pi v ty1 ty2) =
   case (typeInf ty1, typeInf ty2) of
-    (Type i, Type j) ->
-      Type $ max i j
+    (Type i _, Type j _) ->
+      BaseType $ max i j
     _ ->
       error ""
 typeInf (App r s) =
@@ -113,11 +136,11 @@ typeInf (Lam v ty t) =
   Pi v ty $ typeInf t
 
 substLocal :: String -> Term -> Term -> Term
-substLocal name term (Local name' ty) =
+substLocal name term (Local name' ty u) =
   if name == name' then
     term
   else
-    Local name' ty
+    Local name' ty u
 substLocal _ _ (Global name' ty) =
   Global name' ty
 substLocal name term (Pi name' t t') =
@@ -141,8 +164,8 @@ substGlobal name term (Global name' ty) =
     term
   else
     Global name' ty
-substGlobal _ _ (Local name' ty) =
-  Local name' ty
+substGlobal _ _ (Local name' ty u) =
+  Local name' ty u
 substGlobal name term (Pi name' t t') =
   Pi name' (substGlobal name term t) (substGlobal name term t')
 substGlobal name term (App t t') =

@@ -1,8 +1,15 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving, FlexibleContexts, MultiParamTypeClasses, ConstraintKinds, FlexibleInstances #-}
+{-# LANGUAGE
+GeneralizedNewtypeDeriving,
+FlexibleContexts,
+MultiParamTypeClasses,
+ConstraintKinds,
+FlexibleInstances
+#-}
 
 module Quesito
   ( Ques
   , runQues
+  , debugQues
   , MonadEnv
   , askEnv
   , withEnv
@@ -61,6 +68,16 @@ runQues =
   where
     mapSnd :: (b -> c) -> (a, b) -> (a, c)
     mapSnd f (x, y) = (x, f y)
+
+debugQues :: Ques a -> IO a
+debugQues m = do
+  let (eith, w) = runQues m
+  putStrLn w
+  case eith of
+    Left err ->
+      error err
+    Right x ->
+      return x
 
 type QuesError = String
 
