@@ -41,6 +41,8 @@ termToPattern env t@(Ann.App l r) =
       termToPattern env x
     f x y =
       Ann.NumSucc <$> f x (y-1)
+termToPattern _ t@(Ann.AttrLit _) =
+  return $ Ann.Inaccessible t
 termToPattern _ (Ann.Num x b) =
   return (Ann.NumPat x b)
 termToPattern _ (Ann.BinOp _) = do
@@ -76,6 +78,7 @@ typeAnnEquation env name ty' lhs rhs = do
       return ()
     _ ->
       throwError ("Left hand side of equation (" ++ name ++ ") malformed")
+  tell ("ty': " ++ show ty')
   let env' = Env.insert (Ann.PatternMatchingDef name [] ty' (Flags False)) env
   (lhsTy, lhs') <- typeInfAnn' (def { inferVars = True }) [] (mark lhs) `withEnv` env'
   pats <- mapM (termToPattern (\x -> case Env.lookup x env of
@@ -86,7 +89,9 @@ typeAnnEquation env name ty' lhs rhs = do
     )) (tail $ Ann.flattenApp lhs')
   let vars = findVars lhs'
   ctx <- mapM (\(v, vty) -> do vty' <- eval [] vty `withEnv` env; return (v, vty', vty)) vars
+  tell ("hola: " ++ name ++ " ; " ++ show (quote lhsTy))
   (rhs', _) <- typeCheckAnn ctx (mark rhs) lhsTy `withEnv` env'
+  tell ("pude terminar")
   return (vars, pats, rhs')
 
 findVars :: Ann.Term -> [(String, Ann.Type)]

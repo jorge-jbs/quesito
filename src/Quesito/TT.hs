@@ -13,6 +13,7 @@ module Quesito.TT
   , Def(..)
   , Flags(..)
   , Pattern(..)
+  , deBruijnize
   )
   where
 
@@ -48,6 +49,14 @@ data AttrLit
   = UniqueAttr
   | SharedAttr
   deriving (Show, Eq)
+
+instance Ord AttrLit where
+  SharedAttr <= _ =
+    True
+  UniqueAttr <= UniqueAttr =
+    True
+  _ <= _ =
+    False
 
 data BinOp = Add | Sub | Mul | UDiv | SDiv | And | Or | Xor | Shr | Shl
   deriving Show
@@ -99,82 +108,8 @@ instance PPrint Term where
     "(" ++ "\\" ++ v ++ " -> " ++ pprint t ++ ")"
   pprint (Loc _ t) =
     pprint t
-
-instance Eq DeBrujnizedTerm where
-  DBLoc _ t == t' =
-    t == t'
-  t == DBLoc _ t' =
-    t == t'
-  DBBound v == DBBound w =
-    v == w
-  DBFree v == DBFree w =
-    v == w
-  DBGlobal v == DBGlobal w =
-    v == w
-  DBType i u == DBType j v =
-    i == j && u == v
-  DBBytesType n == DBBytesType m =
-    n == m
-  DBNum x == DBNum y =
-    x == y
-  DBPi s s' == DBPi t t' =
-    s == t && s' == t'
-  DBApp s s' == DBApp t t' =
-    s == t && s' == t'
-  DBAnn s sty == DBAnn t tty =
-    s == t && sty == tty
-  _ == _ =
-    False
-
-data DeBrujnizedTerm
-  = DBBound Int
-  | DBFree String
-  | DBGlobal String
-  | DBType Int DeBrujnizedTerm
-  | DBBytesType Int
-  | DBNum Int
-  | DBBinOp BinOp
-  | DBUnOp UnOp
-  | DBPi DeBrujnizedTerm DeBrujnizedTerm
-  | DBApp DeBrujnizedTerm DeBrujnizedTerm
-  | DBAnn DeBrujnizedTerm DeBrujnizedTerm
-  | DBLam DeBrujnizedTerm
-  | DBLoc Location DeBrujnizedTerm
-  deriving Show
-
-deBruijnize :: Term -> DeBrujnizedTerm
-deBruijnize =
-  deBruijnize' []
-  where
-    deBruijnize' :: [String] -> Term -> DeBrujnizedTerm
-    deBruijnize' vars (Local v) =
-      case takeWhile (\v' -> v /= v') vars of
-        [] ->
-          DBFree v
-        xs ->
-          DBBound (length xs)
-    deBruijnize' _ (Global v) =
-      DBGlobal v
-    deBruijnize' vars (Pi n t t') =
-      DBPi (deBruijnize' vars t) (deBruijnize' (n : vars) t')
-    deBruijnize' vars (Lam n t) =
-      DBLam (deBruijnize' (n : vars) t)
-    deBruijnize' vars (Type i u) =
-      DBType i $ deBruijnize' vars u
-    deBruijnize' _ (BytesType n) =
-      DBBytesType n
-    deBruijnize' _ (Num n) =
-      DBNum n
-    deBruijnize' _ (BinOp op) =
-      DBBinOp op
-    deBruijnize' _ (UnOp op) =
-      DBUnOp op
-    deBruijnize' vars (App t t') =
-      DBApp (deBruijnize' vars t) (deBruijnize' vars t')
-    deBruijnize' vars (Ann t t') =
-      DBAnn (deBruijnize' vars t) (deBruijnize' vars t')
-    deBruijnize' vars (Loc loc t) =
-      DBLoc loc (deBruijnize' vars t)
+  pprint x =
+    show x
 
 flattenApp :: Term -> [Term]
 flattenApp =
@@ -218,3 +153,101 @@ newtype Flags =
   Flags
     Bool  -- ^ total
   deriving Show
+
+instance Eq DeBrujnizedTerm where
+  DBLoc _ t == t' =
+    t == t'
+  t == DBLoc _ t' =
+    t == t'
+  DBBound x == DBBound y =
+    x == y
+  DBFree x == DBFree y =
+    x == y
+  DBGlobal v == DBGlobal w =
+    v == w
+  DBBaseType i == DBBaseType j =
+    i == j
+  DBUniquenessAttr == DBUniquenessAttr =
+    True
+  DBAttrLit u == DBAttrLit v =
+    u == v
+  DBType i u == DBType j v =
+    i == j && u == v
+  DBAttr ty u == DBAttr ty' v =
+    ty == ty' && u == v
+  DBBytesType n == DBBytesType m =
+    n == m
+  DBNum x == DBNum y =
+    x == y
+  DBPi s s' == DBPi t t' =
+    s == t && s' == t'
+  DBApp s s' == DBApp t t' =
+    s == t && s' == t'
+  DBAnn s sty == DBAnn t tty =
+    s == t && sty == tty
+  _ == _ =
+    False
+
+data DeBrujnizedTerm
+  = DBBound Int
+  | DBFree String
+  | DBGlobal String
+  | DBBaseType Int
+  | DBUniquenessAttr
+  | DBAttrLit AttrLit
+  | DBType
+      Int  -- ^ universe
+      DeBrujnizedTerm  -- ^ Uniqueness attribute
+  | DBAttr DeBrujnizedTerm DeBrujnizedTerm
+  | DBBytesType Int
+  | DBNum Int
+  | DBBinOp BinOp
+  | DBUnOp UnOp
+  | DBPi DeBrujnizedTerm DeBrujnizedTerm
+  | DBApp DeBrujnizedTerm DeBrujnizedTerm
+  | DBAnn DeBrujnizedTerm DeBrujnizedTerm
+  | DBLam DeBrujnizedTerm
+  | DBLoc Location DeBrujnizedTerm
+  deriving Show
+
+deBruijnize :: Term -> DeBrujnizedTerm
+deBruijnize =
+  deBruijnize' []
+  where
+    deBruijnize' :: [String] -> Term -> DeBrujnizedTerm
+    deBruijnize' vars (Local v) =
+      case takeWhile (\v' -> v /= v') vars of
+        [] ->
+          DBFree v
+        xs ->
+          DBBound (length xs)
+    deBruijnize' _ (Global v) =
+      DBGlobal v
+    deBruijnize' _ (BaseType i) =
+      DBBaseType i
+    deBruijnize' _ UniquenessAttr =
+      DBUniquenessAttr
+    deBruijnize' _ (AttrLit u) =
+      DBAttrLit u
+    deBruijnize' vars (Pi n t t') =
+      DBPi (deBruijnize' vars t) (deBruijnize' (n : vars) t')
+    deBruijnize' vars (Lam n t) =
+      DBLam (deBruijnize' (n : vars) t)
+    deBruijnize' vars (Type i u) =
+      DBType i $ deBruijnize' vars u
+    deBruijnize' vars (Attr ty u) =
+      DBAttr (deBruijnize' vars ty) (deBruijnize' vars u)
+    deBruijnize' _ (BytesType n) =
+      DBBytesType n
+    deBruijnize' _ (Num n) =
+      DBNum n
+    deBruijnize' _ (BinOp op) =
+      DBBinOp op
+    deBruijnize' _ (UnOp op) =
+      DBUnOp op
+    deBruijnize' vars (App t t') =
+      DBApp (deBruijnize' vars t) (deBruijnize' vars t')
+    deBruijnize' vars (Ann t t') =
+      DBAnn (deBruijnize' vars t) (deBruijnize' vars t')
+    deBruijnize' vars (Loc loc t) =
+      DBLoc loc (deBruijnize' vars t)

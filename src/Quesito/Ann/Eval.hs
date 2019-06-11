@@ -26,6 +26,7 @@ data Value
   | VBytesType Int
   | VNum Int Int
   | VAttrLit AttrLit
+  | VAttr Value Value
   | VPi String Value Term Closure
   | VNormal Normal
 
@@ -54,12 +55,16 @@ quote (VType i u) =
   Type i $ quote u
 quote (VBaseType i) =
   BaseType i
+quote VUniquenessAttr =
+  UniquenessAttr
 quote (VBytesType n) =
   BytesType n
 quote (VNum n b) =
   Num n b
 quote (VAttrLit u) =
   AttrLit u
+quote (VAttr ty u) =
+  Attr (quote ty) (quote u)
 quote (VPi x v v' _) =
   Pi x (quote v) v'
 quote (VNormal n) =
@@ -110,6 +115,8 @@ eval ctx (BaseType i) =
   return $ VBaseType i
 eval ctx (Type i u) =
   VType i <$> eval ctx u
+eval ctx (Attr ty u) =
+  VAttr <$> eval ctx ty <*> eval ctx u
 eval ctx UniquenessAttr =
   return $ VUniquenessAttr
 eval ctx (AttrLit u) =

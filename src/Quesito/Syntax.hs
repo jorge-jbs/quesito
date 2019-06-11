@@ -62,6 +62,10 @@ desugar env (Var v)
       "Bytes" -> do
         loc <- askLoc
         throwError ("Type error on Bytes at " ++ pprint loc)
+      "BaseType" ->
+        return $ TT.BaseType 0
+      "UniquenessAttr" ->
+        return TT.UniquenessAttr
       "Type" ->
         return $ TT.Type 0 $ TT.AttrLit TT.SharedAttr
       "SharedAttr" ->
@@ -90,6 +94,10 @@ desugar _ (App (Var "Bytes") _) = do
   throwError ("Type error on Bytes at " ++ pprint loc)
 desugar env (App (Var "Type") [Num n, u]) =
   TT.Type n <$> desugar env u
+desugar _ (App (Var "BaseType") [Num n]) =
+  return $ TT.BaseType n
+desugar env (App (Var "Attr") [ty, u]) =
+  TT.Attr <$> desugar env ty <*> desugar env u
 desugar _ (App (Var "Type") _) = do
   loc <- askLoc
   throwError ("Type error on Type at " ++ pprint loc)

@@ -13,7 +13,8 @@ module Quesito.TT.TypeAnn
 
 import Quesito
 import Quesito.Marked
-import Quesito.TT (AttrLit(..))
+import Quesito.Marked.Mark
+import Quesito.TT (AttrLit(..), deBruijnize)
 import Quesito.Ann.Eval hiding (TContext, Env)
 import qualified Quesito.Ann as Ann
 import qualified Quesito.Env as Env
@@ -68,11 +69,14 @@ typeInfAnn' _ ctx (Local x u) =
       (tyTy, _) <- typeInfAnn [] $ Ann.downgrade annTy
       case tyTy of
         VType _ (VAttrLit v) ->
-          if u == v then
+          if u >= v then
             return (ty, Ann.Local x annTy u)
           else do
             loc <- askLoc
-            throwError ("Uniqueness error at " ++ pprint loc)
+            throwError
+              ("Uniqueness error at " ++ pprint loc ++ ". " ++
+               "Variable " ++ x ++ " should be " ++ show v ++
+               " and it is " ++ show u)
         _ ->
           throwError "Type of type is not type!"
     --Just (_, ty, annTy) ->
@@ -111,19 +115,25 @@ typeInfAnn' _ ctx (Global x) = do
 typeInfAnn' opts ctx (BaseType i) = do
   return
     ( VType (i+1) $ VAttrLit SharedAttr
-    , Ann.Type (i+1) $ Ann.AttrLit SharedAttr
+    , Ann.BaseType i
     )
 typeInfAnn' opts ctx UniquenessAttr = do
   return
     ( VType 0 $ VAttrLit SharedAttr
-    , Ann.Type 0 $ Ann.AttrLit SharedAttr
+    , Ann.UniquenessAttr
     )
-typeInfAnn' opts ctx (AttrLit _) = do
-  return (VUniquenessAttr, Ann.UniquenessAttr)
+typeInfAnn' opts ctx (AttrLit u) = do
+  return (VUniquenessAttr, Ann.AttrLit u)
 typeInfAnn' opts ctx (Type i u) = do
   (_, annU) <- typeInfAnn' opts ctx u
   u' <- eval [] annU
   return (VType (i + 1) u', Ann.Type i annU)
+typeInfAnn' opts ctx (Attr ty u) = do
+  (tyTy, annTy) <- typeInfAnn' opts ctx ty
+  let VBaseType i = tyTy
+  (_, annU) <- typeInfAnn' opts ctx u
+  u' <- eval [] annU
+  return (VType i u', Ann.Attr annTy annU)
 typeInfAnn' _ _ (BytesType n) =
   return (VBaseType 0, Ann.BytesType n)
 typeInfAnn' _ _ (Num n) = do
@@ -153,7 +163,7 @@ typeInfAnn' opts ctx (Pi x e f) = do
 typeInfAnn' opts ctx (App e f) = do
   (s, annE) <- typeInfAnn' opts ctx e
   case s of
-    VPi v t t' (Closure ctx') -> do
+    VAttr (VPi v t t' (Closure ctx')) _ -> do
       (annF, _) <- typeCheckAnn' opts ctx f t
       f' <- eval [] annF
       x <- eval ((v, f') : ctx') t'
@@ -202,7 +212,7 @@ typeCheckAnn' opts _ (Local v u) ty | inferVars opts = do
   let annTy = quote ty
   return (Ann.Local v annTy u, annTy)
 typeCheckAnn' opts ctx (Lam x e) (VPi x' v w (Closure ctx')) = do
-  tell ("typeInfAnn' opts Lam: " ++ show e)
+  tell ("typeCheckAnn' opts Lam: " ++ show e)
   w' <- eval ctx' w
   let annV = quote v
   (annE, annW') <- typeCheckAnn' opts ((x, v, annV) : ctx) e w'
@@ -210,7 +220,7 @@ typeCheckAnn' opts ctx (Lam x e) (VPi x' v w (Closure ctx')) = do
 typeCheckAnn' _ _ (Lam _ _) _ = do
   loc <- askLoc
   throwError ("6: " ++ pprint loc)
-typeCheckAnn' _ _ (Num x) (VBytesType n) =
+typeCheckAnn' _ _ (Num x) (VAttr (VBytesType n) _) = do
   if x >= 0 && fromIntegral x < (2^(n*8) :: Integer) then
     return (Ann.Num x n, Ann.BytesType n)
   else do
@@ -234,14 +244,15 @@ typeCheckAnn' opts ctx t (VType j (VAttrLit v)) = do
       let qv = quote v
       throwError ("Expected type at " ++ pprint loc ++ " and got: " ++ show qv)
 typeCheckAnn' opts ctx (Loc loc t) ty = do
-  tell ("typeInfAnn' opts Loc: " ++ show t)
+  tell ("typeCheckAnn' opts Loc: " ++ show t)
   typeCheckAnn' opts ctx t ty `withLoc` loc
 typeCheckAnn' opts ctx t ty = do
+  tell ("aonde emoh llegao: " ++ show (quote ty))
   (ty', annT) <- typeInfAnn' opts ctx t
   let qty = quote ty
       qty' = quote ty'
   loc <- askLoc
   unless
-    (deBruijnize (Ann.downgrade qty) == deBruijnize (Ann.downgrade qty'))
+    (deBruijnize (unmark $ Ann.downgrade qty) == deBruijnize (unmark $ Ann.downgrade qty'))
     (throwError ("Type mismatch at " ++ pprint loc ++ ". Expected " ++ pprint qty ++ " and got " ++ pprint qty'))
   return (annT, qty)

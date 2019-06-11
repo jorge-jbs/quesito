@@ -109,6 +109,8 @@ sizeOf env ctx (LLTT.Constant (LLTT.TypeCons v _)) = do
         equations
 sizeOf _ _ LLTT.Type =
   Just 4
+sizeOf _ _ LLTT.ErasedType =
+  Just 0
 sizeOf _ _ (LLTT.BytesType n) = do
   Just n
 sizeOf env ctx (LLTT.Call (LLTT.TypeCons v _) args _) = do
@@ -528,6 +530,11 @@ codeGen _ _ _ (LLTT.BytesType n) = do
   return $ L.ConstantOperand $ L.Int 32 $ fromIntegral n
 codeGen _ _ _ LLTT.Type = do
   return $ L.ConstantOperand $ L.Int 32 4
+codeGen _ ctx _ LLTT.ErasedType =
+  return $ L.ConstantOperand $ L.Int 32 0
+codeGen _ ctx _ LLTT.ErasedTerm =
+  --L.alloca L.i8 (Just $ L.ConstantOperand $ L.Int 32 0) 0
+  return $ L.ConstantOperand $ L.Array L.i8 []
 codeGen _ ctx _ t =
   error (show t ++ "; " ++ show ctx)
 

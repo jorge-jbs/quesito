@@ -74,8 +74,16 @@ downgrade (Local v _ u) =
   Marked.Local v u
 downgrade (Global v _) =
   Marked.Global v
+downgrade (BaseType i) =
+  Marked.BaseType i
+downgrade UniquenessAttr =
+  Marked.UniquenessAttr
+downgrade (AttrLit u) =
+  Marked.AttrLit u
 downgrade (Type n u) =
   Marked.Type n $ downgrade u
+downgrade (Attr ty u) =
+  Marked.Attr (downgrade ty) (downgrade u)
 downgrade (BytesType n) =
   Marked.BytesType n
 downgrade (BinOp op) =
@@ -128,7 +136,7 @@ typeInf (Pi v ty1 ty2) =
       error ""
 typeInf (App r s) =
   case typeInf r of
-    Pi v ty1 ty2 ->
+    Attr (Pi v ty1 ty2) _ ->
       substLocal v s ty2
     _ ->
       error ""

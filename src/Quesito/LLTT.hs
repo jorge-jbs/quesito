@@ -26,6 +26,8 @@ data Term
   | Call Var [Term] Type
   | BinOp BinOp Term Term
   | UnOp UnOp Term
+  | ErasedType
+  | ErasedTerm
   deriving Show
 
 type Type = Term
@@ -83,8 +85,16 @@ lower (Ann.Global v ty) = do
       Constant . Constructor v <$> lower ty
     _ ->
       Constant . Global v <$> lower ty
+lower (Ann.BaseType i) =
+  return Type
+lower Ann.UniquenessAttr =
+  return ErasedType
+lower (Ann.AttrLit _) =
+  return ErasedTerm
 lower (Ann.Type i _) =
   return Type
+lower (Ann.Attr ty _) =
+  lower ty
 lower (Ann.BytesType i) =
   return $ BytesType i
 lower (Ann.BinOp op) =
@@ -138,6 +148,10 @@ typeInf (Pi _ _ _) =
   Type
 typeInf (Call v ts ty) =
   ty
+typeInf ErasedType =
+  Type
+typeInf ErasedTerm =
+  ErasedType
 
 flattenPi :: Type -> ([Type], Type)
 flattenPi (Pi _ ty1 ty2) =
