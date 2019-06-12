@@ -29,6 +29,8 @@ raw =
   where
     table =
       [ [ Infix (reservedOp tp "->" >> return Arrow) AssocRight ]
+      , [ Infix (reservedOp tp "-U>" >> return UniqueArrow) AssocRight ]
+      , [ Infix (reservedOp tp "-S>" >> return SharedArrow) AssocRight ]
       , [ Infix (reservedOp tp ":" >> return Ann) AssocLeft ]
       ]
 
@@ -74,8 +76,8 @@ tp =
       , identLetter = alphaNum <|> opLetter'
       , opStart = opLetter'
       , opLetter = opLetter'
-      , reservedNames = ["data", "where", "->"]
-      , reservedOpNames = ["->", ":", "\\", ";"]
+      , reservedNames = ["data", "where", "->", "-S>", "-U>"]
+      , reservedOpNames = ["->", "-S>", "-U>", ":", "\\", ";"]
       , caseSensitive = True
       }
 

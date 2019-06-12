@@ -17,6 +17,8 @@ data Term
   = Var String
   | Num Int
   | Arrow Term Term
+  | UniqueArrow Term Term
+  | SharedArrow Term Term
   | App Term [Term]
   | Lam String Term
   | Ann Term Term
@@ -117,9 +119,14 @@ desugar env (Arrow ty1 ty2) =
       throwError ("Type annotation not allowed here " ++ pprint loc ++ ": " ++ show ty1)
     _ ->
       TT.Pi "" <$> desugar env ty1 <*> desugar env ty2
+desugar env (UniqueArrow ty1 ty2) = do
+  ty <- desugar env $ Arrow ty1 ty2
+  return $ TT.Attr ty $ TT.AttrLit TT.UniqueAttr
+desugar env (SharedArrow ty1 ty2) = do
+  ty <- desugar env $ Arrow ty1 ty2
+  return $ TT.Attr ty $ TT.AttrLit TT.SharedAttr
 desugar env (Ann t ty) =
   TT.Ann <$> desugar env t <*> desugar env ty
-
 desugar env (Loc loc t) =
   TT.Loc loc <$> desugar env t `withLoc` loc
 
