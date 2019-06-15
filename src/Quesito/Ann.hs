@@ -166,8 +166,17 @@ substLocal name term (Lam name' ty t) =
     Lam name' ty t
   else
     Lam name' (substLocal name term ty) (substLocal name term t)
-substLocal _ _ t =
-  t
+substLocal name term (Attr ty u) =
+  Attr (substLocal name term ty) (substLocal name term u)
+substLocal name term (Type i u) =
+  Type i $ substLocal name term u
+substLocal _ _ t@(BaseType _) = t
+substLocal _ _ t@UniquenessAttr = t
+substLocal _ _ t@(AttrLit _) = t
+substLocal _ _ t@(BytesType _) = t
+substLocal _ _ t@(BinOp _) = t
+substLocal _ _ t@(UnOp _) = t
+substLocal _ _ t@(Num _ _) = t
 
 substGlobal :: String -> Term -> Term -> Term
 substGlobal name term (Global name' ty) =
