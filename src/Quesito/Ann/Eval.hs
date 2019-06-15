@@ -32,6 +32,7 @@ data Value
 
 data Normal
   = NFree String Type AttrLit
+  | NMeta String Type
   | NGlobal String Type
   | NDataType String Type
   | NDataCons String Type
@@ -72,6 +73,8 @@ quote (VNormal n) =
   where
     quoteNormal (NFree x ty u) =
       Local x ty u
+    quoteNormal (NMeta x ty) =
+      Meta x ty
     quoteNormal (NGlobal x ty) =
       Global x ty
     quoteNormal (NDataType x ty) =
@@ -94,6 +97,8 @@ eval ctx (Local x ty u) =
       return v
     Nothing ->
       return (VNormal (NFree x ty u))
+eval ctx (Meta x ty) =
+  return (VNormal (NMeta x ty))
 eval ctx (Global x ty) = do
   env <- askEnv
   case Env.lookup x env of

@@ -10,6 +10,7 @@ import Quesito.TT (AttrLit(..), BinOp(..), UnOp(..), Flags)
 
 data Term
   = Local String AttrLit
+  | Meta String
   | Global String
   | BaseType Int
   | UniquenessAttr

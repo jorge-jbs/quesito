@@ -65,7 +65,7 @@ termToPattern _ (Ann.Lam _ _ _) = do
   throwError ("Can't pattern match on lambda expressions (at " ++ pprint loc ++ ")")
 
 typeAnnEquation
-  :: (MonadLog m, MonadExcept m, MonadLocatable m)
+  :: (MonadLog m, MonadExcept m, MonadLocatable m, MonadGenProblems Ann.Term m)
   => TypeAnn.Env
   -> String
   -> Ann.Type
@@ -89,7 +89,7 @@ typeAnnEquation env name ty' lhs rhs = do
     )) (tail $ Ann.flattenApp lhs')
   let vars = findVars lhs'
   ctx <- mapM (\(v, vty) -> do vty' <- eval [] vty `withEnv` env; return (v, vty', vty)) vars
-  tell ("hola: " ++ name ++ " ; " ++ show (quote lhsTy))
+  tell ("hola: " ++ name ++ " ; " ++ show (quote lhsTy) ++ " ; " ++ show (map (\(x, y, z) -> (x, quote y, z)) ctx))
   (rhs', _) <- typeCheckAnn ctx (mark rhs) lhsTy `withEnv` env'
   tell ("pude terminar")
   return (vars, pats, rhs')
@@ -102,7 +102,11 @@ findVars (Ann.App s t) =
 findVars _ =
   []
 
-typeAnn :: (MonadLog m, MonadExcept m, MonadLocatable m) => TypeAnn.Env -> Def -> m Ann.Def
+typeAnn
+  :: (MonadLog m, MonadExcept m, MonadLocatable m, MonadGenProblems Ann.Term m)
+  => TypeAnn.Env
+  -> Def
+  -> m Ann.Def
 typeAnn env (PatternMatchingDef name equations ty flags) = do
   (tyTy, ty') <- typeInfAnn [] (mark ty) `withEnv` env
   when (not $ isType tyTy) (throwError ("The kind of " ++ name ++ " is not Type."))

@@ -22,6 +22,7 @@ executable quesito
     Quesito,
     Quesito.Ann,
     Quesito.Ann.Eval,
+    Quesito.Ann.Unify,
     Quesito.CodeGen,
     Quesito.Env,
     Quesito.LLTT,

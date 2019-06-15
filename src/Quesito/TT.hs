@@ -24,6 +24,7 @@ import Quesito.Env (Definition(..))
 
 data Term
   = Local String
+  | Meta String
   | Global String
   | BaseType Int
   | UniquenessAttr
@@ -194,6 +195,7 @@ instance Eq DeBrujnizedTerm where
 data DeBrujnizedTerm
   = DBBound Int
   | DBFree String
+  | DBMeta String
   | DBGlobal String
   | DBBaseType Int
   | DBUniquenessAttr
@@ -224,6 +226,8 @@ deBruijnize =
           DBFree v
         xs ->
           DBBound (length xs)
+    deBruijnize' _ (Meta v) =
+      DBMeta v
     deBruijnize' _ (Global v) =
       DBGlobal v
     deBruijnize' _ (BaseType i) =

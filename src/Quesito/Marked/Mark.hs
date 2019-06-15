@@ -14,6 +14,7 @@ type Occ = Map.HashMap String Int
 -- Term annotated with occurences in closure
 data OccTerm
   = Local String
+  | Meta String
   | Global String
   | BaseType Int
   | UniquenessAttr
@@ -41,6 +42,8 @@ mark =
       -> (OccTerm, Occ)
     buildMap m (TT.Local x) =
       (Local x, Map.insertWith (+) x 1 m)
+    buildMap m (TT.Meta x) =
+      (Meta x, m)
     buildMap m (TT.Global x) =
       (Global x, m)
     buildMap m (TT.BaseType i) =
@@ -106,6 +109,8 @@ mark =
         Marked.Local v UniqueAttr
       else
         Marked.Local v SharedAttr
+    mark' _ (Meta v) =
+      Marked.Meta v
     mark' _ (Global x) =
       Marked.Global x
     mark' _ (BaseType i) =
@@ -140,6 +145,8 @@ mark =
 unmark :: Marked.Term -> TT.Term
 unmark (Marked.Local x _) =
   TT.Local x
+unmark (Marked.Meta x) =
+  TT.Meta x
 unmark (Marked.Global x) =
   TT.Global x
 unmark (Marked.BaseType i) =

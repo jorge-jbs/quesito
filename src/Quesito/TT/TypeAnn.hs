@@ -1,4 +1,10 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE
+  FlexibleContexts,
+  FlexibleInstances,
+  StandaloneDeriving,
+  GeneralizedNewtypeDeriving,
+  MultiParamTypeClasses
+#-}
 
 module Quesito.TT.TypeAnn
   ( TContext
@@ -8,6 +14,8 @@ module Quesito.TT.TypeAnn
   , typeCheckAnn
   , typeInfAnn'
   , typeCheckAnn'
+  , TypeAnnM
+  , runTypeAnn
   )
   where
 
@@ -18,9 +26,14 @@ import Quesito.TT (AttrLit(..), deBruijnize)
 import Quesito.Ann.Eval hiding (TContext, Env)
 import qualified Quesito.Ann as Ann
 import qualified Quesito.Env as Env
+import qualified Quesito.Ann.Unify as Unify
 
 import Data.List (find)
 import Control.Monad (unless)
+import Control.Monad.Trans (lift)
+import Control.Monad.Reader (MonadReader)
+import Control.Monad.Writer as W (MonadWriter, WriterT, runWriterT, tell, mapWriterT)
+import Control.Monad.Error (MonadError)
 import Data.Default
 
 type TContext =
@@ -43,8 +56,40 @@ instance Default Options where
       { inferVars = False
       }
 
+newtype TypeAnnM m a = TypeAnnM
+  { unTypeAnnM :: W.WriterT [Unify.Entry Ann.Term] m a
+  }
+
+deriving instance Functor m => Functor (TypeAnnM m)
+deriving instance Applicative m => Applicative (TypeAnnM m)
+deriving instance Monad m => Monad (TypeAnnM m)
+
+instance Monad m => MonadGenProblems Ann.Term (TypeAnnM m) where
+  addMetaVar x ty = TypeAnnM $ tell [Unify.MV x ty Unify.Hole]
+  addProblem p = TypeAnnM $ tell [Unify.Prob Unify.Active p]
+
+instance W.MonadWriter String m => W.MonadWriter String (TypeAnnM m) where
+  tell = TypeAnnM . lift . tell
+
+instance MonadError QuesError m => MonadError QuesError (TypeAnnM m) where
+  throwError = TypeAnnM . lift . throwError
+
+instance MonadLocatable m => MonadLocatable (TypeAnnM m) where
+  askLoc = TypeAnnM $ lift askLoc
+  withLoc = flip (mapTypeAnn . flip withLoc)
+    where
+      mapTypeAnn
+        :: (m (w, [Unify.Entry Ann.Term]) -> n (w', [Unify.Entry Ann.Term]))
+        -> TypeAnnM m w -> TypeAnnM n w'
+      mapTypeAnn f = TypeAnnM . mapWriterT f . unTypeAnnM
+
+runTypeAnn :: TypeAnnM m a -> m (a, [Unify.Entry Ann.Term])
+runTypeAnn = W.runWriterT . unTypeAnnM
+
 typeInfAnn
-  :: (MonadLog m, MonadExcept m, MonadEnv Ann.Def m, MonadLocatable m)
+  :: ( MonadLog m, MonadExcept m, MonadEnv Ann.Def m, MonadLocatable m
+     , MonadGenProblems Ann.Term m
+     )
   => TContext
   -> Term
   -> m
@@ -54,7 +99,9 @@ typeInfAnn
 typeInfAnn = typeInfAnn' def
 
 typeInfAnn'
-  :: (MonadEnv Ann.Def m, MonadLog m, MonadExcept m, MonadLocatable m)
+  :: ( MonadEnv Ann.Def m, MonadLog m, MonadExcept m, MonadLocatable m
+     , MonadGenProblems Ann.Term m
+     )
   => Options
   -> TContext
   -> Term
@@ -62,11 +109,12 @@ typeInfAnn'
        ( Value
        , Ann.Term  -- ^ annotated input term
        )
-typeInfAnn' _ ctx (Local x u) =
+typeInfAnn' opts ctx (Local x u) = do
+  tell ("typeInfAnn' Local: " ++ show (Local x u))
   case find (\(x', _, _) -> x == x') ctx of
     --Just (_, ty@(VType _ (VAttrLit v)), annTy) ->
     Just (_, ty, annTy) -> do
-      (tyTy, _) <- typeInfAnn [] $ Ann.downgrade annTy
+      (tyTy, _) <- typeInfAnn' opts ctx $ Ann.downgrade annTy
       case tyTy of
         VType _ (VAttrLit v) ->
           if u >= v then
@@ -87,7 +135,10 @@ typeInfAnn' _ ctx (Local x u) =
       tell (show $ Env.keys env)
       tell (show $ map (\(v, _, _) -> v) ctx)
       throwError ("Local variable not found at " ++ pprint loc ++ ": " ++ x)
+typeInfAnn' _ ctx (Meta x) =
+  throwError ("Can't infer type of metavariable: " ++ x)
 typeInfAnn' _ ctx (Global x) = do
+  tell ("typeInfAnn' _ ctx (Global x) = do")
   env <- askEnv
   case Env.lookup x env of
     Just (Ann.TypeDef n annTy _) | x == n -> do
@@ -116,33 +167,42 @@ typeInfAnn' _ ctx (Global x) = do
       tell ("ctx: " ++ show (map (\(v, _, _) -> v) ctx))
       throwError ("Global variable not found at " ++ pprint loc ++ ": " ++ x)
 typeInfAnn' opts ctx (BaseType i) = do
+  tell ("typeInfAnn' opts ctx (BaseType i) = do")
   return
     ( VType (i+1) $ VAttrLit SharedAttr
     , Ann.BaseType i
     )
 typeInfAnn' opts ctx UniquenessAttr = do
+  tell ("typeInfAnn' opts ctx UniquenessAttr = do")
   return
     ( VType 0 $ VAttrLit SharedAttr
     , Ann.UniquenessAttr
     )
 typeInfAnn' opts ctx (AttrLit u) = do
+  tell ("typeInfAnn' opts ctx (AttrLit u) = do")
   return (VUniquenessAttr, Ann.AttrLit u)
 typeInfAnn' opts ctx (Type i u) = do
+  tell ("typeInfAnn' opts ctx (Type i u) = do")
   (_, annU) <- typeInfAnn' opts ctx u
   u' <- eval [] annU
   return (VType (i + 1) u', Ann.Type i annU)
 typeInfAnn' opts ctx (Attr ty u) = do
+  tell ("typeInfAnn' Attr: " ++ show (Attr ty u))
   (tyTy, annTy) <- typeInfAnn' opts ctx ty
   let VBaseType i = tyTy
   (_, annU) <- typeInfAnn' opts ctx u
   u' <- eval [] annU
   return (VType i u', Ann.Attr annTy annU)
-typeInfAnn' _ _ (BytesType n) =
+typeInfAnn' _ _ (BytesType n) = do
+  tell ("typeInfAnn' _ _ (BytesType n) =")
   return (VBaseType 0, Ann.BytesType n)
 typeInfAnn' _ _ (Num n) = do
-  loc <- askLoc
-  throwError ("Cannot infer byte size of number " ++ show n ++ ": " ++ pprint loc)
+  tell ("typeInfAnn' _ _ (Num n) = do")
+  return (VBytesType 4, Ann.Num n 4)
+  --loc <- askLoc
+  --throwError ("Cannot infer byte size of number " ++ show n ++ ": " ++ pprint loc)
 typeInfAnn' _ _ (BinOp op) = do
+  tell ("typeInfAnn' _ _ (BinOp op) = do")
   ty <- eval []
     (Ann.Attr
       (Ann.Pi
@@ -161,9 +221,11 @@ typeInfAnn' _ _ (BinOp op) = do
     )
   return (ty, Ann.BinOp op)
 typeInfAnn' _ _ (UnOp op) = do
+  tell ("typeInfAnn' _ _ (UnOp op) = do")
   ty <- eval [] (Ann.Pi "" (Ann.BytesType 4) (Ann.BytesType 4))
   return (ty, Ann.UnOp op)
 typeInfAnn' opts ctx (Pi x e f) = do
+  tell ("typeInfAnn' opts ctx (Pi x e f) = do")
   (ty, annE) <- typeInfAnn' opts ctx e
   case ty of
     VType i _ -> do
@@ -179,18 +241,22 @@ typeInfAnn' opts ctx (Pi x e f) = do
       loc <- askLoc
       throwError ("2: " ++ pprint loc)
 typeInfAnn' opts ctx (App e f) = do
+  tell ("typeInfAnn' App: " ++ show (App e f) ++ " {")
   (s, annE) <- typeInfAnn' opts ctx e
   case s of
     VAttr (VPi v t t' (Closure ctx')) _ -> do
       (annF, _) <- typeCheckAnn' opts ctx f t
       f' <- eval [] annF
       x <- eval ((v, f') : ctx') t'
+      tell "}"
+      tell (show $ quote x)
       return (x, Ann.App annE annF)
     _ -> do
       loc <- askLoc
       let qs = quote s
       throwError ("Applying to non-function at " ++ pprint loc ++ ": " ++ show qs)
 typeInfAnn' opts ctx (Ann e ty) = do
+  tell ("typeInfAnn' opts ctx (Ann e ty) = do")
   (tyTy, annTy) <- typeInfAnn' opts ctx ty
   case tyTy of
     VType _ _ -> do
@@ -199,14 +265,17 @@ typeInfAnn' opts ctx (Ann e ty) = do
       return (ty', annE)
     _ ->
       throwError ""
-typeInfAnn' _ _ e@(Lam _ _) =
+typeInfAnn' _ _ e@(Lam _ _) = do
+  tell ("typeInfAnn' _ _ e@(Lam _ _) =")
   throwError ("Can't infer type of lambda expression " ++ show e)
 typeInfAnn' opts ctx (Loc loc t) = do
   tell ("typeInfAnn' opts Loc: " ++ show t)
   typeInfAnn' opts ctx t `withLoc` loc
 
 typeCheckAnn
-  :: (MonadLog m, MonadExcept m, MonadEnv Ann.Def m, MonadLocatable m)
+  :: ( MonadLog m, MonadExcept m, MonadEnv Ann.Def m, MonadLocatable m
+     , MonadGenProblems Ann.Term m
+     )
   => TContext
   -> Term  -- ^ expr
   -> Value  -- ^ type
@@ -217,7 +286,9 @@ typeCheckAnn
 typeCheckAnn = typeCheckAnn' def
 
 typeCheckAnn'
-  :: (MonadLog m, MonadExcept m, MonadEnv Ann.Def m, MonadLocatable m)
+  :: ( MonadLog m, MonadExcept m, MonadEnv Ann.Def m, MonadLocatable m
+     , MonadGenProblems Ann.Term m
+     )
   => Options
   -> TContext
   -> Term  -- ^ expr
@@ -229,6 +300,10 @@ typeCheckAnn'
 typeCheckAnn' opts _ (Local v u) ty | inferVars opts = do
   let annTy = quote ty
   return (Ann.Local v annTy u, annTy)
+typeCheckAnn' opts _ (Meta v) ty = do
+  let annTy = quote ty
+  addMetaVar v annTy
+  return (Ann.Meta v annTy, annTy)
 typeCheckAnn' opts ctx (Lam x e) (VPi x' v w (Closure ctx')) = do
   tell ("typeCheckAnn' opts Lam: " ++ show e)
   w' <- eval ctx' w
@@ -265,12 +340,22 @@ typeCheckAnn' opts ctx (Loc loc t) ty = do
   tell ("typeCheckAnn' opts Loc: " ++ show t)
   typeCheckAnn' opts ctx t ty `withLoc` loc
 typeCheckAnn' opts ctx t ty = do
-  tell ("aonde emoh llegao: " ++ show (quote ty))
+  tell ("aonde emoh llegao: " ++ show t ++ " ;" ++ show (quote ty))
+  tell (show $ map (\(v, _, _) -> v) ctx)
   (ty', annT) <- typeInfAnn' opts ctx t
   let qty = quote ty
       qty' = quote ty'
-  loc <- askLoc
-  unless
-    (deBruijnize (unmark $ Ann.downgrade qty) == deBruijnize (unmark $ Ann.downgrade qty'))
-    (throwError ("Type mismatch at " ++ pprint loc ++ ". Expected " ++ pprint qty ++ " and got " ++ pprint qty'))
-  return (annT, qty)
+  case (ty, ty') of
+    (VNormal (NMeta _ _), _) -> do
+      let tyTy = Ann.typeInf qty
+          tyTy' = Ann.typeInf qty'
+      addProblem $ Unify.Unify $ Unify.EQN qty tyTy qty' tyTy'
+      return (annT, qty')
+    (_, VNormal (NMeta _ _)) ->
+      return (annT, qty)
+    _ -> do
+      loc <- askLoc
+      unless
+        (deBruijnize (unmark $ Ann.downgrade qty) == deBruijnize (unmark $ Ann.downgrade qty'))
+        (throwError ("Type mismatch at " ++ pprint loc ++ ". Expected " ++ pprint qty ++ " and got " ++ pprint qty'))
+      return (annT, qty)

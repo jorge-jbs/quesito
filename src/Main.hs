@@ -4,6 +4,7 @@ import Quesito
 import Quesito.CodeGen
 import Quesito.LLTT.TopLevel as LLTT (lowerDef)
 import Quesito.TT.TopLevel as TT (typeAnn)
+import Quesito.TT.TypeAnn (runTypeAnn)
 import qualified Quesito.Env as Env
 import Quesito.Syntax as Syn
 import Quesito.Syntax.Parse (parse)
@@ -34,7 +35,8 @@ main = do
         tell $ show ttDefs
         annDefs <- foldlM
           (\annDefs ttDef -> do
-              annDef <- TT.typeAnn annDefs ttDef
+              (annDef, problems) <- runTypeAnn $ TT.typeAnn annDefs ttDef
+              tell ("Problems: " ++ show problems)
               return (Env.insert annDef annDefs)
           )
           Env.empty

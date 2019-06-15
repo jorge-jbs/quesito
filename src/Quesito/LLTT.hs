@@ -36,7 +36,7 @@ type Env = Env.Env Def
 
 type Pattern = Ann.PatternG Term
 
-lowerPat :: (MonadEnv Def m, MonadExcept m) => Ann.Pattern -> m Pattern
+lowerPat :: (MonadEnv Def m, MonadLog m, MonadExcept m) => Ann.Pattern -> m Pattern
 lowerPat (Ann.Binding v ty) =
   Ann.Binding v <$> lower ty
 lowerPat (Ann.Inaccessible t) =
@@ -76,7 +76,7 @@ instance Env.Definition Def where
   getNames (ExternDef n _) =
     [n]
 
-lower :: (MonadEnv Def m, MonadExcept m) => Ann.Term -> m Term
+lower :: (MonadEnv Def m, MonadLog m, MonadExcept m) => Ann.Term -> m Term
 lower (Ann.Local v ty _) =
   Constant . Local v <$> lower ty
 lower (Ann.Global v ty) = do
@@ -118,6 +118,7 @@ lower t@(Ann.App _ _) =
       hd' <- lower hd
       tl' <- mapM lower tl
       ty <- lower $ snd $ Ann.flattenPi $ Ann.typeInf t
+      tell ("el tipito de " ++ show t ++ ": " ++ show (Ann.typeInf t))
       case hd' of
         Constant v ->
           return $ Call v tl' ty

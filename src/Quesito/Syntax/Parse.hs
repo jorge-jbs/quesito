@@ -72,7 +72,7 @@ tp =
       , commentEnd = "-}"
       , commentLine = "--"
       , nestedComments = True
-      , identStart = letter <|> oneOf "-_"
+      , identStart = letter <|> oneOf "-_?"
       , identLetter = alphaNum <|> opLetter'
       , opStart = opLetter'
       , opLetter = opLetter'
@@ -85,15 +85,9 @@ opLetter' :: Parser Char
 opLetter' =
   oneOf "!#$%&*+./<=>?@\\^|-~'"
 
-identifier' :: Parser String
-identifier' = do
-  c <- letter <|> oneOf "-_"
-  cs <- many (alphaNum <|> opLetter')
-  return (c : cs)
-
 annotation :: Bool -> Parser (String, Term)
 annotation semicolon = do
-  name <- identifier'
+  name <- identifier tp
   spaces
   _ <- char ':'
   spaces
