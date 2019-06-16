@@ -14,10 +14,12 @@ module Quesito.TT
   , Flags(..)
   , Pattern(..)
   , deBruijnize
+  , eq
+  , Equality(..)
   )
   where
 
-import Prelude hiding (print)
+import Prelude hiding (print, and)
 
 import Quesito
 import Quesito.Env (Definition(..))
@@ -158,40 +160,6 @@ newtype Flags =
     Bool  -- ^ total
   deriving Show
 
-instance Eq DeBrujnizedTerm where
-  DBLoc _ t == t' =
-    t == t'
-  t == DBLoc _ t' =
-    t == t'
-  DBBound x == DBBound y =
-    x == y
-  DBFree x == DBFree y =
-    x == y
-  DBGlobal v == DBGlobal w =
-    v == w
-  DBBaseType i == DBBaseType j =
-    i == j
-  DBUniquenessAttr == DBUniquenessAttr =
-    True
-  DBAttrLit u == DBAttrLit v =
-    u == v
-  DBType i u == DBType j v =
-    i == j && u == v
-  DBAttr ty u == DBAttr ty' v =
-    ty == ty' && u == v
-  DBBytesType n == DBBytesType m =
-    n == m
-  DBNum x == DBNum y =
-    x == y
-  DBPi s s' == DBPi t t' =
-    s == t && s' == t'
-  DBApp s s' == DBApp t t' =
-    s == t && s' == t'
-  DBAnn s sty == DBAnn t tty =
-    s == t && sty == tty
-  _ == _ =
-    False
-
 data DeBrujnizedTerm
   = DBBound Int
   | DBFree String
@@ -258,3 +226,68 @@ deBruijnize =
       DBAnn (deBruijnize' vars t) (deBruijnize' vars t')
     deBruijnize' vars (Loc loc t) =
       DBLoc loc (deBruijnize' vars t)
+
+data Equality = AlphaEquivalence | AlphaEquivalenceModuloMetaVariables | Unequal
+
+and :: Equality -> Equality -> Equality
+infixr 3 `and`
+
+AlphaEquivalence `and` AlphaEquivalence =
+  AlphaEquivalence
+AlphaEquivalence `and` AlphaEquivalenceModuloMetaVariables =
+  AlphaEquivalenceModuloMetaVariables
+AlphaEquivalenceModuloMetaVariables `and` AlphaEquivalence =
+  AlphaEquivalenceModuloMetaVariables
+AlphaEquivalenceModuloMetaVariables `and` AlphaEquivalenceModuloMetaVariables =
+  AlphaEquivalenceModuloMetaVariables
+Unequal `and` _ =
+  Unequal
+_ `and` Unequal =
+  Unequal
+
+(===) :: Eq a => a -> a -> Equality
+infix 4 ===
+x === y =
+  if x == y then
+    AlphaEquivalence
+  else
+    Unequal
+
+eq :: DeBrujnizedTerm -> DeBrujnizedTerm -> Equality
+infix 4 `eq`
+DBLoc _ t `eq` t' =
+  t `eq` t'
+t `eq` DBLoc _ t' =
+  t `eq` t'
+DBBound x `eq` DBBound y =
+  x === y
+DBFree x `eq` DBFree y =
+  x === y
+DBMeta _ `eq` _ =
+  AlphaEquivalenceModuloMetaVariables
+_ `eq` DBMeta _ =
+  AlphaEquivalenceModuloMetaVariables
+DBGlobal v `eq` DBGlobal w =
+  v === w
+DBBaseType i `eq` DBBaseType j =
+  i === j
+DBUniquenessAttr `eq` DBUniquenessAttr =
+  AlphaEquivalence
+DBAttrLit u `eq` DBAttrLit v =
+  u === v
+DBType i u `eq` DBType j v =
+  i === j `and` u `eq` v
+DBAttr ty u `eq` DBAttr ty' v =
+  ty `eq` ty' `and` u `eq` v
+DBBytesType n `eq` DBBytesType m =
+  n === m
+DBNum x `eq` DBNum y =
+  x === y
+DBPi s s' `eq` DBPi t t' =
+  s `eq` t `and` s' `eq` t'
+DBApp s s' `eq` DBApp t t' =
+  s `eq` t `and` s' `eq` t'
+DBAnn s sty `eq` DBAnn t tty =
+  s `eq` t `and` sty `eq` tty
+_ `eq` _ =
+  Unequal

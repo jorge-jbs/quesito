@@ -37,7 +37,7 @@ import Control.Monad.Writer as W (Writer, MonadWriter, runWriter, tell)
 import Control.Monad.State (StateT, MonadState, evalStateT, get, modify)
 import Control.Monad.Except (ExceptT, MonadError, runExceptT, throwError, catchError)
 
-import Quesito.Ann.Unify
+import Quesito.Ann.UnifyM
 import qualified Quesito.Env as Env
 
 class PPrint a where
@@ -126,15 +126,7 @@ instance MonadLocatable Ques where
     return x
 
 class Monad m => MonadGenProblems t m where
-  addMetaVar :: String -> t -> m ()
   addProblem :: Problem t -> m ()
 
 instance MonadGenProblems t m => MonadGenProblems t (ReaderT r m) where
-  addMetaVar x y = ReaderT $ (\r -> addMetaVar x y)
-  addProblem x = ReaderT $ (\r -> addProblem x)
-
-class Monad m => MonadUnify t m where
-  pushL :: Entry t -> m ()
-  pushR :: Either (Subs t) (Entry t) -> m ()
-  popL :: m (Entry t)
-  popR :: m (Either (Subs t) (Entry t))
+  addProblem = ReaderT . const . addProblem

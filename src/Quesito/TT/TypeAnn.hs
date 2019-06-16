@@ -26,7 +26,8 @@ import Quesito.TT (AttrLit(..), deBruijnize)
 import Quesito.Ann.Eval hiding (TContext, Env)
 import qualified Quesito.Ann as Ann
 import qualified Quesito.Env as Env
-import qualified Quesito.Ann.Unify as Unify
+import Quesito.Ann.Unify (unify)
+import qualified Quesito.Ann.UnifyM as Unify
 
 import Data.List (find)
 import Control.Monad (unless)
@@ -57,7 +58,7 @@ instance Default Options where
       }
 
 newtype TypeAnnM m a = TypeAnnM
-  { unTypeAnnM :: W.WriterT [Unify.Entry Ann.Term] m a
+  { unTypeAnnM :: W.WriterT [Unify.Problem Ann.Term] m a
   }
 
 deriving instance Functor m => Functor (TypeAnnM m)
@@ -65,8 +66,7 @@ deriving instance Applicative m => Applicative (TypeAnnM m)
 deriving instance Monad m => Monad (TypeAnnM m)
 
 instance Monad m => MonadGenProblems Ann.Term (TypeAnnM m) where
-  addMetaVar x ty = TypeAnnM $ tell [Unify.MV x ty Unify.Hole]
-  addProblem p = TypeAnnM $ tell [Unify.Prob Unify.Active p]
+  addProblem p = TypeAnnM $ tell [p]
 
 instance W.MonadWriter String m => W.MonadWriter String (TypeAnnM m) where
   tell = TypeAnnM . lift . tell
@@ -79,11 +79,11 @@ instance MonadLocatable m => MonadLocatable (TypeAnnM m) where
   withLoc = flip (mapTypeAnn . flip withLoc)
     where
       mapTypeAnn
-        :: (m (w, [Unify.Entry Ann.Term]) -> n (w', [Unify.Entry Ann.Term]))
+        :: (m (w, [Unify.Problem Ann.Term]) -> n (w', [Unify.Problem Ann.Term]))
         -> TypeAnnM m w -> TypeAnnM n w'
       mapTypeAnn f = TypeAnnM . mapWriterT f . unTypeAnnM
 
-runTypeAnn :: TypeAnnM m a -> m (a, [Unify.Entry Ann.Term])
+runTypeAnn :: TypeAnnM m a -> m (a, [Unify.Problem Ann.Term])
 runTypeAnn = W.runWriterT . unTypeAnnM
 
 typeInfAnn
@@ -198,9 +198,16 @@ typeInfAnn' _ _ (BytesType n) = do
   return (VBaseType 0, Ann.BytesType n)
 typeInfAnn' _ _ (Num n) = do
   tell ("typeInfAnn' _ _ (Num n) = do")
-  return (VBytesType 4, Ann.Num n 4)
-  --loc <- askLoc
-  --throwError ("Cannot infer byte size of number " ++ show n ++ ": " ++ pprint loc)
+  return
+    ( VNormal
+      (NMeta
+        "numerito"
+        (Ann.Type 0
+          (Ann.Meta "uniqueness" Ann.UniquenessAttr)
+        )
+      )
+    , Ann.Num n 4
+    )
 typeInfAnn' _ _ (BinOp op) = do
   tell ("typeInfAnn' _ _ (BinOp op) = do")
   ty <- eval []
@@ -302,7 +309,6 @@ typeCheckAnn' opts _ (Local v u) ty | inferVars opts = do
   return (Ann.Local v annTy u, annTy)
 typeCheckAnn' opts _ (Meta v) ty = do
   let annTy = quote ty
-  addMetaVar v annTy
   return (Ann.Meta v annTy, annTy)
 typeCheckAnn' opts ctx (Lam x e) (VPi x' v w (Closure ctx')) = do
   tell ("typeCheckAnn' opts Lam: " ++ show e)
@@ -345,17 +351,10 @@ typeCheckAnn' opts ctx t ty = do
   (ty', annT) <- typeInfAnn' opts ctx t
   let qty = quote ty
       qty' = quote ty'
-  case (ty, ty') of
-    (VNormal (NMeta _ _), _) -> do
-      let tyTy = Ann.typeInf qty
-          tyTy' = Ann.typeInf qty'
-      addProblem $ Unify.Unify $ Unify.EQN qty tyTy qty' tyTy'
-      return (annT, qty')
-    (_, VNormal (NMeta _ _)) ->
-      return (annT, qty)
-    _ -> do
-      loc <- askLoc
-      unless
-        (deBruijnize (unmark $ Ann.downgrade qty) == deBruijnize (unmark $ Ann.downgrade qty'))
-        (throwError ("Type mismatch at " ++ pprint loc ++ ". Expected " ++ pprint qty ++ " and got " ++ pprint qty'))
-      return (annT, qty)
+  loc <- askLoc
+  b <- unify qty qty'
+  unless b
+    (throwError
+      ("Type mismatch at " ++ pprint loc ++ ". "
+       ++ "Expected " ++ pprint qty ++ " and got " ++ pprint qty'))
+  return (annT, qty)
