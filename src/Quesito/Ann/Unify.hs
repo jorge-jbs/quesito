@@ -15,9 +15,7 @@ unify
   -> m Bool
 unify r s = do
   let equal = do
-        let tyR = typeInf r
-            tyS = typeInf s
-        addProblem $ EQN r tyR s tyS
+        addProblem $ EQN r s
         return True
   case (deBruijnize (unmark (downgrade r))
       `eq` deBruijnize (unmark (downgrade s))) of

@@ -12,7 +12,7 @@ data Param t
   | Twins t t
 
 data Problem t
-  = EQN t t t t
+  = EQN t t
 
 deriving instance Show t => Show (Param t)
 deriving instance Show t => Show (Problem t)

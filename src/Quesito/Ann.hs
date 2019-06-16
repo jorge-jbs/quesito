@@ -9,7 +9,7 @@ import qualified Quesito.Marked.Mark as Marked
 
 data Term
   = Local String Type AttrLit
-  | Meta String Type
+  | Hole Int Type
   | Global String Type
   | BaseType Int
   | UniquenessAttr
@@ -76,8 +76,8 @@ flattenPatApp t =
 downgrade :: Term -> Marked.Term
 downgrade (Local v _ u) =
   Marked.Local v u
-downgrade (Meta v _) =
-  Marked.Meta v
+downgrade (Hole _ _) =
+  Marked.Hole
 downgrade (Global v _) =
   Marked.Global v
 downgrade (BaseType i) =
@@ -108,7 +108,7 @@ downgrade (Lam v _ t) =
 typeInf :: Term -> Type
 typeInf (Local _ ty _) =
   ty
-typeInf (Meta _ ty) =
+typeInf (Hole _ ty) =
   ty
 typeInf (Global _ ty) =
   ty

@@ -26,7 +26,7 @@ import Quesito.Env (Definition(..))
 
 data Term
   = Local String
-  | Meta String
+  | Hole
   | Global String
   | BaseType Int
   | UniquenessAttr
@@ -163,7 +163,7 @@ newtype Flags =
 data DeBrujnizedTerm
   = DBBound Int
   | DBFree String
-  | DBMeta String
+  | DBHole
   | DBGlobal String
   | DBBaseType Int
   | DBUniquenessAttr
@@ -194,8 +194,8 @@ deBruijnize =
           DBFree v
         xs ->
           DBBound (length xs)
-    deBruijnize' _ (Meta v) =
-      DBMeta v
+    deBruijnize' _ Hole =
+      DBHole
     deBruijnize' _ (Global v) =
       DBGlobal v
     deBruijnize' _ (BaseType i) =
@@ -263,9 +263,9 @@ DBBound x `eq` DBBound y =
   x === y
 DBFree x `eq` DBFree y =
   x === y
-DBMeta _ `eq` _ =
+DBHole `eq` _ =
   AlphaEquivalenceModuloMetaVariables
-_ `eq` DBMeta _ =
+_ `eq` DBHole =
   AlphaEquivalenceModuloMetaVariables
 DBGlobal v `eq` DBGlobal w =
   v === w

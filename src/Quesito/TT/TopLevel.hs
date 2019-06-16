@@ -65,7 +65,9 @@ termToPattern _ (Ann.Lam _ _ _) = do
   throwError ("Can't pattern match on lambda expressions (at " ++ pprint loc ++ ")")
 
 typeAnnEquation
-  :: (MonadLog m, MonadExcept m, MonadLocatable m, MonadGenProblems Ann.Term m)
+  :: ( MonadLog m, MonadExcept m, MonadLocatable m, MonadGenProblems Ann.Term m
+     , MonadGenHoles Int m
+     )
   => TypeAnn.Env
   -> String
   -> Ann.Type
@@ -103,7 +105,9 @@ findVars _ =
   []
 
 typeAnn
-  :: (MonadLog m, MonadExcept m, MonadLocatable m, MonadGenProblems Ann.Term m)
+  :: ( MonadLog m, MonadExcept m, MonadLocatable m, MonadGenProblems Ann.Term m
+     , MonadGenHoles Int m
+     )
   => TypeAnn.Env
   -> Def
   -> m Ann.Def

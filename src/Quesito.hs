@@ -20,6 +20,7 @@ module Quesito
   , throwError
   , catchError
   , MonadGenProblems(..)
+  , MonadGenHoles(..)
   , Location(..)
   , PPrint(pprint)
   , MonadLocatable
@@ -34,7 +35,7 @@ import Control.Monad.Trans (lift)
 import Control.Monad.Fix (MonadFix)
 import Control.Monad.Reader as R (Reader, ReaderT(..), MonadReader, runReader, runReaderT, ask)
 import Control.Monad.Writer as W (Writer, MonadWriter, runWriter, tell)
-import Control.Monad.State (StateT, MonadState, evalStateT, get, modify)
+import Control.Monad.State (StateT, MonadState, evalStateT, get, gets, modify)
 import Control.Monad.Except (ExceptT, MonadError, runExceptT, throwError, catchError)
 
 import Quesito.Ann.UnifyM
@@ -62,6 +63,7 @@ instance PPrint a => PPrint (Maybe a) where
 data QuesState
   = QuesState
       { location :: Maybe Location
+      , holeName :: Int
       }
 
 newtype Ques a = Ques { unQues :: StateT QuesState (ExceptT String (Writer [String])) a }
@@ -69,7 +71,7 @@ newtype Ques a = Ques { unQues :: StateT QuesState (ExceptT String (Writer [Stri
 
 runQues :: Ques a -> (Either String a, String)
 runQues =
-  mapSnd (concat . map (\x -> "; LOG: " ++ x ++ "\n")) . runWriter . runExceptT . flip evalStateT (QuesState Nothing) . unQues
+  mapSnd (concat . map (\x -> "; LOG: " ++ x ++ "\n")) . runWriter . runExceptT . flip evalStateT (QuesState Nothing 0) . unQues
   where
     mapSnd :: (b -> c) -> (a, b) -> (a, c)
     mapSnd f (x, y) = (x, f y)
@@ -130,3 +132,15 @@ class Monad m => MonadGenProblems t m where
 
 instance MonadGenProblems t m => MonadGenProblems t (ReaderT r m) where
   addProblem = ReaderT . const . addProblem
+
+class Monad m => MonadGenHoles i m where
+  genHole :: m i
+
+instance MonadGenHoles Int Ques where
+  genHole = do
+    i <- gets holeName
+    modify (\st -> st { holeName = i + 1 })
+    return i
+
+instance MonadGenHoles i m => MonadGenHoles i (ReaderT r m) where
+  genHole = ReaderT $ const genHole

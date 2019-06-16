@@ -68,6 +68,9 @@ deriving instance Monad m => Monad (TypeAnnM m)
 instance Monad m => MonadGenProblems Ann.Term (TypeAnnM m) where
   addProblem p = TypeAnnM $ tell [p]
 
+instance MonadGenHoles i m => MonadGenHoles i (TypeAnnM m) where
+  genHole = TypeAnnM $ lift $ genHole
+
 instance W.MonadWriter String m => W.MonadWriter String (TypeAnnM m) where
   tell = TypeAnnM . lift . tell
 
@@ -88,7 +91,7 @@ runTypeAnn = W.runWriterT . unTypeAnnM
 
 typeInfAnn
   :: ( MonadLog m, MonadExcept m, MonadEnv Ann.Def m, MonadLocatable m
-     , MonadGenProblems Ann.Term m
+     , MonadGenProblems Ann.Term m, MonadGenHoles Int m
      )
   => TContext
   -> Term
@@ -100,7 +103,7 @@ typeInfAnn = typeInfAnn' def
 
 typeInfAnn'
   :: ( MonadEnv Ann.Def m, MonadLog m, MonadExcept m, MonadLocatable m
-     , MonadGenProblems Ann.Term m
+     , MonadGenProblems Ann.Term m, MonadGenHoles Int m
      )
   => Options
   -> TContext
@@ -135,8 +138,9 @@ typeInfAnn' opts ctx (Local x u) = do
       tell (show $ Env.keys env)
       tell (show $ map (\(v, _, _) -> v) ctx)
       throwError ("Local variable not found at " ++ pprint loc ++ ": " ++ x)
-typeInfAnn' _ ctx (Meta x) =
-  throwError ("Can't infer type of metavariable: " ++ x)
+typeInfAnn' _ ctx Hole = do
+  loc <- askLoc
+  throwError ("Can't infer type of hole at " ++ pprint loc)
 typeInfAnn' _ ctx (Global x) = do
   tell ("typeInfAnn' _ ctx (Global x) = do")
   env <- askEnv
@@ -198,12 +202,14 @@ typeInfAnn' _ _ (BytesType n) = do
   return (VBaseType 0, Ann.BytesType n)
 typeInfAnn' _ _ (Num n) = do
   tell ("typeInfAnn' _ _ (Num n) = do")
+  i <- genHole
+  j <- genHole
   return
     ( VNormal
-      (NMeta
-        "numerito"
+      (NHole
+        i
         (Ann.Type 0
-          (Ann.Meta "uniqueness" Ann.UniquenessAttr)
+          (Ann.Hole j Ann.UniquenessAttr)
         )
       )
     , Ann.Num n 4
@@ -281,7 +287,7 @@ typeInfAnn' opts ctx (Loc loc t) = do
 
 typeCheckAnn
   :: ( MonadLog m, MonadExcept m, MonadEnv Ann.Def m, MonadLocatable m
-     , MonadGenProblems Ann.Term m
+     , MonadGenProblems Ann.Term m, MonadGenHoles Int m
      )
   => TContext
   -> Term  -- ^ expr
@@ -294,7 +300,7 @@ typeCheckAnn = typeCheckAnn' def
 
 typeCheckAnn'
   :: ( MonadLog m, MonadExcept m, MonadEnv Ann.Def m, MonadLocatable m
-     , MonadGenProblems Ann.Term m
+     , MonadGenProblems Ann.Term m, MonadGenHoles Int m
      )
   => Options
   -> TContext
@@ -307,9 +313,10 @@ typeCheckAnn'
 typeCheckAnn' opts _ (Local v u) ty | inferVars opts = do
   let annTy = quote ty
   return (Ann.Local v annTy u, annTy)
-typeCheckAnn' opts _ (Meta v) ty = do
+typeCheckAnn' opts _ Hole ty = do
   let annTy = quote ty
-  return (Ann.Meta v annTy, annTy)
+  i <- genHole
+  return (Ann.Hole i annTy, annTy)
 typeCheckAnn' opts ctx (Lam x e) (VPi x' v w (Closure ctx')) = do
   tell ("typeCheckAnn' opts Lam: " ++ show e)
   w' <- eval ctx' w

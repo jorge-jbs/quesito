@@ -64,8 +64,8 @@ desugar env (Var v)
       return (TT.Global v)
   | otherwise =
       case v of
-      '?':m -> do
-        return $ TT.Meta m
+      "_" -> do
+        return TT.Hole
       "Bytes" -> do
         loc <- askLoc
         throwError ("Type error on Bytes at " ++ pprint loc)
