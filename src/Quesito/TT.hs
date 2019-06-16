@@ -62,10 +62,10 @@ instance Ord AttrLit where
     False
 
 data BinOp = Add | Sub | Mul | UDiv | SDiv | And | Or | Xor | Shr | Shl
-  deriving Show
+  deriving (Show, Eq)
 
 data UnOp = Not
-  deriving Show
+  deriving (Show, Eq)
 
 mapInLoc :: Term -> (Term -> Term) -> Term
 mapInLoc (Loc loc t) f =
@@ -194,7 +194,7 @@ deBruijnize =
           DBFree v
         xs ->
           DBBound (length xs)
-    deBruijnize' _ Hole =
+    deBruijnize' _ (Hole) =
       DBHole
     deBruijnize' _ (Global v) =
       DBGlobal v
@@ -228,6 +228,7 @@ deBruijnize =
       DBLoc loc (deBruijnize' vars t)
 
 data Equality = AlphaEquivalence | AlphaEquivalenceModuloMetaVariables | Unequal
+  deriving Eq
 
 and :: Equality -> Equality -> Equality
 infixr 3 `and`

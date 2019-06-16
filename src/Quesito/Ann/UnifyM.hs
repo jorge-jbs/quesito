@@ -5,7 +5,7 @@
 module Quesito.Ann.UnifyM where
   
 type Subs t =
-  [(String, t)]
+  [(Int, t)]
 
 data Param t
   = P t
@@ -16,3 +16,4 @@ data Problem t
 
 deriving instance Show t => Show (Param t)
 deriving instance Show t => Show (Problem t)
+deriving instance Eq t => Eq (Problem t)

@@ -4,10 +4,12 @@ import Quesito
 import Quesito.CodeGen
 import Quesito.LLTT.TopLevel as LLTT (lowerDef)
 import Quesito.TT.TopLevel as TT (typeAnn)
+import qualified Quesito.Ann as Ann (fillHoles)
 import Quesito.TT.TypeAnn (runTypeAnn)
 import qualified Quesito.Env as Env
 import Quesito.Syntax as Syn
 import Quesito.Syntax.Parse (parse)
+import qualified Quesito.Ann.Unify as Unify
 
 import Data.Foldable (foldlM)
 import Data.String (fromString)
@@ -37,7 +39,9 @@ main = do
           (\annDefs ttDef -> do
               (annDef, problems) <- runTypeAnn $ TT.typeAnn annDefs ttDef
               tell ("Problems: " ++ show problems)
-              return (Env.insert annDef annDefs)
+              subs <- Unify.solve $ reverse problems
+              tell ("Subs: " ++ show subs)
+              return (Env.insert (Ann.fillHoles subs annDef) annDefs)
           )
           Env.empty
           ttDefs

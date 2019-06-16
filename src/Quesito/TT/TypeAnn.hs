@@ -359,6 +359,7 @@ typeCheckAnn' opts ctx t ty = do
   let qty = quote ty
       qty' = quote ty'
   loc <- askLoc
+  tell ("Unifying at " ++ pprint loc ++ ": " ++ show qty ++ " and " ++ show qty')
   b <- unify qty qty'
   unless b
     (throwError

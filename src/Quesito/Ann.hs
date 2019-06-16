@@ -1,6 +1,7 @@
 module Quesito.Ann where
 
 import Quesito (PPrint(..))
+import Quesito.Ann.UnifyM (Subs)
 import Quesito.TT (AttrLit(..), BinOp(..), UnOp(..), Flags)
 import Quesito.Env (Definition(..))
 import qualified Quesito.TT as TT
@@ -28,7 +29,7 @@ data Term
   | Pi String Type Type
   | App Term Term
   | Lam String Type Term
-  deriving Show
+  deriving (Show, Eq)
 
 type Type = Term
 
@@ -55,6 +56,21 @@ instance Definition Def where
     n : map fst conss
   getNames (ExternDef name _ _) =
     [name]
+
+fillHoles :: Subs Term -> Def -> Def
+fillHoles subs (PatternMatchingDef name equations ty flags) =
+  PatternMatchingDef
+    name
+    (map (\(ctx, lhs, rhs) -> (ctx, lhs, substHoles subs rhs)) equations)
+    (substHoles subs ty)
+    flags
+fillHoles subs (TypeDef name ty conss) =
+  TypeDef
+    name
+    (substHoles subs ty)
+    (map (\(name, consTy) -> (name, substHoles subs consTy)) conss)
+fillHoles subs (ExternDef name ty flags) =
+  ExternDef name (substHoles subs ty) flags
 
 data PatternG t
   = Binding String t
@@ -150,6 +166,35 @@ typeInf (App r s) =
       error ""
 typeInf (Lam v ty t) =
   Pi v ty $ typeInf t
+
+substHoles :: Subs Term -> Term -> Term
+substHoles hs (Hole h' ty) =
+  case lookup h' hs of
+    Just term ->
+      term
+    Nothing ->
+      Hole h' (substHoles hs ty)
+substHoles hs (Local name ty u) =
+    Local name (substHoles hs ty) u
+substHoles hs (Global name' ty) =
+  Global name' (substHoles hs ty)
+substHoles hs (Pi name' t t') =
+  Pi name' (substHoles hs t) (substHoles hs t')
+substHoles hs (App t t') =
+  App (substHoles hs t) (substHoles hs t')
+substHoles hs (Lam name' ty t) =
+  Lam name' (substHoles hs ty) (substHoles hs t)
+substHoles hs (Attr ty u) =
+  Attr (substHoles hs ty) (substHoles hs u)
+substHoles hs (Type i u) =
+  Type i $ substHoles hs u
+substHoles _ t@(BaseType _) = t
+substHoles _ t@UniquenessAttr = t
+substHoles _ t@(AttrLit _) = t
+substHoles _ t@(BytesType _) = t
+substHoles _ t@(BinOp _) = t
+substHoles _ t@(UnOp _) = t
+substHoles _ t@(Num _ _) = t
 
 substLocal :: String -> Term -> Term -> Term
 substLocal name term (Local name' ty u) =
